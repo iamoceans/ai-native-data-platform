@@ -1,0 +1,30 @@
+query searchDatasets($query: String!, $start: Int!, $count: Int!) {
+  searchAcrossEntities(
+    input: {types: [DATASET], query: $query, start: $start, count: $count}
+  ) {
+    start
+    count
+    total
+    searchResults {
+      entity {
+        urn
+        type
+        ... on Dataset {
+          name
+          platform {
+            name
+          }
+          description
+          properties {
+            name
+            description
+            customProperties {
+              key
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+}

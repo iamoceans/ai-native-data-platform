@@ -1,0 +1,13 @@
+﻿metric_key: iap_revenue
+version: 1
+name: 内购收入
+dataset: demo.iap_revenue_daily
+components:
+  revenue: {aggregation: sum, column: revenue_usd}
+formula: revenue
+unit: USD
+currency: USD
+timezone: UTC
+grain: [dt, country, platform, app_version]
+allowed_dimensions: [country, platform, app_version]
+aggregation_kind: sum

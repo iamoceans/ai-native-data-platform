@@ -1,0 +1,8 @@
+﻿dataset: demo.ads_revenue_daily
+description: 按日与广告维度汇总的展示、点击与净广告收入
+grain: [dt, country, platform, app_version, ad_network]
+business_timezone: UTC
+currency: USD
+metric_keys: [ads_revenue, impressions, ecpm]
+join_keys: [dt, country, platform, app_version]
+notes: 由 M4 生成器（make demo-generate）按 seed/as_of/scale/scenario 确定性生成；收入由展示量与基础 eCPM 以 Decimal 推导

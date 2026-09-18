@@ -1,0 +1,6 @@
+﻿dataset: public.fixture_metrics
+description: M1/M2 连接器验收用的确定性指标固件表
+grain: [dt, country, platform]
+business_timezone: UTC
+currency: USD
+metric_keys: [ads_revenue, impressions]

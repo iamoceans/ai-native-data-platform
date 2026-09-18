@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-09-14T17:30:13.926378+00:00",
+  "datahub_version": "v1.7.0.1",
+  "query_name": "dataset",
+  "request": {
+    "variables": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_by_country,DEV)"
+    }
+  },
+  "response": {
+    "data": {
+      "dataset": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_by_country,DEV)",
+        "type": "DATASET",
+        "name": "ads_revenue_by_country",
+        "description": null,
+        "platform": {
+          "name": "doris"
+        },
+        "properties": {
+          "name": "ads_revenue_by_country",
+          "description": null,
+          "customProperties": [
+            {
+              "key": "view_definition",
+              "value": "CREATE VIEW `ads_revenue_by_country`\n(dt,country,impressions,revenue_usd)\n AS SELECT `demo`.`ads_revenue_daily`.`dt`, `demo`.`ads_revenue_daily`.`country`,\n               SUM(`demo`.`ads_revenue_daily`.`impressions`) AS `impressions`,\n               SUM(`demo`.`ads_revenue_daily`.`revenue_usd`) AS `revenue_usd`\n        FROM `demo`.`ads_revenue_daily`\n        GROUP BY `demo`.`ads_revenue_daily`.`dt`, `demo`.`ads_revenue_daily`.`country`;"
+            },
+            {
+              "key": "is_view",
+              "value": "True"
+            }
+          ]
+        },
+        "schemaMetadata": {
+          "version": 0,
+          "hash": "",
+          "fields": [
+            {
+              "fieldPath": "dt",
+              "nativeDataType": "date",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "fieldPath": "country",
+              "nativeDataType": "varchar(8)",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "fieldPath": "impressions",
+              "nativeDataType": "bigint",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "fieldPath": "revenue_usd",
+              "nativeDataType": "decimal(38,6)",
+              "nullable": true,
+              "description": null
+            }
+          ]
+        },
+        "ownership": null
+      }
+    },
+    "extensions": {}
+  }
+}

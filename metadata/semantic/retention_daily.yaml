@@ -1,0 +1,6 @@
+dataset: demo.retention_daily
+description: 注册 cohort 的次日/七日留存人数（cohort 未成熟时对应列为 NULL）
+grain: [cohort_date, country, platform]
+business_timezone: UTC
+join_keys: [cohort_date, country, platform]
+notes: D1 需要至少 2 天观测、D7 需要至少 8 天；未成熟返回 NULL，禁止当作 0

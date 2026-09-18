@@ -1,0 +1,6 @@
+dataset: public.campaign_config
+description: 广告投放配置（渠道、目标与生效区间）
+grain: [campaign_id, valid_from]
+business_timezone: UTC
+join_keys: [campaign_id]
+notes: 关联必须使用 [valid_from, valid_to) 的 as-of 匹配；重复有效键会导致 JOIN_CARDINALITY_VIOLATION

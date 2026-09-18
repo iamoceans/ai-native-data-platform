@@ -1,0 +1,15 @@
+# Whitelisted cross-source relation (spec section 17).
+# Doris campaign cohort aggregates -> PostgreSQL campaign configuration.
+# As-of matching: the configuration in effect on the cohort date is used;
+# historic facts are never explained with the current configuration.
+relation_id: campaign_cohort_to_config
+left_dataset: demo.campaign_cohort_daily
+right_dataset: public.campaign_config
+left_keys: [campaign_id]
+right_keys: [campaign_id]
+relationship: many_to_one
+left_time_column: cohort_date
+right_valid_from: valid_from
+right_valid_to: valid_to
+amount_columns: [revenue_usd]
+description: 广告获客 cohort 收入（Doris）关联渠道配置（PostgreSQL），按生效区间匹配

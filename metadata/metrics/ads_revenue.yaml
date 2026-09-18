@@ -1,0 +1,14 @@
+﻿metric_key: ads_revenue
+version: 1
+name: 广告收入
+dataset: demo.ads_revenue_daily
+components:
+  revenue: {aggregation: sum, column: revenue_usd}
+formula: revenue
+unit: USD
+currency: USD
+timezone: UTC
+grain: [dt, country, platform, app_version, ad_network]
+allowed_dimensions: [country, platform, app_version, ad_network]
+aggregation_kind: sum
+freshness: {date_column: dt, completeness_source: demo_manifest}

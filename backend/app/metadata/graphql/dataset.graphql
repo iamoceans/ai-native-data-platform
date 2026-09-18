@@ -1,0 +1,43 @@
+query getDataset($urn: String!) {
+  dataset(urn: $urn) {
+    urn
+    type
+    name
+    description
+    platform {
+      name
+    }
+    properties {
+      name
+      description
+      customProperties {
+        key
+        value
+      }
+    }
+    schemaMetadata {
+      version
+      hash
+      fields {
+        fieldPath
+        nativeDataType
+        nullable
+        description
+      }
+    }
+    ownership {
+      owners {
+        owner {
+          ... on CorpUser {
+            urn
+            username
+          }
+          ... on CorpGroup {
+            urn
+            name
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,165 @@
+# Runbook
+
+Commands are given for both entry points:
+
+- WSL2 / Linux: `make <target>`
+- Windows PowerShell: `.\scripts\dev.ps1 <target>`
+
+The Makefile and the PowerShell shim call the same scripts; exit codes are
+preserved.
+
+## 1. From a blank environment
+
+```bash
+cp .env.example .env          # or: make setup-secrets (generates random passwords)
+make setup-secrets            # writes .env + infra/local-secrets/source-postgres.json
+make doctor                   # host report; fix reported problems (Docker, ports, secrets)
+make up-core                  # builds images and starts control/source PG + API + workers + UI
+make migrate                  # apply control-DB migrations (idempotent)
+make bootstrap                # roles, capacities, admin user (prints a generated password once)
+```
+
+Then open <http://127.0.0.1:3000>, sign in, and use the SQL workspace. To see a
+fully populated example including a registered datasource, catalog refresh, role
+grants and one real query:
+
+```bash
+AIND_SMOKE_IN_CLUSTER=1 AIND_SMOKE_PASSWORD=<admin password> \
+  uv run --project backend --frozen python scripts/smoke_core.py --demo \
+  --sql "SELECT country, COUNT(*) AS rows, SUM(revenue_usd) AS revenue FROM fixture_metrics GROUP BY country ORDER BY country"
+```
+
+The M4 demo dataset replaces the M1/M2 fixture seed for real work:
+
+```bash
+AIND_DATAHUB_ENABLED=1 make up-full     # core + MySQL + Doris (start the DataHub stack first)
+make demo-generate                       # SEED=42 AS_OF=2026-09-13 SCALE=small SCENARIO=ecpm_drop
+make demo-load                           # Stream Load into Doris + config tables + derived table
+make demo-verify                         # offline checks against the generated ground truth
+make seed-sources                        # no longer required; legacy M2 fixtures only
+```
+
+Then register the three sources and ingest metadata (see section 2.1).
+
+## 2. Everyday operations
+
+| Task | Command |
+|---|---|
+| Start / update the stack | `make up-core` |
+| Stop containers, keep volumes | `make down` |
+| Status | `make ps` |
+| Logs | `make logs` |
+| Apply migrations after an update | `make migrate` |
+| Re-run bootstrap (idempotent) | `make bootstrap` |
+| Export OpenAPI / regenerate frontend types | `make api-spec types` |
+| Health | `curl http://127.0.0.1:8000/health/live`, `curl http://127.0.0.1:8000/api/v1/health/ready` |
+| Regenerate the demo dataset | `make demo-generate` then `make demo-load --reset-demo` (or `make reset-demo CONFIRM=demo`) |
+| Publish declared demo lineage | `make demo-lineage` (runs the DataHub SDK inside the ingestion image) |
+
+Data is kept in named volumes (`control_pgdata`, `source_pgdata`, `results`,
+`ingestion_work`, `source_mysqldata`, `doris_*`, `datahub_*`). `make down` never
+deletes them.
+
+### 2.1 DataHub stack and metadata pipeline (M3/M4)
+
+Windows PowerShell needs `HOME` pointing at the user profile for the pinned
+quickstart file to resolve its environment:
+
+```powershell
+$env:HOME=$env:USERPROFILE
+docker compose --project-name datahub --env-file .env `
+  -f infra/datahub/compose.pinned.yaml -f infra/datahub/compose.ainative.yaml `
+  --profile quickstart up -d
+```
+
+Then, with `AIND_DATAHUB_ENABLED=1` set for the business stack:
+
+```powershell
+# register sources (idempotent), refresh catalogs, grant roles, queue ingestions
+uv run --project backend --frozen python scripts/metadata_sync.py
+uv run --project backend --frozen python scripts/verify_metadata.py
+```
+
+Facts to remember:
+
+- GMS/UI/MySQL/OpenSearch/Kafka are loopback-published at 18080 / 9002 /
+  13306 / 19200 / 19092; the quickstart runs with GMS authentication disabled
+  (`scripts/datahub_token.py --check` documents this).
+- The ingestion container mounts the same control DB and secret files as the
+  backend; `make metadata-sync` only queues work.
+- Verify the platform sees real lineage: `GET /datasets/{id}/lineage` should
+  return `available` for `demo.ads_revenue_by_country` (view -> table, label
+  `extracted`) and for `demo.revenue_daily_total` (declared demo pipeline).
+
+## 3. Running the test suites
+
+Unit / security / contract tests need no services:
+
+```bash
+uv run --project backend --frozen pytest tests/unit tests/security tests/contract -q
+```
+
+Integration tests need the control and source PostgreSQL reachable from the host.
+**Stop the compose workers first** so the host-side test worker owns the queue:
+
+```bash
+docker compose stop query-worker agent-worker
+make test-integration        # starts DBs with loopback ports, runs tests/integration + tests/contract
+docker compose start query-worker agent-worker
+```
+
+`make test-core` runs all three suites in order.
+
+The full matrix (`make test-full`) needs MySQL and Doris up. The M3 DataHub
+integration tests additionally need the DataHub stack reachable and the
+deployed platform API; the M4 SQL acceptance tests need the demo data loaded
+(`make demo-load`). When a dependency is missing those tests **skip**, never
+pass silently — the recorded numbers are in `docs/acceptance.md`.
+
+Browser E2E (Playwright) needs the full core stack plus admin credentials:
+
+```powershell
+$env:E2E_BASE_URL="http://127.0.0.1:3000"; $env:E2E_ADMIN_PASSWORD="dev-admin-password-123"
+cd frontend; npx playwright test
+```
+
+## 4. Recovery
+
+| Situation | What happens / what to do |
+|---|---|
+| Worker killed mid-query | Lease expires -> reconciler marks it `SUSPECT`, then `LOST` after the source deadline + margin. The next worker cannot double-publish: stale publishes fail the fencing check. The source query self-terminates via `statement_timeout`. |
+| API restarted | Sessions live in PostgreSQL; clients keep working. SSE reconnects with `Last-Event-ID`; if the cursor is older than retention the client gets `EVENT_CURSOR_EXPIRED` and should re-fetch the resource. |
+| Control DB restored from backup | Queries in `RUNNING` with expired leases are reconciled to `LOST`; results whose files exist stay readable until `expires_at`. |
+| Result file missing/corrupt | `GET /queries/{id}/results` returns `RESULT_UNAVAILABLE` (410). The platform never fabricates an empty result. |
+| Datasource unreachable | Connection tests return sanitized errors; queued jobs fail with `DATASOURCE_UNAVAILABLE` (retryable) without crashing the worker loop. |
+| Disk full while writing results | The atomic publish fails, the job fails, and no partial result is recorded. |
+| Need a clean slate | `docker compose run --rm --no-deps backend alembic downgrade base && make migrate && make bootstrap` (destructive: deletes control state), or remove the volumes deliberately. |
+| Reset demo data | `make reset-demo CONFIRM=demo` (drops/recreates the `demo` tables and truncates the demo-owned config tables, then reloads the newest generated run). Reloading a non-empty run without the flag is refused. |
+| DataHub stack down (all quickstart containers exited) | Usually the WSL2 VM restarted under memory pressure. `docker compose --project-name datahub --env-file .env -f infra/datahub/compose.pinned.yaml -f infra/datahub/compose.ainative.yaml --profile quickstart up -d`, wait for GMS `healthy`, then re-run `scripts/metadata_sync.py` if mappings look stale. |
+| Declared demo lineage missing after a reload | The publisher resolves URNs from the control DB; run `make metadata-sync` (queues ingestion) and then `make demo-lineage`, and allow a minute for the search index to catch up. |
+
+## 5. Troubleshooting
+
+- `docker compose up` fails with "network datahub-net declared as external":
+  run `make network-up` (or `docker network create datahub-net`). The network is
+  shared with the DataHub stack in M3.
+- Port already in use: `scripts/doctor.py` lists the ports it checks. The dev
+  override publishes control DB on 55430 and source DB on 55433 because 55432 was
+  occupied on the reference host; change `CONTROL_DB_PORT`/`SOURCE_DB_PORT` in
+  `.env` if needed.
+- Login fails after running integration tests on a shared DB: the test suite
+  truncates the control DB. Re-run `make bootstrap` to recreate roles/users and the
+  capacity rows.
+- npm scripts fail in PowerShell with an execution-policy error: run them via
+  `cmd /c "npx ..."` (the dev shim does this) or set the policy for the current user.
+- `make` is not available on the Windows host: use `.\scripts\dev.ps1`. The Makefile
+  is the entry point under WSL2/Linux.
+- Full stack restarts the WSL2 VM (Docker Desktop memory ceiling): raise the
+  memory in `%UserProfile%\.wslconfig` or start DataHub and the business stack in
+  layers, accepting `METADATA_UNAVAILABLE` degradation until GMS is back.
+- `make demo-load` fails with `stream load ... failed: There is no 100-continue
+  header` or an HTTP 307: the loader talks to the BE directly (host port 18040 in
+  the dev override); check that `--doris-be-http-port` matches your `.env`.
+- Result queries that decompose a full partition return fewer rows than expected:
+  the platform paginates results (default page 100). Follow `next_cursor` or set a
+  higher page `limit` (max 500 per request).

@@ -1,0 +1,27 @@
+# Minimal patch over the official DataHub v1.7.0.1 quickstart compose.
+#
+# Purpose (spec section 27.2): expose GMS and the frontend on the platform's
+# external network `datahub-net`, so the backend and the ingestion worker can
+# reach GMS while the browser only sees the platform API (and administrators the
+# DataHub UI on loopback).
+#
+# Usage (from the repository root, with DATAHUB_VERSION and HOME set):
+#   docker compose -f infra/datahub/compose.pinned.yaml \
+#                  -f infra/datahub/compose.ainative.yaml \
+#                  --profile quickstart up -d
+
+services:
+  datahub-gms-quickstart:
+    networks:
+      default: null
+      datahub-net: null
+
+  frontend-quickstart:
+    networks:
+      default: null
+      datahub-net: null
+
+networks:
+  datahub-net:
+    name: datahub-net
+    external: true

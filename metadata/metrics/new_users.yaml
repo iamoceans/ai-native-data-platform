@@ -1,0 +1,12 @@
+﻿metric_key: new_users
+version: 1
+name: 新增用户数
+dataset: demo.user_daily
+components:
+  new_users: {aggregation: sum, column: new_users}
+formula: new_users
+unit: users
+timezone: UTC
+grain: [dt, country, platform]
+allowed_dimensions: [country, platform]
+aggregation_kind: sum

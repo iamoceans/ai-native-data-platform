@@ -1,0 +1,4850 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI-Native Data Platform API",
+    "description": "Governed local data platform: authentication and RBAC, multi-engine query gateway, DataHub-backed catalog and lineage, versioned metrics, and checkpointed evidence-bound analyses.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Live",
+        "operationId": "live_api_v1_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_api_v1_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasources": {
+      "get": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "List Datasources",
+        "operationId": "list_datasources_api_v1_datasources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasourceListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "Create Datasource",
+        "operationId": "create_datasource_api_v1_datasources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasourceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasources/{datasource_id}": {
+      "patch": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "Patch Datasource",
+        "operationId": "patch_datasource_api_v1_datasources__datasource_id__patch",
+        "parameters": [
+          {
+            "name": "datasource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Datasource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasourcePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasourceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasources/{datasource_id}/test": {
+      "post": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "Test Datasource",
+        "operationId": "test_datasource_api_v1_datasources__datasource_id__test_post",
+        "parameters": [
+          {
+            "name": "datasource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Datasource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasourceTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasources/{datasource_id}/sync": {
+      "post": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "Sync Datasource",
+        "description": "Queue a DataHub ingestion for the datasource's registered datasets.",
+        "operationId": "sync_datasource_api_v1_datasources__datasource_id__sync_post",
+        "parameters": [
+          {
+            "name": "datasource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Datasource Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ingestions/{ingestion_id}": {
+      "get": {
+        "tags": [
+          "datasources"
+        ],
+        "summary": "Get Ingestion",
+        "operationId": "get_ingestion_api_v1_ingestions__ingestion_id__get",
+        "parameters": [
+          {
+            "name": "ingestion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Ingestion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Search Datasets",
+        "operationId": "search_datasets_api_v1_datasets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{dataset_id}": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Get Dataset",
+        "operationId": "get_dataset_api_v1_datasets__dataset_id__get",
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/schema": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Get Dataset Schema",
+        "operationId": "get_dataset_schema_api_v1_datasets__dataset_id__schema_get",
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSchemaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/lineage": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Get Dataset Lineage",
+        "operationId": "get_dataset_lineage_api_v1_datasets__dataset_id__lineage_get",
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries": {
+      "post": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "Submit Query",
+        "operationId": "submit_query_api_v1_queries_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuerySubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuerySubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "List Queries",
+        "operationId": "list_queries_api_v1_queries_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries/{query_id}": {
+      "get": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "Get Query",
+        "operationId": "get_query_api_v1_queries__query_id__get",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Query Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries/{query_id}/cancel": {
+      "post": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "Cancel Query",
+        "operationId": "cancel_query_api_v1_queries__query_id__cancel_post",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Query Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries/{query_id}/results": {
+      "get": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "Get Results",
+        "operationId": "get_results_api_v1_queries__query_id__results_get",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Query Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/queries/{query_id}/events": {
+      "get": {
+        "tags": [
+          "queries"
+        ],
+        "summary": "Query Events",
+        "operationId": "query_events_api_v1_queries__query_id__events_get",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Query Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "List Metrics",
+        "operationId": "list_metrics_api_v1_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/saved-queries": {
+      "get": {
+        "tags": [
+          "saved-queries",
+          "permissions"
+        ],
+        "summary": "List Saved Queries",
+        "operationId": "list_saved_queries_api_v1_saved_queries_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "saved-queries",
+          "permissions"
+        ],
+        "summary": "Create Saved Query",
+        "operationId": "create_saved_query_api_v1_saved_queries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedQueryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/saved-queries/{saved_query_id}": {
+      "delete": {
+        "tags": [
+          "saved-queries",
+          "permissions"
+        ],
+        "summary": "Delete Saved Query",
+        "operationId": "delete_saved_query_api_v1_saved_queries__saved_query_id__delete",
+        "parameters": [
+          {
+            "name": "saved_query_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Saved Query Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/permission-requests": {
+      "post": {
+        "tags": [
+          "saved-queries",
+          "permissions"
+        ],
+        "summary": "Create Permission Request",
+        "operationId": "create_permission_request_api_v1_permission_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Create Session",
+        "operationId": "create_session_api_v1_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/messages": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "List Messages",
+        "operationId": "list_messages_api_v1_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentMessageListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses": {
+      "post": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Create Analysis",
+        "operationId": "create_analysis_api_v1_analyses_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "List Analyses",
+        "operationId": "list_analyses_api_v1_analyses_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Get Analysis",
+        "operationId": "get_analysis_api_v1_analyses__analysis_id__get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/report": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Get Report",
+        "operationId": "get_report_api_v1_analyses__analysis_id__report_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Report Api V1 Analyses  Analysis Id  Report Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/evidence": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Get Evidence",
+        "operationId": "get_evidence_api_v1_analyses__analysis_id__evidence_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "claim_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Claim Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Evidence Api V1 Analyses  Analysis Id  Evidence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/cancel": {
+      "post": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Cancel Analysis",
+        "operationId": "cancel_analysis_api_v1_analyses__analysis_id__cancel_post",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/events": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Analysis Events",
+        "operationId": "analysis_events_api_v1_analyses__analysis_id__events_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Users",
+        "operationId": "list_users_api_v1_admin_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create User",
+        "operationId": "create_user_api_v1_admin_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/roles": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update User Roles",
+        "operationId": "update_user_roles_api_v1_admin_users__user_id__roles_put",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRolesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/roles": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Roles",
+        "operationId": "list_roles_api_v1_admin_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Roles Api V1 Admin Roles Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Role",
+        "operationId": "create_role_api_v1_admin_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grants": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Grants",
+        "operationId": "list_grants_api_v1_admin_grants_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Grant",
+        "operationId": "create_grant_api_v1_admin_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Grant",
+        "operationId": "delete_grant_api_v1_admin_grants__grant_id__delete",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audits": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Audits",
+        "operationId": "list_audits_api_v1_admin_audits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/datasources/{datasource_id}/catalog-refresh": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Catalog Refresh",
+        "operationId": "catalog_refresh_api_v1_admin_datasources__datasource_id__catalog_refresh_post",
+        "parameters": [
+          {
+            "name": "datasource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Datasource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogRefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/permission-requests/{request_id}/mock-approve": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Mock Approve Permission Request",
+        "operationId": "mock_approve_permission_request_api_v1_admin_permission_requests__request_id__mock_approve_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentMessageListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AgentMessageListResponse"
+      },
+      "AgentMessageResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "AgentMessageResponse"
+      },
+      "AgentSessionCreate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "AgentSessionCreate"
+      },
+      "AgentSessionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "created_at"
+        ],
+        "title": "AgentSessionResponse"
+      },
+      "AnalysisContext": {
+        "properties": {
+          "metric_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Metric Key"
+          },
+          "baseline_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Baseline Start"
+          },
+          "baseline_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Baseline End"
+          },
+          "current_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Current Start"
+          },
+          "current_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Current End"
+          },
+          "dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Dimensions"
+          },
+          "filters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Filters"
+          },
+          "data_complete": {
+            "type": "boolean",
+            "title": "Data Complete",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric_key",
+          "baseline_start",
+          "baseline_end",
+          "current_start",
+          "current_end"
+        ],
+        "title": "AnalysisContext"
+      },
+      "AnalysisCreate": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Question"
+          },
+          "context": {
+            "$ref": "#/components/schemas/AnalysisContext"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "question",
+          "context"
+        ],
+        "title": "AnalysisCreate"
+      },
+      "AnalysisDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Context"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Plan"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "State"
+          },
+          "checkpoint_version": {
+            "type": "integer",
+            "title": "Checkpoint Version"
+          },
+          "policy_revision": {
+            "type": "integer",
+            "title": "Policy Revision"
+          },
+          "final_report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Report"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStepResponse"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "question",
+          "context",
+          "plan",
+          "budget",
+          "state",
+          "checkpoint_version",
+          "policy_revision",
+          "created_at"
+        ],
+        "title": "AnalysisDetail"
+      },
+      "AnalysisEvidenceEdge": {
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "title": "Query Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": "analysis_evidence"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query_id",
+          "status"
+        ],
+        "title": "AnalysisEvidenceEdge"
+      },
+      "AnalysisListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisDetail"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AnalysisListResponse"
+      },
+      "AnalysisStepResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "observation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "status",
+          "tool_name"
+        ],
+        "title": "AnalysisStepResponse"
+      },
+      "AnalysisSubmitResponse": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Analysis Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "status"
+        ],
+        "title": "AnalysisSubmitResponse"
+      },
+      "AuditEntry": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "resource_type",
+          "trace_id",
+          "outcome",
+          "created_at"
+        ],
+        "title": "AuditEntry"
+      },
+      "AuditListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AuditListResponse"
+      },
+      "CatalogRefreshRequest": {
+        "properties": {
+          "schemas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Schemas"
+          },
+          "secure_views": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Secure Views",
+            "description": "View names the administrator has verified as safe to expose (no sensitive columns)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CatalogRefreshRequest"
+      },
+      "CatalogRefreshResponse": {
+        "properties": {
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "registered": {
+            "type": "integer",
+            "title": "Registered"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          },
+          "deactivated": {
+            "type": "integer",
+            "title": "Deactivated"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "skipped": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "datasource_id",
+          "registered",
+          "updated",
+          "deactivated",
+          "items"
+        ],
+        "title": "CatalogRefreshResponse"
+      },
+      "ColumnInfo": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "nullable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nullable"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ColumnInfo"
+      },
+      "DatasetContext": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "catalog": {
+            "type": "string",
+            "title": "Catalog"
+          },
+          "schema_name": {
+            "type": "string",
+            "title": "Schema Name"
+          },
+          "object_name": {
+            "type": "string",
+            "title": "Object Name"
+          },
+          "object_type": {
+            "type": "string",
+            "title": "Object Type"
+          },
+          "datahub_urn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datahub Urn"
+          },
+          "sync_status": {
+            "type": "string",
+            "title": "Sync Status"
+          },
+          "schema_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Hash"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "business_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Timezone"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "metric_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Metric Keys"
+          },
+          "join_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Join Keys"
+          },
+          "lineage_status": {
+            "type": "string",
+            "title": "Lineage Status",
+            "default": "unknown"
+          },
+          "metadata_source": {
+            "type": "string",
+            "title": "Metadata Source",
+            "default": "platform_registry"
+          },
+          "metadata_stale": {
+            "type": "boolean",
+            "title": "Metadata Stale",
+            "default": false
+          },
+          "metadata_cached": {
+            "type": "boolean",
+            "title": "Metadata Cached",
+            "default": false
+          },
+          "schema_drift": {
+            "type": "boolean",
+            "title": "Schema Drift",
+            "default": false
+          },
+          "datahub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datahub Url"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Owners"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "datasource_id",
+          "catalog",
+          "schema_name",
+          "object_name",
+          "object_type",
+          "sync_status",
+          "active"
+        ],
+        "title": "DatasetContext"
+      },
+      "DatasetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DatasetListResponse"
+      },
+      "DatasetSchemaResponse": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "schema_hash": {
+            "type": "string",
+            "title": "Schema Hash"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "introspection"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "schema_hash",
+          "columns",
+          "fetched_at",
+          "expires_at",
+          "source"
+        ],
+        "title": "DatasetSchemaResponse"
+      },
+      "DatasetSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "catalog": {
+            "type": "string",
+            "title": "Catalog"
+          },
+          "schema_name": {
+            "type": "string",
+            "title": "Schema Name"
+          },
+          "object_name": {
+            "type": "string",
+            "title": "Object Name"
+          },
+          "object_type": {
+            "type": "string",
+            "title": "Object Type"
+          },
+          "datahub_urn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datahub Urn"
+          },
+          "sync_status": {
+            "type": "string",
+            "title": "Sync Status"
+          },
+          "schema_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Hash"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "datasource_id",
+          "catalog",
+          "schema_name",
+          "object_name",
+          "object_type",
+          "sync_status",
+          "active"
+        ],
+        "title": "DatasetSummary"
+      },
+      "DatasourceCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "postgres",
+              "mysql",
+              "doris"
+            ],
+            "title": "Kind"
+          },
+          "connection_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostgresConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/MySQLConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/DorisConnectionConfig"
+              }
+            ],
+            "title": "Connection Config"
+          },
+          "secret_ref": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Secret Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "connection_config",
+          "secret_ref"
+        ],
+        "title": "DatasourceCreate"
+      },
+      "DatasourceListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasourceResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DatasourceListResponse"
+      },
+      "DatasourcePatch": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "connection_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostgresConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/MySQLConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/DorisConnectionConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Config"
+          },
+          "secret_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Ref"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "DatasourcePatch"
+      },
+      "DatasourceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "connection_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Connection Config"
+          },
+          "secret_ref": {
+            "type": "string",
+            "title": "Secret Ref"
+          },
+          "capabilities": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Capabilities"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "health_status": {
+            "type": "string",
+            "title": "Health Status"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "connection_config",
+          "secret_ref",
+          "capabilities",
+          "enabled",
+          "health_status",
+          "created_by",
+          "created_at",
+          "version"
+        ],
+        "title": "DatasourceResponse"
+      },
+      "DatasourceTestResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderCapabilitiesDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "server_version",
+          "latency_ms",
+          "checked_at"
+        ],
+        "title": "DatasourceTestResponse"
+      },
+      "DorisConnectionConfig": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "default": 9030
+          },
+          "database": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Database"
+          },
+          "connect_timeout_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Connect Timeout Seconds",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host",
+          "database"
+        ],
+        "title": "DorisConnectionConfig",
+        "description": "Doris FE MySQL-protocol endpoint. Catalog is always ``internal`` in V1;\nexternal catalogs are rejected by the provider (spec section 7)."
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable",
+            "default": false
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody"
+      },
+      "GrantCreate": {
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          },
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "discover",
+              "query"
+            ],
+            "title": "Action"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role_id",
+          "dataset_id",
+          "action"
+        ],
+        "title": "GrantCreate"
+      },
+      "GrantListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GrantResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "GrantListResponse"
+      },
+      "GrantResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          },
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role_id",
+          "dataset_id",
+          "action",
+          "created_by"
+        ],
+        "title": "GrantResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse"
+      },
+      "IngestionTaskResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "datasource_id",
+          "status",
+          "created_at"
+        ],
+        "title": "IngestionTaskResponse"
+      },
+      "JsonValue-Input": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "items": {
+              "$ref": "#/components/schemas/JsonValue-Input"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue-Input"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "JsonValue-Output": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "items": {
+              "$ref": "#/components/schemas/JsonValue-Output"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue-Output"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "LineageNode": {
+        "properties": {
+          "urn": {
+            "type": "string",
+            "title": "Urn"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "degree": {
+            "type": "integer",
+            "title": "Degree",
+            "default": 1
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": "unknown"
+          },
+          "mapped": {
+            "type": "boolean",
+            "title": "Mapped",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "urn",
+          "name"
+        ],
+        "title": "LineageNode"
+      },
+      "LineageResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/LineageNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "filtered_nodes": {
+            "type": "integer",
+            "title": "Filtered Nodes",
+            "default": 0
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "analysis_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisEvidenceEdge"
+            },
+            "type": "array",
+            "title": "Analysis Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "direction",
+          "depth",
+          "status"
+        ],
+        "title": "LineageResponse"
+      },
+      "LoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "LoginResponse": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/ProfileResponse"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile",
+          "csrf_token"
+        ],
+        "title": "LoginResponse"
+      },
+      "MetricListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "MetricListResponse"
+      },
+      "MetricSummary": {
+        "properties": {
+          "metric_key": {
+            "type": "string",
+            "title": "Metric Key"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "default": "UTC"
+          },
+          "grain": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Grain"
+          },
+          "allowed_dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Dimensions"
+          },
+          "aggregation_kind": {
+            "type": "string",
+            "title": "Aggregation Kind"
+          },
+          "datasets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metric_key",
+          "version",
+          "name",
+          "unit",
+          "aggregation_kind",
+          "formula"
+        ],
+        "title": "MetricSummary"
+      },
+      "MySQLConnectionConfig": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "default": 3306
+          },
+          "database": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Database"
+          },
+          "connect_timeout_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Connect Timeout Seconds",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host",
+          "database"
+        ],
+        "title": "MySQLConnectionConfig"
+      },
+      "PermissionRequestCreate": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "reason"
+        ],
+        "title": "PermissionRequestCreate"
+      },
+      "PermissionRequestResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "dataset_id",
+          "reason",
+          "status",
+          "created_at"
+        ],
+        "title": "PermissionRequestResponse"
+      },
+      "PostgresConnectionConfig": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "default": 5432
+          },
+          "database": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Database"
+          },
+          "ssl_mode": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "prefer",
+              "require",
+              "verify-ca",
+              "verify-full"
+            ],
+            "title": "Ssl Mode",
+            "default": "prefer"
+          },
+          "connect_timeout_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Connect Timeout Seconds",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host",
+          "database"
+        ],
+        "title": "PostgresConnectionConfig"
+      },
+      "ProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "roles",
+          "capabilities"
+        ],
+        "title": "ProfileResponse"
+      },
+      "ProviderCapabilitiesDTO": {
+        "properties": {
+          "dialect": {
+            "type": "string",
+            "title": "Dialect"
+          },
+          "explain": {
+            "type": "boolean",
+            "title": "Explain"
+          },
+          "server_timeout": {
+            "type": "boolean",
+            "title": "Server Timeout"
+          },
+          "cancel": {
+            "type": "boolean",
+            "title": "Cancel"
+          },
+          "transactional_read_only": {
+            "type": "boolean",
+            "title": "Transactional Read Only"
+          },
+          "supported_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Types"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dialect",
+          "explain",
+          "server_timeout",
+          "cancel",
+          "transactional_read_only",
+          "supported_types"
+        ],
+        "title": "ProviderCapabilitiesDTO"
+      },
+      "QueryDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "sql": {
+            "type": "string",
+            "title": "Sql"
+          },
+          "validated_sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated Sql"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "sql_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Hash"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Limits"
+          },
+          "policy_revision": {
+            "type": "integer",
+            "title": "Policy Revision"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "datasource_id",
+          "status",
+          "purpose",
+          "sql",
+          "policy_revision",
+          "attempt",
+          "created_at"
+        ],
+        "title": "QueryDetail"
+      },
+      "QueryLimits": {
+        "properties": {
+          "max_rows": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Rows"
+          },
+          "max_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 104857600.0,
+                "minimum": 1024.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Bytes"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3600.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Seconds"
+          }
+        },
+        "type": "object",
+        "title": "QueryLimits"
+      },
+      "QueryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QueryDetail"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "QueryListResponse"
+      },
+      "QueryResultResponse": {
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Query Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query_id",
+          "status",
+          "trace_id"
+        ],
+        "title": "QueryResultResponse"
+      },
+      "QuerySubmitRequest": {
+        "properties": {
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "sql": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Sql"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue-Input"
+            },
+            "type": "object",
+            "title": "Parameters"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/QueryLimits"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "query",
+              "explain"
+            ],
+            "title": "Purpose",
+            "default": "query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "datasource_id",
+          "sql"
+        ],
+        "title": "QuerySubmitRequest"
+      },
+      "QuerySubmitResponse": {
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Query Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query_id",
+          "status"
+        ],
+        "title": "QuerySubmitResponse"
+      },
+      "ResultPayload": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/JsonValue-Output"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "row_count",
+          "truncated",
+          "columns",
+          "rows",
+          "expires_at"
+        ],
+        "title": "ResultPayload"
+      },
+      "ResultSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "byte_count": {
+            "type": "integer",
+            "title": "Byte Count"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "row_count",
+          "byte_count",
+          "truncated",
+          "content_hash",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "ResultSummary"
+      },
+      "RoleCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RoleCreate"
+      },
+      "RoleResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "capabilities"
+        ],
+        "title": "RoleResponse"
+      },
+      "SavedQueryCreate": {
+        "properties": {
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "sql": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Sql"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "datasource_id",
+          "title",
+          "sql"
+        ],
+        "title": "SavedQueryCreate"
+      },
+      "SavedQueryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavedQueryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "SavedQueryListResponse"
+      },
+      "SavedQueryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sql": {
+            "type": "string",
+            "title": "Sql"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "datasource_id",
+          "title",
+          "sql",
+          "created_at"
+        ],
+        "title": "SavedQueryResponse"
+      },
+      "UserCreate": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "Password"
+          },
+          "role_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Role Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserCreate"
+      },
+      "UserListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "UserListResponse"
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleResponse"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "active",
+          "roles",
+          "created_at"
+        ],
+        "title": "UserResponse"
+      },
+      "UserRolesUpdate": {
+        "properties": {
+          "role_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Role Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role_ids"
+        ],
+        "title": "UserRolesUpdate"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Local accounts, sessions, CSRF"
+    },
+    {
+      "name": "datasources",
+      "description": "Datasource registry and health"
+    },
+    {
+      "name": "datasets",
+      "description": "Catalog and schemas"
+    },
+    {
+      "name": "queries",
+      "description": "SQL submission, results and events"
+    },
+    {
+      "name": "metrics",
+      "description": "Versioned governed metric definitions"
+    },
+    {
+      "name": "analyses",
+      "description": "Sessions, analysis tasks, reports and evidence"
+    },
+    {
+      "name": "admin",
+      "description": "Users, roles, grants, audits"
+    },
+    {
+      "name": "health",
+      "description": "Liveness and readiness"
+    }
+  ]
+}

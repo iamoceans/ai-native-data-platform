@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-09-14T17:26:02.239760+00:00",
+  "datahub_version": "v1.7.0.1",
+  "query_name": "lineage",
+  "request": {
+    "variables": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_daily,DEV)",
+      "direction": "DOWNSTREAM",
+      "count": 20,
+      "start": 0
+    }
+  },
+  "response": {
+    "data": {
+      "searchAcrossLineage": {
+        "total": 0,
+        "searchResults": []
+      }
+    },
+    "extensions": {}
+  }
+}

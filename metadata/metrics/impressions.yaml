@@ -1,0 +1,13 @@
+﻿metric_key: impressions
+version: 1
+name: 广告展示量
+dataset: demo.ads_revenue_daily
+components:
+  impressions: {aggregation: sum, column: impressions}
+formula: impressions
+unit: count
+timezone: UTC
+grain: [dt, country, platform, app_version, ad_network]
+allowed_dimensions: [country, platform, app_version, ad_network]
+aggregation_kind: sum
+freshness: {date_column: dt, completeness_source: demo_manifest}

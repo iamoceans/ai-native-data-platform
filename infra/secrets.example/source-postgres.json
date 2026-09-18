@@ -1,0 +1,5 @@
+{
+  "description": "Template for a datasource credential file. Copy to infra/local-secrets/<secret_ref>.json (git-ignored) or run `make setup-secrets`. The database stores only the logical secret_ref; the password never leaves this mounted file.",
+  "username": "source_reader",
+  "password": "REPLACE-ME"
+}

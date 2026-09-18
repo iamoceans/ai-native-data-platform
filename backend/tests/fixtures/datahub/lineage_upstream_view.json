@@ -1,0 +1,34 @@
+{
+  "captured_at": "2026-09-14T17:30:13.926378+00:00",
+  "datahub_version": "v1.7.0.1",
+  "query_name": "lineage",
+  "request": {
+    "variables": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_by_country,DEV)",
+      "direction": "UPSTREAM",
+      "count": 20,
+      "start": 0
+    }
+  },
+  "response": {
+    "data": {
+      "searchAcrossLineage": {
+        "total": 1,
+        "searchResults": [
+          {
+            "degree": 1,
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-70dbedd4.demo.ads_revenue_daily",
+              "platform": {
+                "name": "doris"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {}
+  }
+}

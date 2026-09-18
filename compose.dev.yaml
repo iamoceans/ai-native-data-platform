@@ -1,0 +1,32 @@
+# Local development / test override.
+#
+# Publishes the control and source database ports on loopback only, so that
+# host-side tests can reach them. The base compose.yaml does not publish any
+# database port (spec section 27.2).
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.dev.yaml --profile core up -d
+
+services:
+  control-postgres:
+    ports:
+      - "127.0.0.1:${CONTROL_DB_PORT:-55430}:5432"
+
+  source-postgres:
+    ports:
+      - "127.0.0.1:${SOURCE_DB_PORT:-55433}:5432"
+
+  # Full-profile services (M2). Publishing these ports lets host-side tests and
+  # the seed script reach MySQL/Doris; the base file publishes nothing.
+  source-mysql:
+    ports:
+      - "127.0.0.1:${MYSQL_DB_PORT:-33060}:3306"
+
+  doris-fe:
+    ports:
+      - "127.0.0.1:${DORIS_FE_SQL_PORT:-19030}:9030"
+      - "127.0.0.1:${DORIS_FE_HTTP_PORT:-18030}:8030"
+
+  doris-be:
+    ports:
+      - "127.0.0.1:${DORIS_BE_HTTP_PORT:-18040}:8040"

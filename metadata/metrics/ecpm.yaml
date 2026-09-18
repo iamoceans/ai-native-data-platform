@@ -1,0 +1,16 @@
+﻿metric_key: ecpm
+version: 1
+name: 广告每千次展示收入
+dataset: demo.ads_revenue_daily
+components:
+  revenue: {aggregation: sum, column: revenue_usd}
+  impressions: {aggregation: sum, column: impressions}
+formula: revenue / nullif(impressions, 0) * 1000
+unit: USD_per_1000_impressions
+currency: USD
+timezone: UTC
+grain: [dt, country, platform, app_version, ad_network]
+allowed_dimensions: [country, platform, app_version, ad_network]
+aggregation_kind: ratio_of_sums
+freshness: {date_column: dt, completeness_source: demo_manifest}
+notes: 禁止 AVG(每日或各组 eCPM)；必须按 SUM(revenue)/SUM(impressions) 计算

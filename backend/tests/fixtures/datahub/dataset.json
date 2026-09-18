@@ -1,0 +1,105 @@
+{
+  "captured_at": "2026-09-14T17:26:02.239760+00:00",
+  "datahub_version": "v1.7.0.1",
+  "query_name": "dataset",
+  "request": {
+    "variables": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_daily,DEV)"
+    }
+  },
+  "response": {
+    "data": {
+      "dataset": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_daily,DEV)",
+        "type": "DATASET",
+        "name": "ainative-70dbedd4.demo.ads_revenue_daily",
+        "description": null,
+        "platform": {
+          "name": "doris"
+        },
+        "properties": {
+          "name": "ainative-70dbedd4.demo.ads_revenue_daily",
+          "description": null,
+          "customProperties": [
+            {
+              "key": "ainative.grain",
+              "value": "dt,country,platform,app_version,ad_network"
+            },
+            {
+              "key": "ainative.metric_keys",
+              "value": "ads_revenue,impressions,ecpm"
+            },
+            {
+              "key": "ainative.currency",
+              "value": "USD"
+            },
+            {
+              "key": "ainative.join_keys",
+              "value": "dt,country,platform,app_version"
+            },
+            {
+              "key": "ainative.business_timezone",
+              "value": "UTC"
+            }
+          ]
+        },
+        "schemaMetadata": {
+          "version": 0,
+          "hash": "",
+          "fields": [
+            {
+              "fieldPath": "dt",
+              "nativeDataType": "date",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "country",
+              "nativeDataType": "varchar(8)",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "platform",
+              "nativeDataType": "varchar(16)",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "app_version",
+              "nativeDataType": "varchar(32)",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "ad_network",
+              "nativeDataType": "varchar(32)",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "impressions",
+              "nativeDataType": "bigint",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "clicks",
+              "nativeDataType": "bigint",
+              "nullable": false,
+              "description": null
+            },
+            {
+              "fieldPath": "revenue_usd",
+              "nativeDataType": "decimal(20,6)",
+              "nullable": false,
+              "description": null
+            }
+          ]
+        },
+        "ownership": null
+      }
+    },
+    "extensions": {}
+  }
+}

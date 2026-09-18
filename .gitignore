@@ -1,0 +1,40 @@
+# AI-Native Data Platform
+
+Monorepo for the AI-Native Data Platform V1 (M0/M1).
+
+# Local state
+.env
+infra/local-secrets/
+infra/secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+*.tsbuildinfo
+dist/
+frontend/src/api/schema.d.ts
+
+# Results / runtime
+/runtime/
+/results/
+*.log
+tmp/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/

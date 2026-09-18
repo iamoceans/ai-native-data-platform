@@ -1,0 +1,273 @@
+name: ${COMPOSE_PROJECT_NAME:-ainative}
+
+x-app-env: &app-env
+  AIND_ENV: ${AIND_ENV:-dev}
+  AIND_LOG_LEVEL: ${AIND_LOG_LEVEL:-INFO}
+  AIND_DATABASE_URL: postgresql+psycopg://${CONTROL_DB_USER}:${CONTROL_DB_PASSWORD}@control-postgres:5432/${CONTROL_DB_NAME}
+  AIND_SECRETS_DIR: /run/secrets
+  AIND_RESULTS_DIR: /data/results
+  AIND_INGESTION_WORK_DIR: /data/ingestion
+  AIND_CORS_ORIGINS: ${AIND_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  AIND_COOKIE_SECURE: ${AIND_COOKIE_SECURE:-false}
+  AIND_SOURCE_HOST_ALLOWLIST: ${AIND_SOURCE_HOST_ALLOWLIST:-localhost,127.0.0.1}
+  AIND_GLOBAL_CONCURRENCY: ${AIND_GLOBAL_CONCURRENCY:-4}
+  AIND_PER_DATASOURCE_CONCURRENCY: ${AIND_PER_DATASOURCE_CONCURRENCY:-2}
+  AIND_PER_USER_CONCURRENCY: ${AIND_PER_USER_CONCURRENCY:-2}
+  AIND_DATAHUB_ENABLED: ${AIND_DATAHUB_ENABLED:-0}
+  AIND_DATAHUB_GMS_URL: ${AIND_DATAHUB_GMS_URL:-http://datahub-gms:8080}
+  AIND_DATAHUB_FRONTEND_URL: ${AIND_DATAHUB_FRONTEND_URL:-http://127.0.0.1:9002}
+  AIND_LLM_PROVIDER: ${AIND_LLM_PROVIDER:-fake}
+  AIND_LLM_BASE_URL: ${AIND_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+  AIND_LLM_MODEL: ${AIND_LLM_MODEL:-}
+  AIND_LLM_API_KEY_FILE: ${AIND_LLM_API_KEY_FILE:-}
+
+x-app-service: &app-service
+  build:
+    context: ./backend
+    additional_contexts:
+      metadata: ./metadata
+  image: ainative-backend:0.1.0
+  env_file:
+    - .env
+  environment: *app-env
+  volumes:
+    - ./infra/local-secrets:/run/secrets:ro
+    - results:/data/results
+    - ingestion_work:/data/ingestion
+  depends_on:
+    control-postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  networks:
+    - backend
+    - datahub-net
+
+services:
+  # -------------------------------------------------------------------------
+  # Control database: business state + task queue (spec section 8)
+  # -------------------------------------------------------------------------
+  control-postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.15}
+    environment:
+      POSTGRES_USER: ${CONTROL_DB_USER}
+      POSTGRES_PASSWORD: ${CONTROL_DB_PASSWORD}
+      POSTGRES_DB: ${CONTROL_DB_NAME}
+    volumes:
+      - control_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - backend
+    profiles: ["core", "full"]
+
+  # -------------------------------------------------------------------------
+  # Source PostgreSQL: demo source database (kept separate from control DB)
+  # -------------------------------------------------------------------------
+  source-postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.15}
+    environment:
+      POSTGRES_USER: ${SOURCE_BOOTSTRAP_USER}
+      POSTGRES_PASSWORD: ${SOURCE_BOOTSTRAP_PASSWORD}
+      POSTGRES_DB: ${SOURCE_DB_NAME}
+      SOURCE_DB_USER: ${SOURCE_DB_USER:-source_reader}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+    volumes:
+      - source_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/source-init.sh:/docker-entrypoint-initdb.d/10-source-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - backend
+    profiles: ["core", "full"]
+
+  # -------------------------------------------------------------------------
+  # Application processes (same image, different entrypoints)
+  # -------------------------------------------------------------------------
+  backend:
+    <<: *app-service
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      control-postgres:
+        condition: service_healthy
+    profiles: ["core", "full"]
+
+  query-worker:
+    <<: *app-service
+    command: ["python", "-m", "app.workers.query_worker"]
+    profiles: ["core", "full"]
+
+  agent-worker:
+    <<: *app-service
+    command: ["python", "-m", "app.workers.agent_worker"]
+    profiles: ["core", "full"]
+
+  frontend:
+    build:
+      context: ./frontend
+    image: ainative-frontend:0.1.0
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - backend
+    profiles: ["core", "full"]
+
+  # -------------------------------------------------------------------------
+  # Full profile (M2): source MySQL and Doris FE/BE.
+  # -------------------------------------------------------------------------
+  source-mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4.11}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_SOURCE_DB:-ainative_source}
+      MYSQL_USER: ${MYSQL_ADMIN_USER:-source_admin}
+      MYSQL_PASSWORD: ${MYSQL_ADMIN_PASSWORD}
+      APP_READER_USER: ${MYSQL_READER_USER:-source_reader}
+      APP_READER_PASSWORD: ${MYSQL_READER_PASSWORD}
+    volumes:
+      - source_mysqldata:/var/lib/mysql
+      - ./infra/mysql/source-init.sh:/docker-entrypoint-initdb.d/10-source-init.sh:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - backend
+    profiles: ["full"]
+
+  # Doris FE/BE use a dedicated network with fixed addresses because BE
+  # registers itself by IP with the FE (spec 27.2: version-specific network
+  # requirements are recorded, not assumed to be portable).
+  doris-fe:
+    image: ${DORIS_FE_IMAGE:-apache/doris:fe-3.1.4}
+    environment:
+      FE_SERVERS: fe1:172.29.0.5:9010
+      FE_ID: 1
+    volumes:
+      - doris_fe_meta:/opt/apache-doris/fe/doris-meta
+      - doris_fe_log:/opt/apache-doris/fe/log
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8030/api/bootstrap || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+    networks:
+      doris-net:
+        ipv4_address: 172.29.0.5
+      backend: {}
+    restart: unless-stopped
+    profiles: ["full"]
+
+  doris-be:
+    image: ${DORIS_BE_IMAGE:-apache/doris:be-3.1.4}
+    environment:
+      FE_SERVERS: fe1:172.29.0.5:9010
+      BE_ADDR: 172.29.0.6:9050
+    volumes:
+      - doris_be_storage:/opt/apache-doris/be/storage
+      - doris_be_log:/opt/apache-doris/be/log
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8040/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
+    networks:
+      doris-net:
+        ipv4_address: 172.29.0.6
+    restart: unless-stopped
+    profiles: ["full"]
+
+  # One-shot initializer: creates the demo database and the SELECT-only account
+  # through the FE MySQL protocol (no dependency on image-specific hooks).
+  doris-init:
+    image: ${MYSQL_IMAGE:-mysql:8.4.11}
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    environment:
+      DORIS_READER_PASSWORD: ${DORIS_READER_PASSWORD}
+      DORIS_ADMIN_PASSWORD: ${DORIS_ADMIN_PASSWORD}
+    volumes:
+      - ./infra/doris/init.sql.template:/init/init.sql.template:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed -e "s|\$${DORIS_READER_PASSWORD}|$$DORIS_READER_PASSWORD|g" \
+            -e "s|\$${DORIS_ADMIN_PASSWORD}|$$DORIS_ADMIN_PASSWORD|g" \
+            /init/init.sql.template | mysql -h doris-fe -P 9030 -uroot --protocol=TCP -f
+    networks:
+      - doris-net
+      - backend
+    restart: "no"
+    profiles: ["full"]
+
+  # -------------------------------------------------------------------------
+  # Ingestion worker (M3): pinned DataHub ingestion image + platform runner.
+  # Polls the control database for QUEUED ingestion tasks and runs
+  # `datahub ingest` with the recipe payload written by the API.
+  # -------------------------------------------------------------------------
+  ingestion:
+    build:
+      context: ./ingestion
+      args:
+        INGESTION_BASE_IMAGE: ${DATAHUB_INGESTION_IMAGE:-acryldata/datahub-ingestion:v1.7.0.1}
+    image: ainative-ingestion:0.1.0
+    environment:
+      AIND_DATABASE_URL: postgresql+psycopg://${CONTROL_DB_USER}:${CONTROL_DB_PASSWORD}@control-postgres:5432/${CONTROL_DB_NAME}
+      AIND_SECRETS_DIR: /run/secrets
+      AIND_INGESTION_WORK_DIR: /data/ingestion
+      AIND_INGESTION_VISIBILITY_TIMEOUT: ${AIND_INGESTION_VISIBILITY_TIMEOUT:-60}
+      DATAHUB_GMS_URL: ${AIND_DATAHUB_GMS_URL:-http://datahub-gms:8080}
+    volumes:
+      - ./infra/local-secrets:/run/secrets:ro
+      - ingestion_work:/data/ingestion
+    depends_on:
+      control-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+      - datahub-net
+    profiles: ["full"]
+
+volumes:
+  control_pgdata:
+  source_pgdata:
+  results:
+  ingestion_work:
+  source_mysqldata:
+  doris_fe_meta:
+  doris_fe_log:
+  doris_be_storage:
+  doris_be_log:
+
+networks:
+  backend:
+    name: ${COMPOSE_PROJECT_NAME:-ainative}-backend
+  datahub-net:
+    name: datahub-net
+    external: true
+  doris-net:
+    name: ${COMPOSE_PROJECT_NAME:-ainative}-doris-net
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24

@@ -1,0 +1,16 @@
+# Line endings.
+#
+# Normalize text files to LF in the repository.
+* text=auto
+
+# The files below are executed or parsed by Linux tooling (Docker builds, the
+# container entrypoint scripts bind-mounted into PostgreSQL/MySQL, GNU make under
+# WSL2). This host has core.autocrlf=true, so without an explicit eol=lf a fresh
+# clone would check them out with CRLF and break shell scripts, make recipes and
+# Dockerfile line continuations.
+*.sh        text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+*.conf      text eol=lf
+*.sql       text eol=lf
+*.template  text eol=lf

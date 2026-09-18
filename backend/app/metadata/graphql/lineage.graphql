@@ -1,0 +1,20 @@
+query searchLineage($urn: String!, $direction: LineageDirection!, $count: Int!, $start: Int!) {
+  searchAcrossLineage(
+    input: {urn: $urn, direction: $direction, count: $count, start: $start, types: [DATASET]}
+  ) {
+    total
+    searchResults {
+      degree
+      entity {
+        urn
+        type
+        ... on Dataset {
+          name
+          platform {
+            name
+          }
+        }
+      }
+    }
+  }
+}

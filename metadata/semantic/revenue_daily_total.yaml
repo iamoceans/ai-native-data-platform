@@ -1,0 +1,8 @@
+dataset: demo.revenue_daily_total
+description: 由广告收入与内购收入在相同日期/维度上分别聚合后再加总的派生日收入表
+grain: [dt, country, platform, app_version]
+business_timezone: UTC
+currency: USD
+metric_keys: [total_revenue]
+join_keys: [dt, country, platform, app_version]
+notes: 由 demo-load 按 pipeline_lineage.json 中的声明 SQL 生成（declared_by_demo_pipeline），禁止直接 JOIN 两张细粒度事实表

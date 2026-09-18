@@ -1,0 +1,6 @@
+﻿dataset: ainative_source.app_release_config
+description: 各平台应用版本的发布配置（生效时间与发布说明）
+grain: [platform, app_version]
+business_timezone: UTC
+join_keys: [platform, app_version]
+notes: MySQL demo table; release_at 用于版本维度的时间对照，不能直接当作因果证据

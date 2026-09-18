@@ -1,0 +1,12 @@
+# Whitelisted cross-source relation (spec section 17).
+# Doris ad revenue version dimension -> MySQL release configuration.
+# Plain many-to-one lookup (release metadata is background context, not an
+# as-of input); revenue totals must be preserved across the join.
+relation_id: ads_to_app_release
+left_dataset: demo.ads_revenue_daily
+right_dataset: ainative_source.app_release_config
+left_keys: [platform, app_version]
+right_keys: [platform, app_version]
+relationship: many_to_one
+amount_columns: [revenue_usd]
+description: 广告收入（Doris）按 platform/app_version 关联发布配置（MySQL）

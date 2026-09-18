@@ -1,0 +1,16 @@
+-- Doris source initialization (runs against the FE over the MySQL protocol as
+-- root). Creates the demo database and the SELECT-only account used by the
+-- Doris provider. The DDL/data seed is applied separately by
+-- scripts/seed_sources.py so it can be re-run without touching users.
+
+CREATE DATABASE IF NOT EXISTS demo;
+
+CREATE USER IF NOT EXISTS 'doris_reader' IDENTIFIED BY '${DORIS_READER_PASSWORD}';
+ALTER USER 'doris_reader' IDENTIFIED BY '${DORIS_READER_PASSWORD}';
+GRANT SELECT_PRIV ON demo.* TO 'doris_reader'@'%';
+
+-- The administrator account used to seed/verify data on this local stack.
+CREATE USER IF NOT EXISTS 'doris_admin' IDENTIFIED BY '${DORIS_ADMIN_PASSWORD}';
+ALTER USER 'doris_admin' IDENTIFIED BY '${DORIS_ADMIN_PASSWORD}';
+GRANT ALL ON demo.* TO 'doris_admin'@'%';
+GRANT ADMIN_PRIV ON *.*.* TO 'doris_admin'@'%';

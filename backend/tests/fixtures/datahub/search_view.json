@@ -1,0 +1,321 @@
+{
+  "captured_at": "2026-09-14T17:30:13.926378+00:00",
+  "datahub_version": "v1.7.0.1",
+  "query_name": "search",
+  "request": {
+    "variables": {
+      "query": "ads_revenue_by_country",
+      "start": 0,
+      "count": 20
+    }
+  },
+  "response": {
+    "data": {
+      "searchAcrossEntities": {
+        "start": 0,
+        "count": 20,
+        "total": 9,
+        "searchResults": [
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_by_country,DEV)",
+              "type": "DATASET",
+              "name": "ads_revenue_by_country",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ads_revenue_by_country",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "view_definition",
+                    "value": "CREATE VIEW `ads_revenue_by_country`\n(dt,country,impressions,revenue_usd)\n AS SELECT `demo`.`ads_revenue_daily`.`dt`, `demo`.`ads_revenue_daily`.`country`,\n               SUM(`demo`.`ads_revenue_daily`.`impressions`) AS `impressions`,\n               SUM(`demo`.`ads_revenue_daily`.`revenue_usd`) AS `revenue_usd`\n        FROM `demo`.`ads_revenue_daily`\n        GROUP BY `demo`.`ads_revenue_daily`.`dt`, `demo`.`ads_revenue_daily`.`country`;"
+                  },
+                  {
+                    "key": "is_view",
+                    "value": "True"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.iap_revenue_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-70dbedd4.demo.iap_revenue_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-70dbedd4.demo.iap_revenue_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "iap_revenue"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.join_keys",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-a4307b3f.demo.iap_revenue_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-a4307b3f.demo.iap_revenue_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-a4307b3f.demo.iap_revenue_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "iap_revenue"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.join_keys",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.ads_revenue_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-70dbedd4.demo.ads_revenue_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-70dbedd4.demo.ads_revenue_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform,app_version,ad_network"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "ads_revenue,impressions,ecpm"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.join_keys",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-a4307b3f.demo.ads_revenue_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-a4307b3f.demo.ads_revenue_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-a4307b3f.demo.ads_revenue_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform,app_version,ad_network"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "ads_revenue,impressions,ecpm"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.join_keys",
+                    "value": "dt,country,platform,app_version"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-70dbedd4.demo.user_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-70dbedd4.demo.user_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-70dbedd4.demo.user_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "dau,new_users"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:doris,ainative-a4307b3f.demo.user_daily,DEV)",
+              "type": "DATASET",
+              "name": "ainative-a4307b3f.demo.user_daily",
+              "platform": {
+                "name": "doris"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-a4307b3f.demo.user_daily",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "dau,new_users"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,ainative-184ca931.public.fixture_metrics,DEV)",
+              "type": "DATASET",
+              "name": "ainative-184ca931.public.fixture_metrics",
+              "platform": {
+                "name": "postgres"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-184ca931.public.fixture_metrics",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "ads_revenue,impressions"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,ainative-29fc6cb5.public.fixture_metrics,DEV)",
+              "type": "DATASET",
+              "name": "ainative-29fc6cb5.public.fixture_metrics",
+              "platform": {
+                "name": "postgres"
+              },
+              "description": null,
+              "properties": {
+                "name": "ainative-29fc6cb5.public.fixture_metrics",
+                "description": null,
+                "customProperties": [
+                  {
+                    "key": "ainative.grain",
+                    "value": "dt,country,platform"
+                  },
+                  {
+                    "key": "ainative.metric_keys",
+                    "value": "ads_revenue,impressions"
+                  },
+                  {
+                    "key": "ainative.currency",
+                    "value": "USD"
+                  },
+                  {
+                    "key": "ainative.business_timezone",
+                    "value": "UTC"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {}
+  }
+}

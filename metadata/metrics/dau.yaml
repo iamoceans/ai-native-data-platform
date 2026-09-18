@@ -1,0 +1,13 @@
+﻿metric_key: dau
+version: 1
+name: 日活跃用户数
+dataset: demo.user_daily
+components:
+  dau: {aggregation: sum, column: dau}
+formula: dau
+unit: users
+timezone: UTC
+grain: [dt, country, platform]
+allowed_dimensions: [country, platform]
+aggregation_kind: distinct_per_day
+notes: 单日 distinct user_id；跨日或跨非互斥维度不相加；展示日均 DAU 而不是总和

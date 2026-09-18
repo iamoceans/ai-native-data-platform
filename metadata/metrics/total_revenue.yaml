@@ -1,0 +1,15 @@
+﻿metric_key: total_revenue
+version: 1
+name: 总收入（广告 + 内购）
+datasets: [demo.ads_revenue_daily, demo.iap_revenue_daily]
+components:
+  ads: {aggregation: sum, column: revenue_usd}
+  iap: {aggregation: sum, column: revenue_usd}
+formula: ads + iap
+unit: USD
+currency: USD
+timezone: UTC
+grain: [dt, country, platform, app_version]
+allowed_dimensions: [country, platform, app_version]
+aggregation_kind: sum_of_aggregates
+notes: 必须先分别聚合到相同日期/维度再加总，禁止直接 JOIN 两张细粒度事实表
