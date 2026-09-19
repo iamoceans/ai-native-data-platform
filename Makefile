@@ -33,13 +33,14 @@ TEST_DATAHUB_ENV = AIND_DATAHUB_ENABLED=1 AIND_DATAHUB_GMS_URL=http://127.0.0.1:
 SEED ?= 42
 AS_OF ?= 2026-09-13
 SCALE ?= small
+CASES ?= 10
 SCENARIO ?= ecpm_drop
 DEMO_RUN ?= $(shell ls -td runtime/demo/*/ 2>/dev/null | head -n1 | xargs -r -n1 basename)
 
 .PHONY: help doctor setup-secrets up-core up-full down migrate bootstrap \
         test-core test-unit test-integration test-security smoke-core \
         api-spec types build-core logs ps seed-sources up-full-data \
-        demo-generate demo-load demo-lineage metadata-sync demo-verify reset-demo \
+        demo-generate demo-load demo-lineage metadata-sync demo-verify eval-agent \n        reset-demo \
         smoke-full evaluate-live
 
 help: ## Show available targets
@@ -146,6 +147,9 @@ demo-lineage: ## Publish declared demo lineage (DataHub SDK in the ingestion ima
 
 demo-verify: ## Verify the newest demo run against its ground truth (offline)
 	$(UV) scripts/demo_verify.py
+
+eval-agent: ## A09 harness: run the fixed scenarios through the deployed analysis loop
+	$(UV) scripts/eval_agent.py --cases $(CASES) --scale $(SCALE) --password "$(AIND_SMOKE_PASSWORD)"
 
 reset-demo: ## Destructive: rebuild the demo data (requires CONFIRM=demo)
 	@test "$(CONFIRM)" = "demo" || (echo "set CONFIRM=demo to confirm the destructive reset"; exit 2)

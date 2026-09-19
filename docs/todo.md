@@ -349,6 +349,23 @@ A14 (cross-source join), A17 (medium resource report).
       (A17: 927,456 rows, 53.9 MiB, 17.3 s generation, 4.6 s load, 97 MiB Doris
       storage, 0.50-1.30 s timed aggregates, 22 MiB peak tracked allocations).
 
+### M5 test evidence (executed 2026-09-19)
+
+```powershell
+# static suites (unit + security + contract)
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# -> 238 passed
+
+# PostgreSQL integration (core profile up, MySQL/Doris/DataHub absent)
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q
+# -> 45 passed, 22 skipped (skips are the absent engines/services)
+
+# A09 harness against the deployed stack (full profile: MySQL + Doris)
+uv run --project backend --frozen python scripts/eval_agent.py --cases 10 --password <admin pw>
+# -> a09_status=not_executed_no_real_model; target_top3=7/7; unforced=3/3; scored=10/10
+#    runtime/eval/a09-20260919-175727.json
+```
+
 ### M4 test evidence (executed 2026-09-16)
 
 ```powershell
@@ -384,7 +401,7 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
 
 ---
 
-## M5 - governed analysis loop (in progress)
+## M5 - governed analysis loop (closed on 2026-09-19; A09 still needs a real model)
 
 - [x] Explicit analysis state machine and immutable budget accounting.
 - [x] Deterministic fake adapter and OpenAI-compatible structured adapter; API
@@ -400,7 +417,32 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       produces PARTIAL with no numeric conclusion.
 - [x] PostgreSQL integration acceptance (`test_analysis_flow.py`) and role
       revocation cancellation; core profile 43 passed on 2026-09-18.
-- [ ] A09: run the ten-scenario evaluation with a configured real model and record
-      exact model ID, prompt version, tokens, latency and evidence-grounded score.
-- [ ] Adaptive observation loop for driver decomposition and bounded SQL repair.
+- [x] Adaptive observation loop: the runner is split into explicit
+      EXECUTING -> OBSERVING -> EXECUTING|SYNTHESIZING phases, and OBSERVING
+      extends the plan with a `driver_decomposition` step (declared per metric in
+      `metadata/metrics/*.yaml`, e.g. `ads_revenue -> impressions`) only when the
+      change is material, the budget allows it and the plan depth has room.
+      Integration test: `test_analysis_adapts_with_driver_decomposition`
+      (4 queries, driver artifact, report claim bound to `/ecpm_effect`).
+- [x] Bounded SQL repair: `app/agent/repair.py` classifies failures
+      (repairable = syntax/known-column, policy = permission/forbidden/limits,
+      resource = timeout/cancel/unavailable). One repair = one dropped column,
+      applied to every broken query, never more than `agent_max_sql_repairs`, and
+      policy refusals are never retried with a rewritten statement. The repaired
+      queries are listed with `SKIPPED` steps and a report limitation.
+      Integration test: `test_analysis_repairs_a_dropped_dimension_within_budget`
+      (schema drifts between submission and execution).
+- [x] Materiality band (`MATERIALITY_RELATIVE_BAND = 0.5%`): a change inside the
+      band is reported as immaterial with no forced attribution, which is what
+      makes the `no_change` / `config_duplicate` scenarios honest (A10).
+- [x] A09 harness `scripts/eval_agent.py` (+ `make eval-agent`): ten fixed
+      (scenario, seed) cases through the deployed stack, scored against the
+      generator's ground truth with model id, prompt version, tokens, latency and
+      per-case failure reasons recorded in `runtime/eval/a09-*.json`.
+- [ ] A09 result: **not executed (no real model configured)**. The recorded run
+      is a deterministic-path baseline: status `not_executed_no_real_model`,
+      target cell in the top-3 contributors 7/7 target cases, no forced
+      attribution 3/3 no-target cases, evidence-consistent 10/10. Configure
+      `AIND_LLM_PROVIDER=openai-compatible` with a model and key file and re-run
+      `make eval-agent` to produce the real A09 record.
 - [ ] M6 charts, drilldown, remaining admin screens and live worker-kill acceptance.

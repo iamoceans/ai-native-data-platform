@@ -34,6 +34,18 @@ class MetricFreshness(BaseModel):
     completeness_source: str
 
 
+class MetricDriverDecomposition(BaseModel):
+    """Declares the companion metric that makes a factor split possible.
+
+    Only a definition can declare this; a model or a user question cannot, so
+    the revenue = impressions x eCPM split stays a property of the metric
+    contract rather than a runtime guess.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    impressions_metric: str = Field(min_length=2)
+
+
 class MetricDefinitionModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +63,7 @@ class MetricDefinitionModel(BaseModel):
     allowed_dimensions: list[str] = Field(default_factory=list)
     aggregation_kind: str
     freshness: MetricFreshness | None = None
+    driver_decomposition: MetricDriverDecomposition | None = None
     notes: str | None = None
 
     def model_post_init(self, __context) -> None:  # noqa: D105

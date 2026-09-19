@@ -273,11 +273,24 @@ cd frontend
 E2E_BASE_URL=http://127.0.0.1:3000 E2E_ADMIN_PASSWORD=<admin password> npx playwright test
 ```
 
-Recorded results for the current revision (2026-09-18): **235 static tests passed**
-and the PostgreSQL integration profile reported **43 passed / 22 skipped**. The
+Recorded results for the current revision (2026-09-19): **238 static tests passed**
+and the PostgreSQL integration profile reported **45 passed / 22 skipped**. The
 skips are the intentionally absent MySQL, Doris and DataHub services in the core
 profile. The earlier M4 full-profile record remains **63 passed** and has not been
 rerun after the M5 changes.
+
+The M5 analysis loop additionally has an evaluation harness:
+
+```bash
+make eval-agent                      # ten fixed (scenario, seed) cases, full profile
+```
+
+Its 2026-09-19 record (`runtime/eval/a09-*.json`) reports
+`a09_status=not_executed_no_real_model`: no LLM provider is configured, so the run
+is a deterministic-path baseline (target cell in the top three contributors 7/7
+target cases, no forced attribution 3/3 no-target cases, evidence-consistent
+10/10). Configure `AIND_LLM_PROVIDER=openai-compatible` plus a model and key file
+to produce the real A09 record.
 
 The M4 full-profile run also recorded
 **three engine smokes passed**, `verify_metadata.py` all checks passed

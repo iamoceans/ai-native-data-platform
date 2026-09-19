@@ -370,6 +370,8 @@ class PostgresProvider:
             return "permission"
         if isinstance(exc, psycopg.errors.UndefinedTable):
             return "schema"
+        if isinstance(exc, psycopg.errors.UndefinedColumn):
+            return "schema"
         if isinstance(exc, psycopg.errors.SyntaxError):
             return "syntax"
         if isinstance(exc, psycopg.OperationalError):

@@ -354,6 +354,20 @@ def execute_claim(
                 f"source connection failed: {_short(exc)}",
                 None,
             )
+        elif classification == "schema":
+            # The registered snapshot still had the object; the source no longer
+            # does. The code is what lets an analysis repair its own statement.
+            failure = (
+                ErrorCode.SCHEMA_CHANGED,
+                f"the source rejected the object reference: {_short(exc)}",
+                None,
+            )
+        elif classification == "syntax":
+            failure = (
+                ErrorCode.SQL_SYNTAX_ERROR,
+                f"the source rejected the statement syntax: {_short(exc)}",
+                None,
+            )
         else:
             logger.exception("execution error", extra={"query_id": str(claim.query_id)})
             failure = (

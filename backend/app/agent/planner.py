@@ -67,12 +67,21 @@ def validate_plan(
 
 
 def comparison_plan(*, question: str, metric_key: str, dimensions: list[str]) -> InvestigationPlan:
+    """A compare step plus one breakdown per selected dimension.
+
+    The breakdowns are siblings (all depend on ``totals``), not a drill-down
+    chain: the runner answers them with a single grouped query per period, so
+    chaining them would claim a nesting the platform never performs - and would
+    silently spend the plan's depth budget on parallel work.
+    """
     steps = [PlanStep(key="totals", kind="compare", metric=metric_key)]
-    previous = "totals"
     for index, dimension in enumerate(dimensions[:3], start=1):
-        key = f"breakdown_{index}"
         steps.append(
-            PlanStep(key=key, kind="breakdown", depends_on=[previous], dimension=dimension)
+            PlanStep(
+                key=f"breakdown_{index}",
+                kind="breakdown",
+                depends_on=["totals"],
+                dimension=dimension,
+            )
         )
-        previous = key
     return InvestigationPlan(objective=question, metric_key=metric_key, steps=steps)

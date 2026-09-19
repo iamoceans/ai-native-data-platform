@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
@@ -8,8 +9,16 @@ from pydantic import BaseModel
 from app.agent.budget import AnalysisBudget, BudgetExceeded
 from app.agent.llm import FakeLLMProvider, OpenAICompatibleProvider
 from app.agent.planner import InvestigationPlan, PlanningSelection, comparison_plan, validate_plan
-from app.agent.report import ReportValidationError, build_comparison_report, validate_report
+from app.agent.repair import FailureClass, classify_failure, plan_repair
+from app.agent.report import (
+    ReportValidationError,
+    build_comparison_report,
+    is_material,
+    validate_report,
+)
 from app.agent.state import AnalysisStatus, InvalidAnalysisTransition, transition
+from app.constants import ErrorCode
+from app.metrics.registry import MetricDefinitionModel, load_metric_definitions
 
 
 def test_analysis_state_machine_only_allows_explicit_path():
@@ -211,3 +220,149 @@ def test_structured_plan_cannot_turn_prompt_injection_into_a_tool():
                 ],
             }
         )
+
+
+def test_repair_policy_only_retries_capability_failures():
+    assert classify_failure(ErrorCode.SQL_SYNTAX_ERROR) is FailureClass.REPAIRABLE
+    assert classify_failure(ErrorCode.SCHEMA_CHANGED) is FailureClass.REPAIRABLE
+    assert classify_failure(ErrorCode.PERMISSION_DENIED) is FailureClass.POLICY
+    assert classify_failure(ErrorCode.SQL_FORBIDDEN) is FailureClass.POLICY
+    assert classify_failure(ErrorCode.QUERY_TOO_LARGE) is FailureClass.POLICY
+    assert classify_failure(ErrorCode.QUERY_TIMEOUT) is FailureClass.RESOURCE
+
+    refusal = plan_repair(
+        failure_code=ErrorCode.PERMISSION_DENIED,
+        group_by=["country"],
+        schema_columns={"country"},
+        repairs_used=0,
+    )
+    assert not refusal.possible
+    assert "not repairable" in refusal.reason
+
+    drifted = plan_repair(
+        failure_code=ErrorCode.SCHEMA_CHANGED,
+        group_by=["dt", "country", "campaign"],
+        schema_columns={"dt", "country"},
+        repairs_used=0,
+    )
+    assert drifted.possible
+    assert drifted.dimension == "campaign"
+
+    exhausted = plan_repair(
+        failure_code=ErrorCode.SCHEMA_CHANGED,
+        group_by=["campaign"],
+        schema_columns=set(),
+        repairs_used=2,
+        max_repairs=2,
+    )
+    assert not exhausted.possible
+    assert "budget exhausted" in exhausted.reason
+
+    definition_side = plan_repair(
+        failure_code=ErrorCode.SQL_SYNTAX_ERROR,
+        group_by=[],
+        schema_columns={"dt"},
+        repairs_used=0,
+    )
+    assert not definition_side.possible
+
+
+def test_report_attributes_driver_effects_only_when_declared_and_defined():
+    calculation = {
+        "baseline": "1000",
+        "current": "900",
+        "change": "-100",
+        "change_pct": "-0.1",
+        "contribution": {
+            "groups": [{"key": ["US"], "delta": "-90", "net_change_share": "0.9"}]
+        },
+    }
+    drivers = {
+        "id": "d1",
+        "calculation_id": "d1",
+        "target_key": ["US"],
+        "status": "ok",
+        "impression_effect": "-40",
+        "ecpm_effect": "-60",
+        "impressions_metric": "impressions",
+        "query_ids": ["q3", "q4"],
+    }
+    report = build_comparison_report(
+        analysis_id="a4",
+        question="why did ads revenue drop",
+        comparison={},
+        calculation_id="c4",
+        calculation=calculation,
+        query_ids=["q1", "q2"],
+        dataset_ids=["d1"],
+        metric_key="ads_revenue",
+        metric_version=1,
+        evidence_available_until=None,
+        drivers=drivers,
+    )
+    driver_claim = next(claim for claim in report["claims"] if claim["id"] == "claim-3")
+    assert driver_claim["calculation_id"] == "d1"
+    assert driver_claim["value_pointer"] == "/ecpm_effect"
+    assert driver_claim["query_ids"] == ["q3", "q4"]
+    assert report["hypotheses"][0]["status"] == "unverified"
+
+    undefined = build_comparison_report(
+        analysis_id="a5",
+        question="why",
+        comparison={},
+        calculation_id="c5",
+        calculation=calculation,
+        query_ids=["q1"],
+        dataset_ids=["d1"],
+        metric_key="ads_revenue",
+        metric_version=1,
+        evidence_available_until=None,
+        drivers={"calculation_id": "d2", "status": "undefined_impressions", "target_key": ["US"]},
+    )
+    assert [claim["id"] for claim in undefined["claims"]] == ["claim-1", "claim-2"]
+    assert any("eCPM 未定义" in item for item in undefined["limitations"])
+
+
+def test_shipped_metric_definitions_declare_driver_components_explicitly():
+    definitions = {item.metric_key: item for item in load_metric_definitions(Path("metadata"))}
+    assert definitions["ads_revenue"].driver_decomposition is not None
+    assert definitions["ads_revenue"].driver_decomposition.impressions_metric == "impressions"
+    assert definitions["dau"].driver_decomposition is None
+    with pytest.raises(ValueError):
+        MetricDefinitionModel.model_validate(
+            {
+                "metric_key": "bad_metric",
+                "version": 1,
+                "name": "bad",
+                "dataset": "public.t",
+                "components": {"value": {"aggregation": "sum", "column": "v"}},
+                "formula": "value",
+                "unit": "count",
+                "aggregation_kind": "sum",
+                "driver_decomposition": {"impressions_metric": "impressions", "formula": "x*y"},
+            }
+        )
+
+
+def test_materiality_band_separates_noise_from_injected_change():
+    # Generator noise on the demo totals is ~0.1%; every scenario injects >=3%.
+    assert is_material("55.788522", "48919.256121") is False
+    assert is_material("-2515.294902", "48919.256121") is True
+    assert is_material("0", "0") is False
+
+    report = build_comparison_report(
+        analysis_id="a6",
+        question="did anything change",
+        comparison={},
+        calculation_id="c6",
+        calculation={"baseline": "48919.256121", "current": "48975.044643", "change": "55.788522"},
+        query_ids=["q1"],
+        dataset_ids=["d1"],
+        metric_key="ads_revenue",
+        metric_version=1,
+        evidence_available_until=None,
+    )
+    assert report["materiality"]["material"] is False
+    assert [claim["id"] for claim in report["claims"]] == ["claim-1"]
+    assert report["hypotheses"] == []
+    assert any("材料性阈值" in item for item in report["limitations"])

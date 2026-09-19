@@ -12,3 +12,4 @@ grain: [dt, country, platform, app_version, ad_network]
 allowed_dimensions: [country, platform, app_version, ad_network]
 aggregation_kind: sum
 freshness: {date_column: dt, completeness_source: demo_manifest}
+driver_decomposition: {impressions_metric: impressions}

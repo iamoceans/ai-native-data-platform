@@ -131,10 +131,10 @@ A17 resource report (medium scale, reference host):
 | A06 | Canonical 67 numerical check | **passed** (M4) | Loaded into the source PostgreSQL and queried **through the Query Gateway**: total 10,000 -> 9,000 (delta -1,000, change_pct -0.1); target -670, net decline share 0.67, contribution -6.7 pp; `test_analysis_sql.py` + canonical_67 generator scenario |
 | A07 | Factor decomposition | **passed** (M4) | Symmetric impression x eCPM split; unit tests assert the 1e-6 USD tolerance over random Decimal inputs; live check on the loaded Doris demo reproduces it for the scenario target |
 | A08 | Additive groups | **passed** (M4) | Group deltas must sum to the parent delta (mismatch raises `GROUP_SUM_MISMATCH`); NULL bucket and zero-fill covered by unit tests; demo-verify asserts the partition sum for every scenario |
-| A09 | Real-agent accuracy | **not executed** | OpenAI-compatible structured adapter exists, but no real provider was configured; the required ten-scenario model evaluation remains open |
-| A10 | No-anomaly / incomplete-day handling | **partial** (M5) | Generator/kernel paths still pass; M5 report tests prove no-change emits no forced hypothesis and incomplete evidence yields PARTIAL without numeric claims. Full scenario-through-agent evaluation remains open |
+| A09 | Real-agent accuracy | **harness ready, not executed** | `scripts/eval_agent.py` + `make eval-agent` run ten fixed (scenario, seed) cases through the deployed loop and score them against the generator's ground truth (model id, prompt version, tokens, latency, per-case failure recorded). The recorded 2026-09-19 run reports `a09_status=not_executed_no_real_model` - no provider is configured - with a deterministic baseline of target-in-top3 7/7 target cases, no forced attribution 3/3 no-target cases and evidence-consistent 10/10 |
+| A10 | No-anomaly / incomplete-day handling | **passed** (M5, 2026-09-19) | Generator/kernel paths still pass; the runner now applies a documented 0.5% materiality band, so a change inside it is reported as immaterial with no contributor claim and no hypotheses. Verified through the deployed stack by the A09 harness: `no_change` and `config_duplicate` end COMPLETED with no forced attribution, `incomplete_day` ends PARTIAL without numeric claims (3/3 no-target cases) |
 | A11 | Cancel on three engines | **passed** (M2) | PostgreSQL `57014`-based, MySQL `KILL QUERY` (1317), Doris `KILL QUERY` ("cancel query by user"); timeouts verified per engine |
-| A12 | Restart recovery | **partial** | lease loss, fencing, no double publish verified; live kill-the-worker E2E is M6 |
+| A12 | Restart recovery | **partial** | lease loss, fencing, no double publish verified; the M5 runner re-enters any phase after a claim loss (EXECUTING re-reads the query set, OBSERVING re-decides, SYNTHESIZING re-writes artifacts idempotently by content hash), but a live kill-the-worker E2E is still M6 |
 | A13 | Idempotency + concurrency | **passed** (M1/M2) | idempotent submit, single claim, capacity caps verified; three engines share the same scheduler; ingestion concurrency (409 for a second active sync) verified in M3 |
 | A14 | Cross-source joins | **passed** (M4) | Whitelisted as-of join (Doris cohorts + PostgreSQL configuration) executed through two real query results: amounts preserved, unmatched rate reported; a duplicate overlapping configuration raises `JOIN_CARDINALITY_VIOLATION` instead of double counting |
 | A15 | SSE reconnect/expiry/revocation | **partial** | replay, revocation, cursor expiry logic verified; network-drop client test pending (M6) |
@@ -151,11 +151,15 @@ A17 resource report (medium scale, reference host):
 - MySQL `KILL QUERY` for other users' connections (needs PROCESS) is out of scope;
   the platform only kills its own dedicated connections.
 - Doris multi-BE topologies, workload groups and external catalogs are out of V1 scope.
-- No real LLM provider was configured for this run, so the ten-scenario A09 model
-  evaluation is open. The fake path records zero model tokens; the real adapter
-  captures provider usage when returned. The deterministic plan/report path and
-  unit-level A10 behavior are implemented, while full scenario-through-agent A10
-  evaluation remains open.
+- No real LLM provider was configured for this run, so A09 itself is open: the
+  harness (`scripts/eval_agent.py`) ran the ten cases on the deterministic path
+  (model id `deterministic-template-v1`, zero model tokens) and labels the record
+  `not_executed_no_real_model`. A10's scenario-through-agent behaviour *is*
+  executed there (no_target cases 3/3 unforced), but a real-model A09 accuracy
+  number does not exist yet.
+- The full-profile matrix was last rerun in the M4 revision; the M5 changes were
+  verified on the core profile (48 tests) plus the A09 harness on the full
+  profile, not by rerunning the whole three-engine integration matrix.
 - `make` was not executed under WSL on this host; equivalent `scripts/dev.ps1`
   targets and direct commands were used.
 - The M3/M4 integration tests that need the deployed stack skip when it is down;
@@ -192,6 +196,11 @@ The last full-profile record (2026-09-16) is **223 static + 63 integration = 286
 backend tests passed**, **2 Playwright journeys passed**, three engine smokes
 passed, `verify_metadata.py` all checks passed (Doris 8/8, PostgreSQL 4/4,
 MySQL 2/2 mapped), and `demo-verify` passed for all 8 generator scenarios.
-After the M5 slice, the core-profile record (2026-09-18) is **235 static passed**
-and **43 PostgreSQL integration passed / 22 optional-service skipped**. The
-full-profile matrix has not been rerun after M5 and is not represented as current.
+After the M5 slice the records are (2026-09-19): **238 static passed** and
+**45 PostgreSQL integration passed / 22 optional-service skipped** on the core
+profile, plus the A09 harness run against the full profile (MySQL 8.4.11 +
+Doris 3.1.4, DataHub not started): `a09_status=not_executed_no_real_model`,
+target-in-top3 **7/7** target cases, no forced attribution **3/3** no-target
+cases, evidence-consistent **10/10**
+(`runtime/eval/a09-20260919-175727.json`). The full-profile *test matrix* has not
+been rerun after M5 and is not represented as current.

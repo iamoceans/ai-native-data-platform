@@ -194,6 +194,22 @@ def list_artifacts(session: Session, analysis_id: uuid.UUID) -> list[AnalysisArt
     )
 
 
+def find_artifact(
+    session: Session, analysis_id: uuid.UUID, *, content_hash: str
+) -> AnalysisArtifact | None:
+    """Idempotency guard: re-entering synthesis must not duplicate evidence."""
+    return (
+        session.execute(
+            select(AnalysisArtifact).where(
+                AnalysisArtifact.analysis_id == analysis_id,
+                AnalysisArtifact.content_hash == content_hash,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 def list_queries(session: Session, analysis_id: uuid.UUID) -> list[QueryJob]:
     return list(
         session.execute(
