@@ -64,7 +64,7 @@ export function AskPage() {
         <div className="form-row">
           <label className="grow">
             Metric
-            <select value={metricKey} onChange={(event) => { setMetricKey(event.target.value); setDimensions([]); }}>
+            <select data-testid="analysis-metric" value={metricKey} onChange={(event) => { setMetricKey(event.target.value); setDimensions([]); }}>
               {(metrics.data ?? []).map((metric) => (
                 <option key={metric.metric_key} value={metric.metric_key}>
                   {metric.name} · {metric.metric_key}
@@ -74,16 +74,16 @@ export function AskPage() {
           </label>
         </div>
         <div className="period-grid">
-          <label>Baseline start<input type="date" value={baselineStart} onChange={(e) => setBaselineStart(e.target.value)} /></label>
-          <label>Baseline end<input type="date" value={baselineEnd} onChange={(e) => setBaselineEnd(e.target.value)} /></label>
-          <label>Current start<input type="date" value={currentStart} onChange={(e) => setCurrentStart(e.target.value)} /></label>
-          <label>Current end<input type="date" value={currentEnd} onChange={(e) => setCurrentEnd(e.target.value)} /></label>
+          <label>Baseline start<input data-testid="baseline-start" type="date" value={baselineStart} onChange={(e) => setBaselineStart(e.target.value)} /></label>
+          <label>Baseline end<input data-testid="baseline-end" type="date" value={baselineEnd} onChange={(e) => setBaselineEnd(e.target.value)} /></label>
+          <label>Current start<input data-testid="current-start" type="date" value={currentStart} onChange={(e) => setCurrentStart(e.target.value)} /></label>
+          <label>Current end<input data-testid="current-end" type="date" value={currentEnd} onChange={(e) => setCurrentEnd(e.target.value)} /></label>
         </div>
         {(selected?.allowed_dimensions?.length ?? 0) > 0 ? (
           <fieldset className="dimension-picker">
             <legend>Break down by up to three dimensions</legend>
             {(selected?.allowed_dimensions ?? []).map((dimension) => (
-              <label className="check" key={dimension}>
+              <label className="check" key={dimension} data-testid={`dimension-${dimension}`}>
                 <input
                   type="checkbox"
                   checked={dimensions.includes(dimension)}

@@ -1,13 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { cancelAnalysis, getAnalysis, getAnalysisEvidence } from "../api/endpoints";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  cancelAnalysis,
+  drilldownChart,
+  getAnalysis,
+  getAnalysisEvidence,
+  getChart,
+} from "../api/endpoints";
+import { ChartPanel } from "../components/ChartPanel";
 import { StatusBadge } from "../components/StatusBadge";
 
 const TERMINAL = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"]);
 
 export function AnalysisPage() {
   const { id = "" } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(null);
   const detail = useQuery({
@@ -23,6 +31,20 @@ export function AnalysisPage() {
   const report = detail.data?.final_report as Record<string, unknown> | null | undefined;
   const claims = (report?.claims as Array<Record<string, unknown>> | undefined) ?? [];
   const limitations = (report?.limitations as string[] | undefined) ?? [];
+  const chartIds = (report?.chart_ids as string[] | undefined) ?? [];
+  const chart = useQuery({
+    queryKey: ["chart", chartIds[0]],
+    queryFn: () => getChart(chartIds[0]),
+    enabled: chartIds.length > 0,
+  });
+  const drill = useMutation({
+    mutationFn: ({ dimension, value }: { dimension: string; value: string }) =>
+      drilldownChart(chartIds[0], { dimension, value }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["analysis", id] });
+      navigate(`/analyses/${result.analysis_id}`);
+    },
+  });
 
   if (detail.isLoading) return <section className="card"><p className="muted">Loading analysis…</p></section>;
   if (!detail.data) return <section className="card"><p className="notice error">Analysis is unavailable.</p></section>;
@@ -39,6 +61,14 @@ export function AnalysisPage() {
           <button className="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate()}>Cancel analysis</button>
         ) : null}
       </section>
+
+      {chart.data ? (
+        <ChartPanel
+          chart={chart.data}
+          busy={drill.isPending}
+          onDrilldown={(dimension, value) => drill.mutate({ dimension, value })}
+        />
+      ) : null}
 
       {report ? (
         <section className="card">

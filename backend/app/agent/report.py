@@ -70,6 +70,7 @@ def build_comparison_report(
     data_complete: bool = True,
     drivers: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
+    chart_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     change = Decimal(str(calculation["change"]))
     change_pct = calculation.get("change_pct")
@@ -171,7 +172,7 @@ def build_comparison_report(
         },
         "claims": claims,
         "hypotheses": hypotheses,
-        "chart_ids": [],
+        "chart_ids": list(chart_ids or []),
         "limitations": limitations,
         "evidence_available_until": evidence_available_until,
     }

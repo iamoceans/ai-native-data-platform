@@ -76,13 +76,18 @@ def main() -> int:
 
     password = args.password or read_dotenv("AIND_SMOKE_PASSWORD") or "dev-admin-password-123"
     timeout = httpx.Timeout(30.0, read=120.0)
+    # Loopback target: skip proxy discovery, and do not reuse connections. On this
+    # Windows/Docker Desktop host a reused connection after POST /auth/login
+    # intermittently reaches the API without the session cookie (curl, raw
+    # sockets and the in-container validator all accept the same cookie).
+    client_options = {"trust_env": False, "headers": {"Connection": "close"}}
     default_sql = {
         "postgres": "SELECT 1 AS one",
         "mysql": "SELECT COUNT(*) AS releases FROM app_release_config",
         "doris": "SELECT country, SUM(revenue_usd) AS revenue FROM demo.ads_revenue_daily GROUP BY country ORDER BY country",
     }[args.kind]
 
-    with httpx.Client(base_url=args.base_url, timeout=timeout) as client:
+    with httpx.Client(base_url=args.base_url, timeout=timeout, **client_options) as client:
         live = client.get("/health/live")
         check(live.status_code == 200, "/health/live")
         ready = client.get("/api/v1/health/ready")

@@ -349,6 +349,22 @@ A14 (cross-source join), A17 (medium resource report).
       (A17: 927,456 rows, 53.9 MiB, 17.3 s generation, 4.6 s load, 97 MiB Doris
       storage, 0.50-1.30 s timed aggregates, 22 MiB peak tracked allocations).
 
+### M6 test evidence (executed 2026-09-19)
+
+```powershell
+# static suites after the chart work
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# -> 242 passed (4 new ChartSpec tests)
+
+# full three-engine integration matrix (PostgreSQL + MySQL 8.4.11 + Doris 3.1.4; DataHub down)
+AIND_DATABASE_URL=... AIND_TEST_SOURCE_URL=... AIND_TEST_MYSQL_URL=... AIND_TEST_DORIS_URL=...   uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q
+# -> 67 passed, 1 skipped (the DataHub full-stack test skips when the stack is down)
+
+# browser journeys
+cd frontend; E2E_BASE_URL=http://127.0.0.1:3000 E2E_ADMIN_PASSWORD=<admin pw> npx playwright test
+# -> 3 passed: SQL workspace journey, forbidden-write rejection, analysis -> chart -> drilldown
+```
+
 ### M5 test evidence (executed 2026-09-19)
 
 ```powershell
@@ -445,4 +461,21 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       attribution 3/3 no-target cases, evidence-consistent 10/10. Configure
       `AIND_LLM_PROVIDER=openai-compatible` with a model and key file and re-run
       `make eval-agent` to produce the real A09 record.
-- [ ] M6 charts, drilldown, remaining admin screens and live worker-kill acceptance.
+```
+- [x] M6 charts: `app/charts/spec.py` implements the controlled ChartSpec
+      (kinds line/bar/table, unknown fields rejected, <=1000 points, ordered line
+      x without silent zero fill, units from the metric contract). The runner
+      writes a bar chart artifact for every contribution calculation, sets
+      `report.chart_ids`, and one id serves both the row and the payload.
+- [x] `GET /charts/{id}` (bounded window) and `POST /charts/{id}/drilldown`
+      (parent_id + parameter-bound filter, 202) with owner and data-permission
+      checks on every read.
+- [x] Frontend: `ChartPanel` renders the bar chart plus a table-equivalent view
+      with signed labels (colour never carries meaning alone, no formatter and no
+      HTML from the payload), and a drilldown button that navigates to the child
+      analysis.
+- [x] Playwright journey `Analysis and charts`: Ask -> analysis -> chart ->
+      table view -> drilldown child analysis (3 journeys passed 2026-09-19).
+- [ ] Remaining M6 work: live worker-kill acceptance (A12), network-drop SSE
+      (A15), literal blank-volume run (A18), remaining admin screens.
+```

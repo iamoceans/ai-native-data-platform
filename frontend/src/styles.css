@@ -484,3 +484,17 @@ button.ghost:hover:not(:disabled) {
 @media (max-width: 720px) {
   .period-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ChartSpec panel (M6): bars carry a sign and a value, never colour alone. */
+.chart-bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.chart-bars li { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) auto auto; align-items: center; gap: 10px; }
+.chart-label { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.chart-bar { display: inline-block; padding: 4px 8px; border-radius: 4px; color: var(--text); background: var(--accent-soft); border: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chart-bar.negative { border-left: 4px solid var(--danger, #b42318); }
+.chart-bar.positive { border-left: 4px solid var(--accent); }
+.chart-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.chart-table th, .chart-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+button.ghost.small { padding: 2px 8px; font-size: 13px; }
+@media (max-width: 720px) {
+  .chart-bars li { grid-template-columns: 1fr; }
+}

@@ -9,7 +9,18 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
-from app.api.routes import analyses, admin, auth, datasets, datasources, health, metrics, queries, saved_queries
+from app.api.routes import (
+    analyses,
+    admin,
+    auth,
+    charts,
+    datasets,
+    datasources,
+    health,
+    metrics,
+    queries,
+    saved_queries,
+)
 from app.config import get_settings
 from app.constants import SCHEMA_VERSION
 from app.logging_setup import configure_logging
@@ -77,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router, prefix=prefix)
     app.include_router(saved_queries.router, prefix=prefix)
     app.include_router(analyses.router, prefix=prefix)
+    app.include_router(charts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
 
     @app.get("/api/v1/meta", include_in_schema=False)

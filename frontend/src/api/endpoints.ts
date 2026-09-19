@@ -160,3 +160,47 @@ export async function cancelAnalysis(analysisId: string): Promise<AnalysisDetail
 export async function getAnalysisEvidence(analysisId: string): Promise<Record<string, unknown>> {
   return apiFetch<Record<string, unknown>>(`/api/v1/analyses/${analysisId}/evidence`);
 }
+
+// ---------------------------------------------------------------------------
+// Charts (spec section 25): controlled specs plus bounded data.
+// ---------------------------------------------------------------------------
+export type ChartField = { field: string; type: "category" | "quantitative" | "temporal"; unit?: string | null };
+
+export type ChartSpec = {
+  schema_version: 1;
+  kind: "line" | "bar" | "table";
+  title: string;
+  data_ref: { type: "calculation" | "result"; id: string };
+  encoding: { x: ChartField; y: ChartField; series?: ChartField | null };
+  sort?: { field: string; direction: "asc" | "desc" } | null;
+  interaction: { tooltip: boolean; zoom: boolean; drilldown_dimensions: string[] };
+  evidence_ids: string[];
+  empty_state: string;
+};
+
+export type ChartView = {
+  schema_version: 1;
+  id: string;
+  spec: ChartSpec;
+  data: Array<{ group: string | null; key: string; dimension_values: Array<string | null>; delta: string; net_change_share: string | null }>;
+  total_points: number;
+  offset: number;
+  limit: number;
+  truncated: boolean;
+  dropped_points: number;
+  empty_state: string;
+};
+
+export async function getChart(chartId: string, limit = 200): Promise<ChartView> {
+  return apiFetch<ChartView>(`/api/v1/charts/${chartId}?limit=${limit}`);
+}
+
+export async function drilldownChart(
+  chartId: string,
+  input: { dimension: string; value: string; period?: "baseline" | "current" },
+): Promise<{ analysis_id: string; status: string; parent_id: string; filters: Record<string, string> }> {
+  return apiFetch(`/api/v1/charts/${chartId}/drilldown`, {
+    method: "POST",
+    body: { dimension: input.dimension, value: input.value, period: input.period ?? "current" },
+  });
+}

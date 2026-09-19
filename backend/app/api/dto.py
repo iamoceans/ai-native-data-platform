@@ -345,6 +345,19 @@ class AnalysisDetail(BaseModel):
     finished_at: datetime | None = None
 
 
+class ChartDrilldownRequest(StrictModel):
+    dimension: str = Field(min_length=1, max_length=64)
+    value: str = Field(min_length=1, max_length=256)
+    period: Literal["baseline", "current"] = "current"
+
+
+class ChartDrilldownResponse(BaseModel):
+    analysis_id: uuid.UUID
+    status: str
+    parent_id: uuid.UUID
+    filters: dict[str, str]
+
+
 class AnalysisListResponse(BaseModel):
     items: list[AnalysisDetail]
     next_cursor: str | None = None

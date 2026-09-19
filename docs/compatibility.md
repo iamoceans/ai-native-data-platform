@@ -190,3 +190,24 @@ DataHub source of truth for the compose file:
   out of V1 scope).
 - MySQL `KILL QUERY` behaviour for accounts without PROCESS privilege on other
   users' connections (the platform only kills its own dedicated connections).
+
+
+## M6 environment finding: HTTP client behaviour on this host (2026-09-19)
+
+A Python `httpx` client that keeps a connection alive across `POST /api/v1/auth/login`
+is intermittently answered with `401 UNAUTHENTICATED "session expired or revoked"`
+on the *next* request, even though:
+
+- the same cookie succeeds via `curl` (single request per invocation),
+- the same cookie succeeds over a raw socket that sends POST then GET with
+  keep-alive on one connection,
+- `validate_token()` inside the API container returns the session row for that
+  cookie (`revoked_at=None`, not expired), and
+- an A/B loop reproduces it deterministically in the failing direction only for
+  the default client: `trust_env=True`, connection reuse.
+
+Mitigation used by the reference scripts: `trust_env=False` (the target is
+loopback) plus either `Connection: close` or one connection per request
+(`scripts/eval_agent.py`). Browsers are not affected, which is why the Playwright
+journeys and the UI are reliable. The platform's own request path is unaffected:
+the API, its session validation and the DB state were verified independently.

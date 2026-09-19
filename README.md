@@ -77,8 +77,34 @@ What the current "M5" slice adds:
   executed only through the Query Gateway, then rendered into calculation-bound claims;
 - `/ask` and `/analyses/:id` pages for launching and inspecting the workflow.
 
-Adaptive multi-step driver selection, real-model A09 evaluation, charts,
-drilldown and the remaining administration UI are still open; see
+What the M5 closure adds (2026-09-19):
+
+- the runner as explicit, re-enterable phases
+  (`EXECUTING -> OBSERVING -> EXECUTING|SYNTHESIZING`) so `OBSERVING` is what
+  decides whether more evidence is worth buying;
+- an adaptive observation step: a material change plus a metric that declares an
+  impressions metric (`ads_revenue -> impressions`) buys one driver
+  decomposition (impressions x eCPM), bounded by the query/tool budget and the
+  plan depth;
+- bounded SQL repair for capability failures (a drifted column is dropped and the
+  queries it broke are resubmitted, at most twice), while policy refusals -
+  permission, forbidden function, resource limits - are never retried with a
+  rewritten statement;
+- a documented 0.5 % materiality band, so generator noise is reported as "no
+  material change" instead of a finding;
+- `scripts/eval_agent.py` / `make eval-agent`: the A09 harness that runs ten
+  fixed (scenario, seed) cases through the deployed loop and scores them against
+  the generator's ground truth.
+
+What the M6 work so far adds:
+
+- controlled charts (spec section 25): `GET /charts/{id}` returns a ChartSpec
+  with at most 1000 points, `POST /charts/{id}/drilldown` creates a child
+  analysis with the drilled value bound as a parameter, and `/analyses/:id`
+  renders the bar chart with a table-equivalent view and signed labels.
+
+Still open: a real-model A09 run, the live worker-kill and network-drop
+acceptances, a literal blank-volume run and the remaining admin screens; see
 [docs/todo.md](docs/todo.md).
 
 ---

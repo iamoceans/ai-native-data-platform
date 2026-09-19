@@ -171,9 +171,10 @@ def add_artifact(
     content: dict[str, Any],
     dependency_query_ids: list[str],
     content_hash: str,
+    artifact_id: uuid.UUID | None = None,
 ) -> AnalysisArtifact:
     row = AnalysisArtifact(
-        id=uuid.uuid4(),
+        id=artifact_id or uuid.uuid4(),
         analysis_id=analysis_id,
         kind=kind,
         schema_version=1,
@@ -192,6 +193,10 @@ def list_artifacts(session: Session, analysis_id: uuid.UUID) -> list[AnalysisArt
             select(AnalysisArtifact).where(AnalysisArtifact.analysis_id == analysis_id)
         ).scalars()
     )
+
+
+def get_artifact(session: Session, artifact_id: uuid.UUID) -> AnalysisArtifact | None:
+    return session.get(AnalysisArtifact, artifact_id)
 
 
 def find_artifact(

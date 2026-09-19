@@ -138,7 +138,7 @@ A17 resource report (medium scale, reference host):
 | A13 | Idempotency + concurrency | **passed** (M1/M2) | idempotent submit, single claim, capacity caps verified; three engines share the same scheduler; ingestion concurrency (409 for a second active sync) verified in M3 |
 | A14 | Cross-source joins | **passed** (M4) | Whitelisted as-of join (Doris cohorts + PostgreSQL configuration) executed through two real query results: amounts preserved, unmatched rate reported; a duplicate overlapping configuration raises `JOIN_CARDINALITY_VIOLATION` instead of double counting |
 | A15 | SSE reconnect/expiry/revocation | **partial** | replay, revocation, cursor expiry logic verified; network-drop client test pending (M6) |
-| A16 | Full UI journey | **partial** | login -> SQL -> results -> history verified; charts/drilldown/admin UI are M6 |
+| A16 | Full UI journey | **partial** (M6 charts done) | login -> SQL -> results -> history verified, plus the M6 journey analysis -> chart -> table view -> drilldown child analysis; Playwright 3 passed 2026-09-19. Remaining: shared/dashboard screens and the live worker-kill path |
 | A17 | Medium dataset resource report | **passed, recorded** (M4) | Medium run generated (927,456 rows, 53.9 MiB, 17.3 s), loaded into Doris in 4.6 s, BE storage 97 MiB; timed platform aggregates 0.50-1.30 s (target < 5 s); generator peak tracked allocations 22.0 MiB |
 | A18 | Reproducible from blank volumes | **partial** | schema reset + migrate + bootstrap + seed + smoke verified on Docker; the demo pipeline is scripted end to end (`demo-generate/load/verify/lineage`); a literal blank-volume run and the DataHub part of the full flow remain M6 |
 
@@ -157,9 +157,17 @@ A17 resource report (medium scale, reference host):
   `not_executed_no_real_model`. A10's scenario-through-agent behaviour *is*
   executed there (no_target cases 3/3 unforced), but a real-model A09 accuracy
   number does not exist yet.
-- The full-profile matrix was last rerun in the M4 revision; the M5 changes were
-  verified on the core profile (48 tests) plus the A09 harness on the full
-  profile, not by rerunning the whole three-engine integration matrix.
+- The full three-engine matrix was rerun on 2026-09-19 (67 passed, 1 skipped);
+  the skipped case is the DataHub full-stack test, which needs the DataHub stack
+  up (`make datahub-up`). DataHub-backed behaviour is still covered by its own
+  M3 evidence and the GraphQL contract fixtures, but it is not re-verified in
+  that run.
+- Environment note: on this Windows/Docker Desktop host, an httpx client that
+  reuses a connection after `POST /auth/login` is intermittently answered with
+  401 even though the same cookie validates via curl, via a raw socket and
+  inside the container. The reference scripts (`scripts/smoke_core.py`,
+  `scripts/eval_agent.py`) therefore set `trust_env=False` and
+  `Connection: close` / one connection per request; browsers are unaffected.
 - `make` was not executed under WSL on this host; equivalent `scripts/dev.ps1`
   targets and direct commands were used.
 - The M3/M4 integration tests that need the deployed stack skip when it is down;

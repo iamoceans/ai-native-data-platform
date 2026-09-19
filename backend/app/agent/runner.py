@@ -37,6 +37,7 @@ from app.agent.state import AnalysisStatus, TERMINAL_ANALYSIS_STATUSES
 from app.analysis.compare import compare_totals
 from app.analysis.contribution import decompose_contribution
 from app.analysis.drivers import decompose_revenue
+from app.charts.spec import contribution_chart
 from app.api.dto import QueryLimits, QuerySubmitRequest
 from app.config import Settings
 from app.constants import DatasetAction, QueryStatus, TERMINAL_QUERY_STATUSES
@@ -854,10 +855,23 @@ def _extend_with_driver_step(session, *, task, settings: Settings) -> bool:
 # ---------------------------------------------------------------------------
 # SYNTHESIZING: calculations -> artifacts -> evidence-bound report
 # ---------------------------------------------------------------------------
-def _artifact(analyses_repo, session, *, task, kind: str, content: dict, query_ids: list[str]) -> dict:
-    """Store one calculation artifact; the DDL kind stays 'calculation' (spec 8)
-    and the semantic kind travels inside the content."""
-    payload = {"id": str(uuid.uuid4()), "kind": kind, **content}
+def _artifact(
+    analyses_repo,
+    session,
+    *,
+    task,
+    kind: str,
+    content: dict,
+    query_ids: list[str],
+    db_kind: str = "calculation",
+) -> dict:
+    """Store one artifact; the semantic kind travels inside the content, and the
+    DDL kind ('calculation'/'chart'/'evidence', spec 8) is explicit."""
+    artifact_id = uuid.uuid4()
+    # One id for the row and for the content: the report cites the payload id and
+    # clients look the artifact up by it (`GET /charts/{id}`). The artifact layer
+    # owns identity, so a content builder never mints an id of its own.
+    payload = {**content, "id": str(artifact_id), "kind": kind}
     content_hash = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -867,10 +881,11 @@ def _artifact(analyses_repo, session, *, task, kind: str, content: dict, query_i
     analyses_repo.add_artifact(
         session,
         analysis_id=task.id,
-        kind="calculation",
+        kind=db_kind,
         content=payload,
         dependency_query_ids=query_ids,
         content_hash=content_hash,
+        artifact_id=artifact_id,
     )
     return payload
 
@@ -889,6 +904,7 @@ def _synthesizing(session, *, task) -> bool:
         for key in ("baseline", "current", "delta", "change_pct", "change", "contribution")
         if key in observation
     }
+    _, definition = _metric_definition(session, str(state["metric_key"]))
     calculation_id = _artifact(
         analyses_repo,
         session,
@@ -897,6 +913,28 @@ def _synthesizing(session, *, task) -> bool:
         content=calculation,
         query_ids=primary_ids,
     )["id"]
+    chart_ids: list[str] = []
+    contribution = observation.get("contribution") or {}
+    if contribution.get("groups"):
+        chart = _artifact(
+            analyses_repo,
+            session,
+            task=task,
+            kind="chart",
+            db_kind="chart",
+            content=contribution_chart(
+                contribution["groups"],
+                list(contribution.get("dimension") or []),
+                calculation_id=calculation_id,
+                title=f"{definition.name or state['metric_key']} 各分组变化贡献",
+                unit=definition.unit,
+                currency=definition.currency,
+                metric_key=str(state["metric_key"]),
+                query_ids=primary_ids,
+            ),
+            query_ids=primary_ids,
+        )
+        chart_ids.append(str(chart["id"]))
     applied_repairs = [item for item in state.get("repairs") or [] if item.get("applied")]
     if applied_repairs:
         _event(
@@ -962,6 +1000,7 @@ def _synthesizing(session, *, task) -> bool:
         metric_version=int(state.get("metric_version", 1)),
         evidence_available_until=observation.get("evidence_available_until"),
         data_complete=bool(context.get("data_complete", True)),
+        chart_ids=chart_ids,
         drivers=drivers_payload,
         warnings=[f"已按最新 Schema 修复查询：丢弃列 {item.get('dropped_dimension')}" for item in applied_repairs],
     )

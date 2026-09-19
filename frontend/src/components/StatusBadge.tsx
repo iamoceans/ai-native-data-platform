@@ -13,6 +13,16 @@ const LABELS: Record<string, string> = {
   PENDING: "Pending",
   HEALTHY: "Healthy",
   UNAVAILABLE: "Unavailable",
+  // Analysis states (spec 19): the raw code stays visible in the badge title.
+  CREATED: "Created",
+  UNDERSTANDING: "Understanding",
+  RETRIEVING: "Retrieving",
+  PLANNING: "Planning",
+  EXECUTING: "Executing",
+  OBSERVING: "Observing",
+  SYNTHESIZING: "Synthesizing",
+  COMPLETED: "Completed",
+  PARTIAL: "Partial",
 };
 
 const TONE: Record<string, string> = {
@@ -26,9 +36,18 @@ const TONE: Record<string, string> = {
   LOST: "bad",
   HEALTHY: "ok",
   SYNCED: "ok",
+  COMPLETED: "ok",
+  PARTIAL: "wait",
+  CREATED: "wait",
+  UNDERSTANDING: "run",
+  RETRIEVING: "run",
+  PLANNING: "run",
+  EXECUTING: "run",
+  OBSERVING: "run",
+  SYNTHESIZING: "run",
 };
 
 export function StatusBadge({ status }: { status: string }) {
   const tone = TONE[status] ?? "muted";
-  return <span className={`badge ${tone}`}>{LABELS[status] ?? status}</span>;
+  return <span className={`badge ${tone}`} title={status}>{LABELS[status] ?? status}</span>;
 }

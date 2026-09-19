@@ -357,3 +357,93 @@ def test_analysis_repairs_a_dropped_dimension_within_budget(admin_client, integr
         assert report["claims"][0]["query_ids"]
     finally:
         _source_execute(integration_env["source_url"], "DROP TABLE IF EXISTS public.drift_probe")
+
+
+def test_chart_artifact_reads_and_drills_down(admin_client, integration_env):
+    """The report's chart is readable, permission-checked and drillable (M6)."""
+    setup_datasource_and_grants(
+        admin_client, integration_env["source_url"], grant_roles=["admin"]
+    )
+    with session_scope() as session:
+        sync_metric_definitions(
+            session,
+            [
+                _metric(
+                    {
+                        "metric_key": "fixture_ads_revenue",
+                        "version": 1,
+                        "name": "Fixture ads revenue",
+                        "dataset": "public.fixture_metrics",
+                        "components": {
+                            "revenue": {"aggregation": "sum", "column": "revenue_usd"}
+                        },
+                        "formula": "revenue",
+                        "unit": "USD",
+                        "currency": "USD",
+                        "timezone": "UTC",
+                        "grain": ["dt", "country", "platform"],
+                        "allowed_dimensions": ["country", "platform"],
+                        "aggregation_kind": "sum",
+                        "freshness": {"date_column": "dt", "completeness_source": "fixture"},
+                    }
+                )
+            ],
+        )
+    analysis_id = _submit_analysis(
+        admin_client,
+        key="analysis-chart-1",
+        question="Which country moved fixture ads revenue?",
+        context={
+            "metric_key": "fixture_ads_revenue",
+            "baseline_start": "2026-09-01",
+            "baseline_end": "2026-09-02",
+            "current_start": "2026-09-09",
+            "current_end": "2026-09-11",
+            "dimensions": ["country", "platform"],
+            "filters": {},
+            "data_complete": True,
+        },
+    )
+    detail = _run_analysis_until_settled(admin_client, analysis_id)
+    assert detail["status"] == "COMPLETED", detail.get("state", {}).get("last_error")
+    report = admin_client.get(f"/api/v1/analyses/{analysis_id}/report").json()
+    assert len(report["chart_ids"]) == 1
+    chart_id = report["chart_ids"][0]
+
+    chart = admin_client.get(f"/api/v1/charts/{chart_id}")
+    assert chart.status_code == 200, chart.text
+    body = chart.json()
+    assert body["spec"]["kind"] == "bar"
+    assert body["spec"]["data_ref"]["id"] == next(
+        item["id"]
+        for item in admin_client.get(f"/api/v1/analyses/{analysis_id}/evidence").json()[
+            "calculations"
+        ]
+        if item["kind"] == "period_comparison"
+    )
+    assert body["total_points"] >= 1
+    assert body["spec"]["evidence_ids"], "chart must keep the evidence ids"
+    top = body["data"][0]
+    assert top["dimension_values"][0] in {"US", "DE"}
+
+    bounded = admin_client.get(f"/api/v1/charts/{chart_id}", params={"limit": 1})
+    assert bounded.status_code == 200
+    assert len(bounded.json()["data"]) == 1
+
+    drilled = admin_client.post(
+        f"/api/v1/charts/{chart_id}/drilldown",
+        json={"dimension": "country", "value": top["dimension_values"][0], "period": "current"},
+    )
+    assert drilled.status_code == 202, drilled.text
+    child_id = drilled.json()["analysis_id"]
+    assert drilled.json()["parent_id"] == analysis_id
+    child = admin_client.get(f"/api/v1/analyses/{child_id}").json()
+    assert child["parent_id"] == analysis_id
+    assert child["context"]["filters"]["country"] == top["dimension_values"][0]
+    assert child["context"]["dimensions"] == ["platform"]
+
+    refused = admin_client.post(
+        f"/api/v1/charts/{chart_id}/drilldown",
+        json={"dimension": "revenue_usd", "value": "1", "period": "current"},
+    )
+    assert refused.status_code == 422, refused.text
