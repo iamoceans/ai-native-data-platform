@@ -498,3 +498,23 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
 @media (max-width: 720px) {
   .chart-bars li { grid-template-columns: 1fr; }
 }
+
+/* Administration screens (M6): tables stay readable at 1440px and stack on mobile. */
+.data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.data-table th, .data-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.data-table thead th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #667085); }
+.data-table tbody tr:hover { background: rgba(0, 0, 0, 0.02); }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); }
+.tag.warn { border-color: #d97706; color: #b45309; }
+.inline-label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted, #667085); }
+.form-row.wrap { flex-wrap: wrap; }
+.role-picker { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; display: flex; gap: 12px; }
+.role-picker legend { font-size: 12px; color: var(--muted, #667085); padding: 0 4px; }
+.capability-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 4px; }
+.capability-list code { font-size: 13px; }
+@media (max-width: 900px) {
+  .data-table thead { display: none; }
+  .data-table tr { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .data-table td, .data-table th { border: none; padding: 2px 0; }
+}

@@ -12,6 +12,7 @@ from app.api.dto import (
     AuditEntry,
     AuditListResponse,
     CatalogRefreshRequest,
+    PermissionRequestListResponse,
     CatalogRefreshResponse,
     DatasetSummary,
     GrantCreate,
@@ -407,6 +408,42 @@ def catalog_refresh(
 # ---------------------------------------------------------------------------
 # Permission requests (mock approval state only; never writes permissions)
 # ---------------------------------------------------------------------------
+PERMISSION_REQUESTS_ROUTE = "GET /admin/permission-requests"
+
+
+@router.get("/permission-requests", response_model=PermissionRequestListResponse)
+def list_permission_requests(
+    request: Request,
+    auth: AuthContext = Depends(require_admin),
+    session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+) -> PermissionRequestListResponse:
+    """The administrator's queue: what people asked for, and in which state.
+
+    The state is either a real request state or the explicitly named
+    ``MOCK_APPROVED``; approving here never creates a grant (spec 22/24).
+    """
+    limit, offset, _ = _page(request, settings, PERMISSION_REQUESTS_ROUTE, default=50)
+    status = request.query_params.get("status")
+    if status is not None and status not in {"REQUESTED", "MOCK_APPROVED", "REJECTED"}:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "unknown permission request status")
+    rows, total = datasets_repo.list_permission_requests(
+        session, limit=limit, offset=offset, status=status
+    )
+    next_cursor = (
+        encode_list_cursor(
+            settings.resolved_cursor_secret(),
+            route=PERMISSION_REQUESTS_ROUTE,
+            offset=offset + len(rows),
+        )
+        if offset + len(rows) < total
+        else None
+    )
+    return PermissionRequestListResponse(
+        items=[PermissionRequestResponse(**permission_request_to_response(row)) for row in rows],
+        next_cursor=next_cursor,
+    )
+
 @router.post("/permission-requests/{request_id}/mock-approve", response_model=PermissionRequestResponse)
 def mock_approve_permission_request(
     request_id: uuid.UUID,

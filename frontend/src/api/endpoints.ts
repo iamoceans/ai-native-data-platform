@@ -204,3 +204,197 @@ export async function drilldownChart(
     body: { dimension: input.dimension, value: input.value, period: input.period ?? "current" },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Administration (spec sections 22 and 24: /admin/datasources, /admin/permissions)
+//
+// Credentials never travel through these calls: a datasource carries a
+// `secret_ref` that the platform resolves from its mounted secret files.
+// ---------------------------------------------------------------------------
+export type AdminRole = { id: string; name: string; capabilities: string[] };
+export type AdminUser = {
+  id: string;
+  username: string;
+  active: boolean;
+  roles: AdminRole[];
+  created_at: string;
+};
+export type AdminGrant = {
+  id: string;
+  role_id: string;
+  dataset_id: string;
+  action: "discover" | "query";
+  expires_at: string | null;
+  created_by: string;
+};
+export type PermissionRequest = {
+  id: string;
+  user_id: string;
+  dataset_id: string;
+  reason: string;
+  status: "REQUESTED" | "MOCK_APPROVED" | "REJECTED";
+  created_at: string;
+};
+export type AuditEntry = {
+  id: number;
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  trace_id: string;
+  outcome: string;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+export type DatasourceTestResult = {
+  status: string;
+  server_version: string | null;
+  latency_ms: number | null;
+  checked_at: string;
+  capabilities: Record<string, unknown> | null;
+  error: { code: string; message: string } | null;
+};
+export type CatalogRefreshResult = {
+  datasource_id: string;
+  registered: number;
+  updated: number;
+  deactivated: number;
+  items: Array<{ id: string; object_name: string; object_type: string; sync_status: string }>;
+  skipped: Array<Record<string, unknown>>;
+};
+export type IngestionTask = {
+  id: string;
+  datasource_id: string;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  summary: Record<string, unknown> | null;
+  error: { code?: string; message?: string } | null;
+};
+
+export async function listAdminUsers(): Promise<{ items: AdminUser[] }> {
+  return apiFetch("/api/v1/admin/users");
+}
+
+export async function createAdminUser(input: {
+  username: string;
+  password: string;
+  role_ids: string[];
+}): Promise<AdminUser> {
+  return apiFetch("/api/v1/admin/users", { method: "POST", body: input });
+}
+
+export async function updateUserRoles(userId: string, roleIds: string[]): Promise<AdminUser> {
+  return apiFetch(`/api/v1/admin/users/${userId}/roles`, {
+    method: "PUT",
+    body: { role_ids: roleIds },
+  });
+}
+
+export async function listAdminRoles(): Promise<AdminRole[]> {
+  return apiFetch("/api/v1/admin/roles");
+}
+
+export async function createAdminRole(name: string): Promise<AdminRole> {
+  return apiFetch("/api/v1/admin/roles", { method: "POST", body: { name } });
+}
+
+export async function listGrants(): Promise<{ items: AdminGrant[] }> {
+  return apiFetch("/api/v1/admin/grants");
+}
+
+export async function createGrant(input: {
+  role_id: string;
+  dataset_id: string;
+  action: "discover" | "query";
+  expires_at?: string | null;
+}): Promise<AdminGrant> {
+  return apiFetch("/api/v1/admin/grants", { method: "POST", body: input });
+}
+
+export async function deleteGrant(grantId: string): Promise<void> {
+  await apiFetch(`/api/v1/admin/grants/${grantId}`, { method: "DELETE" });
+}
+
+export async function listPermissionRequests(
+  status?: PermissionRequest["status"],
+): Promise<{ items: PermissionRequest[] }> {
+  const suffix = status ? `?status=${status}` : "";
+  return apiFetch(`/api/v1/admin/permission-requests${suffix}`);
+}
+
+export async function mockApprovePermissionRequest(requestId: string): Promise<PermissionRequest> {
+  return apiFetch(`/api/v1/admin/permission-requests/${requestId}/mock-approve`, { method: "POST" });
+}
+
+export async function requestDatasetAccess(input: {
+  dataset_id: string;
+  reason: string;
+}): Promise<PermissionRequest> {
+  return apiFetch("/api/v1/permission-requests", { method: "POST", body: input });
+}
+
+export async function listAudits(): Promise<{ items: AuditEntry[] }> {
+  return apiFetch("/api/v1/admin/audits");
+}
+
+export async function createDatasource(input: {
+  name: string;
+  kind: "postgres" | "mysql" | "doris";
+  connection_config: Record<string, unknown>;
+  secret_ref: string;
+}): Promise<Datasource> {
+  return apiFetch("/api/v1/datasources", { method: "POST", body: input });
+}
+
+export async function updateDatasource(
+  datasourceId: string,
+  input: { version: number; connection_config?: Record<string, unknown>; enabled?: boolean },
+): Promise<Datasource> {
+  return apiFetch(`/api/v1/datasources/${datasourceId}`, { method: "PATCH", body: input });
+}
+
+export async function testDatasource(datasourceId: string): Promise<DatasourceTestResult> {
+  return apiFetch(`/api/v1/datasources/${datasourceId}/test`, { method: "POST" });
+}
+
+export async function refreshCatalog(
+  datasourceId: string,
+  input: { schemas: string[]; secure_views: string[] },
+): Promise<CatalogRefreshResult> {
+  return apiFetch(`/api/v1/admin/datasources/${datasourceId}/catalog-refresh`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function syncDatasource(datasourceId: string): Promise<IngestionTask> {
+  return apiFetch(`/api/v1/datasources/${datasourceId}/sync`, { method: "POST" });
+}
+
+export async function getIngestionTask(taskId: string): Promise<IngestionTask> {
+  return apiFetch(`/api/v1/ingestions/${taskId}`);
+}
+
+export type LineageResponse = {
+  schema_version: number;
+  dataset_id: string;
+  direction: "upstream" | "downstream";
+  depth: number;
+  status: string;
+  message: string | null;
+  nodes: Array<{ urn: string; dataset_id: string | null; name: string; platform: string | null; label: string; mapped: boolean }>;
+  edges: Array<Record<string, unknown>>;
+  filtered_nodes: number;
+  labels: string[];
+  analysis_evidence: Array<Record<string, unknown>>;
+};
+
+export async function getDatasetLineage(
+  datasetId: string,
+  direction: "upstream" | "downstream" = "upstream",
+  depth = 2,
+): Promise<LineageResponse> {
+  return apiFetch(`/api/v1/datasets/${datasetId}/lineage?direction=${direction}&depth=${depth}`);
+}

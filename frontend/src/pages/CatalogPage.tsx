@@ -1,6 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { getDatasetContext, getDatasetSchema, listDatasets } from "../api/endpoints";
+import { ApiError } from "../api/client";
+import {
+  getDatasetContext,
+  getDatasetLineage,
+  getDatasetSchema,
+  listDatasets,
+  requestDatasetAccess,
+} from "../api/endpoints";
 import { StatusBadge } from "../components/StatusBadge";
 
 export function CatalogPage() {
@@ -20,6 +27,20 @@ export function CatalogPage() {
     queryFn: () => getDatasetSchema(selected as string),
     enabled: Boolean(selected),
   });
+  const lineage = useQuery({
+    queryKey: ["dataset-lineage", selected],
+    queryFn: () => getDatasetLineage(selected as string),
+    enabled: Boolean(selected),
+  });
+  const [reason, setReason] = useState("");
+  const accessRequest = useMutation({
+    mutationFn: () => requestDatasetAccess({ dataset_id: selected as string, reason }),
+    onSuccess: () => {
+      setReason("");
+      setRequestNotice("申请已记录（REQUESTED）。管理员可在 Permissions 页看到；Mock 批准不会产生真实授权。");
+    },
+  });
+  const [requestNotice, setRequestNotice] = useState<string | null>(null);
 
   return (
     <div className="catalog">
@@ -94,10 +115,69 @@ export function CatalogPage() {
           ) : (
             <p className="muted">Loading schema…</p>
           )}
-          <p className="muted small">
-            Lineage is not available in M1 (DataHub integration lands in M3) — the status is reported as
-            unknown rather than simulated.
-          </p>
+          <div className="card-head">
+            <h3>Lineage（upstream, depth 2）</h3>
+            {lineage.data ? <StatusBadge status={lineage.data.status} /> : null}
+          </div>
+          {lineage.data ? (
+            <>
+              <p className="muted small" data-testid="lineage-status">
+                {lineage.data.status}
+                {lineage.data.message ? ` — ${lineage.data.message}` : ""}
+                {lineage.data.labels.length ? ` · 边标签：${lineage.data.labels.join(", ")}` : ""}
+                {lineage.data.filtered_nodes ? ` · 权限过滤 ${lineage.data.filtered_nodes} 个节点` : ""}
+              </p>
+              <ul className="dataset-list">
+                {lineage.data.nodes.map((node) => (
+                  <li key={node.urn}>
+                    <span className="dataset-name">{node.name}</span>
+                    <span className="dataset-meta">
+                      {node.platform ?? "unknown"} · {node.label}
+                      {node.mapped ? " · 已映射" : " · 未映射"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {!lineage.data.nodes.length ? (
+                <p className="muted small">没有可见的上游节点（状态已如实说明，未做模拟）。</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="muted small">Loading lineage…</p>
+          )}
+
+          <div className="card-head">
+            <h3>申请查询权限</h3>
+            <span className="muted small">申请进入管理员队列，Mock 批准不等于授权</span>
+          </div>
+          <div className="form-row">
+            <label className="grow">
+              理由
+              <input
+                data-testid="request-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </label>
+            <button
+              className="ghost"
+              data-testid="request-access"
+              disabled={accessRequest.isPending || reason.trim().length === 0}
+              onClick={() => accessRequest.mutate()}
+            >
+              提交申请
+            </button>
+          </div>
+          {accessRequest.error instanceof ApiError ? (
+            <p className="notice error">
+              <strong>{accessRequest.error.code}</strong> — {accessRequest.error.message}
+            </p>
+          ) : null}
+          {requestNotice ? (
+            <p className="notice" data-testid="request-notice">
+              {requestNotice}
+            </p>
+          ) : null}
         </section>
       ) : null}
     </div>

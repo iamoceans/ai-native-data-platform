@@ -13,6 +13,18 @@ import { expect, test } from "@playwright/test";
  */
 const enabled = Boolean(process.env.E2E_BASE_URL);
 
+/** Count rows only once the number stops moving (a table can still be loading). */
+async function stableCount(locator: import("@playwright/test").Locator): Promise<number> {
+  let previous = -1;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const current = await locator.count();
+    if (current === previous) return current;
+    previous = current;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return previous;
+}
+
 async function selectDatasource(page: import("@playwright/test").Page, name: string) {
   const option = page.locator('[data-testid="datasource-select"] option', { hasText: name });
   await expect(option.first()).toBeAttached();
@@ -126,5 +138,133 @@ test.describe("Analysis and charts", () => {
     await chart.getByTestId("chart-drilldown").first().click();
     await expect(page).not.toHaveURL(parentUrl, { timeout: 30_000 });
     await expect(page.getByText("下钻：")).toBeVisible();
+  });
+});
+
+
+/**
+ * M6 journey: the administration screens (spec section 24).
+ *
+ * Covers the two routes the spec names - /admin/datasources and
+ * /admin/permissions - and the loop around them: request access from the
+ * catalog, see it in the administrator queue, mark it as a mock (which must not
+ * grant anything), create and revoke a real grant.
+ *
+ * Requires the deployed stack with a registered `source-postgres`
+ * (E2E_DATASOURCE_NAME) and at least one dataset visible to the viewer role.
+ */
+test.describe("Administration", () => {
+  test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
+
+  test("datasource health, catalog refresh, grants and the request queue", async ({ page }) => {
+    const user = process.env.E2E_ADMIN_USER ?? "admin";
+    const password = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
+    const datasourceName = process.env.E2E_DATASOURCE_NAME ?? "source-postgres";
+
+    await page.goto("/login");
+    await page.getByTestId("login-username").fill(user);
+    await page.getByTestId("login-password").fill(password);
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("datasource-select")).toBeVisible();
+
+    // The catalog offers the access request that feeds the administrator queue.
+    await page.getByRole("link", { name: "Catalog" }).click();
+    await page.getByTestId("catalog-search").fill("fixture_metrics");
+    await page.locator(".dataset-list .dataset").first().click();
+    await page.getByTestId("request-reason").fill("E2E: revenue for the weekly report");
+    await page.getByTestId("request-access").click();
+    await expect(page.getByTestId("request-notice")).toContainText("REQUESTED");
+
+    // Datasources: real connection test and a catalog refresh that reports counts.
+    await page.getByTestId("nav-admin-datasources").click();
+    await expect(page.getByTestId("admin-datasources")).toBeVisible();
+    await page.getByTestId(`test-${datasourceName}`).click();
+    await expect(page.getByTestId("datasource-test-result")).toContainText("HEALTHY");
+    await page.getByTestId("refresh-secure-views").fill("");
+    await page.getByTestId(`refresh-${datasourceName}`).click();
+    await expect(page.getByTestId("catalog-refresh-result")).toContainText("注册");
+
+    // Permissions: the request is visible, mock approval is labelled as a mock.
+    await page.getByTestId("nav-admin-permissions").click();
+    await expect(page.getByTestId("admin-permissions")).toBeVisible();
+    const requestRow = page.locator('[data-testid="request-table"] tbody tr').first();
+    await expect(requestRow).toBeVisible();
+    const approve = requestRow.getByTestId(/^mock-approve-/);
+    if (await approve.isEnabled()) {
+      await approve.click();
+      await expect(page.getByTestId("admin-notice")).toContainText("Mock 状态");
+    }
+    await expect(page.locator('[data-testid="request-table"]')).toContainText("未授权");
+
+    // A real grant is created and revoked through the form. The journey must be
+    // repeatable, so any leftover grant for the same triple is revoked first.
+    const rows = page.locator('[data-testid="grant-table"] tbody tr');
+    await expect(rows.first()).toBeVisible();
+    const datasetSelect = page.getByTestId("grant-dataset");
+    await datasetSelect.selectOption({ index: 1 });
+    const datasetLabel = (await datasetSelect.locator("option:checked").innerText()).trim();
+    let count = await stableCount(rows);
+    for (let index = count - 1; index >= 0; index -= 1) {
+      const text = (await rows.nth(index).innerText()).replace(/\s+/g, " ");
+      if (text.includes("viewer") && text.includes(datasetLabel) && text.includes("query")) {
+        await rows.nth(index).getByRole("button", { name: "撤回" }).click();
+        await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
+      }
+    }
+    const before = await stableCount(rows);
+    await page.getByTestId("grant-role").selectOption({ label: "viewer" });
+    await page.getByTestId("grant-action").selectOption("query");
+    await page.getByTestId("create-grant").click();
+    await expect(page.getByTestId("admin-notice")).toContainText("真实授权");
+    await expect(rows).toHaveCount(before + 1, { timeout: 15_000 });
+    await rows.last().getByRole("button", { name: "撤回" }).click();
+    await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
+    await expect(rows).toHaveCount(before, { timeout: 15_000 });
+  });
+});
+
+
+test.describe("Administration" + " capability gate", () => {
+  test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
+
+  test("a viewer sees no administration entry point and no admin data", async ({ page }) => {
+    const admin = process.env.E2E_ADMIN_USER ?? "admin";
+    const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
+    const viewerName = process.env.E2E_VIEWER_USER ?? "e2e-viewer";
+    const viewerPassword = process.env.E2E_VIEWER_PASSWORD ?? "e2e-viewer-password-123";
+
+    await page.goto("/login");
+    await page.getByTestId("login-username").fill(admin);
+    await page.getByTestId("login-password").fill(adminPassword);
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("datasource-select")).toBeVisible();
+
+    // Create (or reuse) a viewer account through the screen itself.
+    await page.getByTestId("nav-admin-permissions").click();
+    await page.getByTestId("new-user-name").fill(viewerName);
+    await page.getByTestId("new-user-password").fill(viewerPassword);
+    await page.getByTestId("new-user-role-viewer").check();
+    await page.getByTestId("create-user").click();
+    // A repeated run finds the user already there (409 CONFLICT); either outcome
+    // is fine - what matters is that the account exists with the known password.
+    await expect(
+      page.locator('[data-testid="admin-notice"], .notice.error'),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByTestId("login-username").fill(viewerName);
+    await page.getByTestId("login-password").fill(viewerPassword);
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("datasource-select")).toBeVisible();
+
+    // No administration entry points in the navigation.
+    await expect(page.getByTestId("nav-admin-datasources")).toHaveCount(0);
+    await expect(page.getByTestId("nav-admin-permissions")).toHaveCount(0);
+
+    // Going there directly shows the gate, and no admin data is rendered.
+    await page.goto("/admin/permissions");
+    await expect(page.getByTestId("permission-gate")).toBeVisible();
+    await expect(page.getByTestId("request-table")).toHaveCount(0);
+    await expect(page.getByTestId("grant-table")).toHaveCount(0);
   });
 });

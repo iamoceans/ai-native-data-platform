@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logout, me } from "../api/endpoints";
 
 export function AppShell() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
 
   if (profile.isError) {
@@ -40,6 +41,24 @@ export function AppShell() {
           <NavLink to="/history" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             History
           </NavLink>
+          {profile.data?.capabilities.includes("admin.manage") ? (
+            <>
+              <NavLink
+                to="/admin/datasources"
+                data-testid="nav-admin-datasources"
+                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+              >
+                Datasources
+              </NavLink>
+              <NavLink
+                to="/admin/permissions"
+                data-testid="nav-admin-permissions"
+                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+              >
+                Permissions
+              </NavLink>
+            </>
+          ) : null}
         </nav>
         <div className="topbar-right">
           {profile.data ? (
@@ -51,6 +70,10 @@ export function AppShell() {
                 className="ghost"
                 onClick={async () => {
                   await logout();
+                  // Cached data belongs to the session that just ended; keeping it
+                  // would let the next account briefly see the previous profile
+                  // (and its capabilities) until the cache went stale.
+                  queryClient.clear();
                   navigate("/login");
                 }}
               >

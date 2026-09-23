@@ -138,7 +138,7 @@ A17 resource report (medium scale, reference host):
 | A13 | Idempotency + concurrency | **passed** (M1/M2) | idempotent submit, single claim, capacity caps verified; three engines share the same scheduler; ingestion concurrency (409 for a second active sync) verified in M3 |
 | A14 | Cross-source joins | **passed** (M4) | Whitelisted as-of join (Doris cohorts + PostgreSQL configuration) executed through two real query results: amounts preserved, unmatched rate reported; a duplicate overlapping configuration raises `JOIN_CARDINALITY_VIOLATION` instead of double counting |
 | A15 | SSE reconnect/expiry/revocation | **passed** (live, 2026-09-23) | replay, revocation and cursor expiry verified in the integration suite, plus the live drop test `scripts/verify_a15_sse_drop.py`: the client resets TCP mid-stream (SO_LINGER 0), the query finishes while nobody listens, and the reconnect with `Last-Event-ID` resumes at the next id with no gap and no duplicate, delivering the terminal event |
-| A16 | Full UI journey | **partial** (M6 charts done) | login -> SQL -> results -> history verified, plus the M6 journey analysis -> chart -> table view -> drilldown child analysis; Playwright 3 passed 2026-09-19. Remaining: shared/dashboard screens and the live worker-kill path |
+| A16 | Full UI journey | **passed for the specified routes** (2026-09-24) | login -> SQL -> results -> history, analysis -> chart -> table view -> drilldown, the two administration routes (`/admin/datasources`, `/admin/permissions`) and the capability gate; Playwright **5 journeys passed** 2026-09-24. The spec's `/datasets/:id` deep link is served by the catalog detail panel instead of its own route; shared/dashboard screens do not exist in the V1 spec and were not invented |
 | A17 | Medium dataset resource report | **passed, recorded** (M4) | Medium run generated (927,456 rows, 53.9 MiB, 17.3 s), loaded into Doris in 4.6 s, BE storage 97 MiB; timed platform aggregates 0.50-1.30 s (target < 5 s); generator peak tracked allocations 22.0 MiB |
 | A18 | Reproducible from blank volumes | **passed for the business stack** (2026-09-23) | Literal blank-volume run: `down -v` (0 volumes, 0 containers) -> `up --profile full` from scratch -> `alembic upgrade head` -> `bootstrap` -> `verify_schema.py` (27 tables) -> `seed_sources.py` -> `smoke_core.py --demo` -> `demo_load --reset-demo` -> `demo_verify` (all checks) -> a real analysis with driver decomposition and a chart. Two reproducibility gaps were found and fixed on the way: the seed script created neither the PostgreSQL fixture tables nor the MySQL `m2_heavy` cancel/timeout fixture, so a blank source made catalog-refresh and two MySQL tests fail. The DataHub part of the full flow is not included in that run |
 
@@ -203,6 +203,14 @@ cd frontend && E2E_BASE_URL=http://127.0.0.1:3000 E2E_ADMIN_PASSWORD=<admin pw> 
 After the A12/A15/A18 work (2026-09-23) the three-engine matrix was rerun from
 the freshly seeded blank-volume state: **67 passed, 1 skipped** (the DataHub
 full-stack test, DataHub not started), and both live acceptances passed.
+
+After the administration screens (2026-09-24): **242 static passed**, the
+three-engine matrix reported **68 passed, 1 skipped** (one new integration test
+covers the administrator request queue), and **5 Playwright journeys passed**.
+That journey pair also caught a real UI defect: signing out and signing in as
+another account left the previous profile (and its capabilities) in the React
+Query cache, so the shell could briefly render administration links for a
+viewer. Sign-out and sign-in now clear the cache.
 
 The last full-profile record (2026-09-16) is **223 static + 63 integration = 286
 backend tests passed**, **2 Playwright journeys passed**, three engine smokes

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
@@ -5,6 +6,7 @@ import { login } from "../api/endpoints";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +18,9 @@ export function LoginPage() {
     setError(null);
     try {
       await login(username, password);
+      // A sign-in starts a new session: nothing cached from a previous one may
+      // survive, or the shell would render the old profile's capabilities.
+      queryClient.clear();
       navigate("/sql");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "sign in failed");

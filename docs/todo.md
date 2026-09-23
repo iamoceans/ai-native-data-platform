@@ -488,6 +488,21 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       with driver decomposition and chart. The run exposed two reproducibility
       gaps, both fixed: `seed_sources.py` now creates the PostgreSQL fixture
       tables and the MySQL `m2_heavy` cancel/timeout fixture.
-- [ ] Remaining M6 work: the DataHub part of the blank-volume flow, remaining
-      admin screens.
+- [x] Administration screens (spec 24): `/admin/datasources` (health,
+      connection test, catalog refresh with secure views, ingestion sync,
+      registration by `secret_ref` - no password ever reaches the browser) and
+      `/admin/permissions` (access-request queue, real grants create/revoke,
+      users and roles, sanitized audit list). Navigation and pages are gated by
+      the `admin.manage` capability through `PermissionGate`, while every
+      endpoint re-checks it server-side.
+- [x] `GET /admin/permission-requests` (status filter, cursor pagination): the
+      queue the spec's Permissions screen needs. Marking a request
+      `MOCK_APPROVED` is labelled as a mock and provably creates no grant
+      (`test_permission_request_queue_is_admin_only_and_stays_mock`).
+- [x] Catalog additions: an upstream lineage panel driven by the real endpoint
+      (the M1-era "lineage lands in M3" text was stale) and an access-request
+      form, so the request -> queue -> mock loop is walkable in the UI.
+- [ ] Remaining M6 work: the DataHub part of the blank-volume flow; the spec's
+      `/datasets/:id` route is served by the catalog detail panel rather than its
+      own page.
 ```

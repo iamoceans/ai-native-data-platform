@@ -8,6 +8,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { SqlWorkspacePage } from "./pages/SqlWorkspacePage";
 import { AskPage } from "./pages/AskPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
+import { AdminDatasourcesPage } from "./pages/AdminDatasourcesPage";
+import { AdminPermissionsPage } from "./pages/AdminPermissionsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +37,8 @@ export function App() {
             <Route path="/sql" element={<SqlWorkspacePage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/admin/datasources" element={<AdminDatasourcesPage />} />
+            <Route path="/admin/permissions" element={<AdminPermissionsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/ask" replace />} />
         </Routes>

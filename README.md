@@ -101,7 +101,14 @@ What the M6 work so far adds:
 - controlled charts (spec section 25): `GET /charts/{id}` returns a ChartSpec
   with at most 1000 points, `POST /charts/{id}/drilldown` creates a child
   analysis with the drilled value bound as a parameter, and `/analyses/:id`
-  renders the bar chart with a table-equivalent view and signed labels.
+  renders the bar chart with a table-equivalent view and signed labels;
+- the administration screens (spec section 24): `/admin/datasources` for health,
+  connection tests, catalog refresh and ingestion sync, and
+  `/admin/permissions` for the access-request queue (mock marking kept visibly
+  apart from real grants), grants, users/roles and the sanitized audit list.
+  Both are gated by the `admin.manage` capability and every admin endpoint
+  re-checks it server-side; datasource credentials are only ever referenced by
+  `secret_ref`.
 
 Still open: a real-model A09 run, the live worker-kill and network-drop
 acceptances, a literal blank-volume run and the remaining admin screens; see

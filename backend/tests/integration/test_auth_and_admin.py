@@ -173,3 +173,77 @@ def test_role_revocation_cancels_queries_that_lose_effective_access(
         detail = analyst_client.get(f"/api/v1/queries/{query_id}")
         assert detail.status_code == 200, detail.text
         assert detail.json()["status"] == "CANCELLED"
+
+
+def test_permission_request_queue_is_admin_only_and_stays_mock(admin_client, app, viewer):
+    """The administrator queue shows real request states; mock approval never grants.
+
+    Spec 24 requires the Permissions screen to keep "real grant" and "mock state"
+    visibly apart, so the test checks both halves: the queue is readable by an
+    administrator only, and marking a request does not create a permission.
+    """
+    from fastapi.testclient import TestClient
+
+    from tests.helpers import setup_datasource_and_grants
+
+    source_url = os.environ.get("AIND_TEST_SOURCE_URL")
+    if not source_url:
+        pytest.skip("AIND_TEST_SOURCE_URL not set")
+    setup = setup_datasource_and_grants(admin_client, source_url, grant_roles=["admin"])
+    dataset_id = setup.dataset_ids["fixture_metrics"]
+
+    # A second client: logging the viewer in on the shared one would replace the
+    # administrator session these assertions need.
+    with TestClient(app, raise_server_exceptions=False) as viewer_client:
+        viewer_csrf = login(viewer_client, viewer["username"], viewer["password"])
+        return _assert_permission_request_queue(
+            admin_client, viewer_client, viewer_csrf, setup, dataset_id
+        )
+
+
+def _assert_permission_request_queue(admin_client, client, viewer_csrf, setup, dataset_id):
+    created = client.post(
+        "/api/v1/permission-requests",
+        json={"dataset_id": dataset_id, "reason": "need revenue for the weekly report"},
+        headers={"X-CSRF-Token": viewer_csrf},
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+    assert created.json()["status"] == "REQUESTED"
+
+    forbidden = client.get("/api/v1/admin/permission-requests", headers={"X-CSRF-Token": viewer_csrf})
+    assert forbidden.status_code == 403
+
+    queue = admin_client.get("/api/v1/admin/permission-requests")
+    assert queue.status_code == 200, queue.text
+    items = {item["id"]: item for item in queue.json()["items"]}
+    assert request_id in items
+    assert items[request_id]["reason"].startswith("need revenue")
+    assert items[request_id]["user_id"]
+
+    empty = admin_client.get("/api/v1/admin/permission-requests", params={"status": "REJECTED"})
+    assert empty.status_code == 200
+    assert empty.json()["items"] == []
+    invalid = admin_client.get("/api/v1/admin/permission-requests", params={"status": "MAYBE"})
+    assert invalid.status_code == 422
+
+    approved = admin_client.post(f"/api/v1/admin/permission-requests/{request_id}/mock-approve")
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "MOCK_APPROVED"
+
+    # The mock state is a label, not a grant: the viewer still cannot query.
+    grants = admin_client.get("/api/v1/admin/grants").json()["items"]
+    role_id = next(
+        role["id"] for role in admin_client.get("/api/v1/admin/roles").json() if role["name"] == "viewer"
+    )
+    assert not [
+        grant
+        for grant in grants
+        if grant["dataset_id"] == dataset_id and grant["role_id"] == role_id
+    ], "mock approval must not create a real grant"
+    denied = client.post(
+        "/api/v1/queries",
+        json={"datasource_id": setup.datasource_id, "sql": "SELECT COUNT(*) AS n FROM fixture_metrics"},
+        headers={"X-CSRF-Token": viewer_csrf},
+    )
+    assert denied.status_code == 403, denied.text

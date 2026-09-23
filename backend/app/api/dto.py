@@ -492,6 +492,11 @@ class PermissionRequestResponse(BaseModel):
     created_at: datetime
 
 
+class PermissionRequestListResponse(BaseModel):
+    items: list[PermissionRequestResponse]
+    next_cursor: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Admin
 # ---------------------------------------------------------------------------

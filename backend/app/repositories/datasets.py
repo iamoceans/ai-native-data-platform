@@ -10,7 +10,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.ids import utcnow
-from app.models.orm import Dataset, MetadataSnapshot, Permission
+from app.models.orm import Dataset, MetadataSnapshot, Permission, PermissionRequest
 
 
 def get_dataset(session: Session, dataset_id: uuid.UUID) -> Dataset | None:
@@ -245,6 +245,29 @@ def get_grant(session: Session, grant_id: uuid.UUID) -> Permission | None:
 def delete_grant(session: Session, row: Permission) -> None:
     session.delete(row)
     session.flush()
+
+
+def list_permission_requests(
+    session: Session, limit: int, offset: int, status: str | None = None
+) -> tuple[list[PermissionRequest], int]:
+    """Requests for data access, newest first (administrator view)."""
+    filters = [] if status is None else [PermissionRequest.status == status]
+    stmt = select(PermissionRequest)
+    count_stmt = select(func.count()).select_from(PermissionRequest)
+    if filters:
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+    total = session.execute(count_stmt).scalar_one()
+    rows = (
+        session.execute(
+            stmt.order_by(PermissionRequest.created_at.desc(), PermissionRequest.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows), int(total)
 
 
 def list_grants(
