@@ -40,8 +40,8 @@ DEMO_RUN ?= $(shell ls -td runtime/demo/*/ 2>/dev/null | head -n1 | xargs -r -n1
 .PHONY: help doctor setup-secrets up-core up-full down migrate bootstrap \
         test-core test-unit test-integration test-security smoke-core \
         api-spec types build-core logs ps seed-sources up-full-data \
-        demo-generate demo-load demo-lineage metadata-sync demo-verify eval-agent \n        reset-demo \
-        smoke-full evaluate-live
+        demo-generate demo-load demo-lineage metadata-sync demo-verify eval-agent \
+        verify-a12 verify-a15 reset-demo smoke-full evaluate-live
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -150,6 +150,12 @@ demo-verify: ## Verify the newest demo run against its ground truth (offline)
 
 eval-agent: ## A09 harness: run the fixed scenarios through the deployed analysis loop
 	$(UV) scripts/eval_agent.py --cases $(CASES) --scale $(SCALE) --password "$(AIND_SMOKE_PASSWORD)"
+
+verify-a12: ## A12 live acceptance: pause the query worker mid-query, expect SUSPECT -> LOST
+	$(UV) scripts/verify_a12_worker_kill.py --password "$(AIND_SMOKE_PASSWORD)"
+
+verify-a15: ## A15 live acceptance: reset an SSE client mid-stream and reconnect
+	$(UV) scripts/verify_a15_sse_drop.py --password "$(AIND_SMOKE_PASSWORD)"
 
 reset-demo: ## Destructive: rebuild the demo data (requires CONFIRM=demo)
 	@test "$(CONFIRM)" = "demo" || (echo "set CONFIRM=demo to confirm the destructive reset"; exit 2)

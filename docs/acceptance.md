@@ -134,13 +134,13 @@ A17 resource report (medium scale, reference host):
 | A09 | Real-agent accuracy | **harness ready, not executed** | `scripts/eval_agent.py` + `make eval-agent` run ten fixed (scenario, seed) cases through the deployed loop and score them against the generator's ground truth (model id, prompt version, tokens, latency, per-case failure recorded). The recorded 2026-09-19 run reports `a09_status=not_executed_no_real_model` - no provider is configured - with a deterministic baseline of target-in-top3 7/7 target cases, no forced attribution 3/3 no-target cases and evidence-consistent 10/10 |
 | A10 | No-anomaly / incomplete-day handling | **passed** (M5, 2026-09-19) | Generator/kernel paths still pass; the runner now applies a documented 0.5% materiality band, so a change inside it is reported as immaterial with no contributor claim and no hypotheses. Verified through the deployed stack by the A09 harness: `no_change` and `config_duplicate` end COMPLETED with no forced attribution, `incomplete_day` ends PARTIAL without numeric claims (3/3 no-target cases) |
 | A11 | Cancel on three engines | **passed** (M2) | PostgreSQL `57014`-based, MySQL `KILL QUERY` (1317), Doris `KILL QUERY` ("cancel query by user"); timeouts verified per engine |
-| A12 | Restart recovery | **partial** | lease loss, fencing, no double publish verified; the M5 runner re-enters any phase after a claim loss (EXECUTING re-reads the query set, OBSERVING re-decides, SYNTHESIZING re-writes artifacts idempotently by content hash), but a live kill-the-worker E2E is still M6 |
+| A12 | Restart recovery | **passed** (live, 2026-09-23) | `scripts/verify_a12_worker_kill.py` pauses the real `query-worker` container mid-execution: the lease goes ACTIVE -> SUSPECT (reconciler) -> LOST after the grace window, the terminal code is `QUERY_LOST`, nothing is published, and after the frozen worker resumes the fencing token keeps the job LOST with zero result rows. The M5 runner also re-enters any phase after a claim loss (EXECUTING re-reads the query set, OBSERVING re-decides, SYNTHESIZING rewrites artifacts idempotently by content hash) |
 | A13 | Idempotency + concurrency | **passed** (M1/M2) | idempotent submit, single claim, capacity caps verified; three engines share the same scheduler; ingestion concurrency (409 for a second active sync) verified in M3 |
 | A14 | Cross-source joins | **passed** (M4) | Whitelisted as-of join (Doris cohorts + PostgreSQL configuration) executed through two real query results: amounts preserved, unmatched rate reported; a duplicate overlapping configuration raises `JOIN_CARDINALITY_VIOLATION` instead of double counting |
-| A15 | SSE reconnect/expiry/revocation | **partial** | replay, revocation, cursor expiry logic verified; network-drop client test pending (M6) |
+| A15 | SSE reconnect/expiry/revocation | **passed** (live, 2026-09-23) | replay, revocation and cursor expiry verified in the integration suite, plus the live drop test `scripts/verify_a15_sse_drop.py`: the client resets TCP mid-stream (SO_LINGER 0), the query finishes while nobody listens, and the reconnect with `Last-Event-ID` resumes at the next id with no gap and no duplicate, delivering the terminal event |
 | A16 | Full UI journey | **partial** (M6 charts done) | login -> SQL -> results -> history verified, plus the M6 journey analysis -> chart -> table view -> drilldown child analysis; Playwright 3 passed 2026-09-19. Remaining: shared/dashboard screens and the live worker-kill path |
 | A17 | Medium dataset resource report | **passed, recorded** (M4) | Medium run generated (927,456 rows, 53.9 MiB, 17.3 s), loaded into Doris in 4.6 s, BE storage 97 MiB; timed platform aggregates 0.50-1.30 s (target < 5 s); generator peak tracked allocations 22.0 MiB |
-| A18 | Reproducible from blank volumes | **partial** | schema reset + migrate + bootstrap + seed + smoke verified on Docker; the demo pipeline is scripted end to end (`demo-generate/load/verify/lineage`); a literal blank-volume run and the DataHub part of the full flow remain M6 |
+| A18 | Reproducible from blank volumes | **passed for the business stack** (2026-09-23) | Literal blank-volume run: `down -v` (0 volumes, 0 containers) -> `up --profile full` from scratch -> `alembic upgrade head` -> `bootstrap` -> `verify_schema.py` (27 tables) -> `seed_sources.py` -> `smoke_core.py --demo` -> `demo_load --reset-demo` -> `demo_verify` (all checks) -> a real analysis with driver decomposition and a chart. Two reproducibility gaps were found and fixed on the way: the seed script created neither the PostgreSQL fixture tables nor the MySQL `m2_heavy` cancel/timeout fixture, so a blank source made catalog-refresh and two MySQL tests fail. The DataHub part of the full flow is not included in that run |
 
 ## Skipped or unverified (explicit)
 
@@ -199,6 +199,10 @@ AIND_SMOKE_IN_CLUSTER=1 AIND_SMOKE_PASSWORD=<admin pw> uv run --project backend 
 AIND_SMOKE_IN_CLUSTER=1 AIND_SMOKE_PASSWORD=<admin pw> uv run --project backend --frozen python scripts/smoke_core.py --demo --kind doris
 cd frontend && E2E_BASE_URL=http://127.0.0.1:3000 E2E_ADMIN_PASSWORD=<admin pw> npx playwright test
 ```
+
+After the A12/A15/A18 work (2026-09-23) the three-engine matrix was rerun from
+the freshly seeded blank-volume state: **67 passed, 1 skipped** (the DataHub
+full-stack test, DataHub not started), and both live acceptances passed.
 
 The last full-profile record (2026-09-16) is **223 static + 63 integration = 286
 backend tests passed**, **2 Playwright journeys passed**, three engine smokes

@@ -476,6 +476,18 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       analysis.
 - [x] Playwright journey `Analysis and charts`: Ask -> analysis -> chart ->
       table view -> drilldown child analysis (3 journeys passed 2026-09-19).
-- [ ] Remaining M6 work: live worker-kill acceptance (A12), network-drop SSE
-      (A15), literal blank-volume run (A18), remaining admin screens.
+- [x] A12 live acceptance: `scripts/verify_a12_worker_kill.py` (+ `make verify-a12`)
+      pauses the real query worker mid-execution and observes ACTIVE -> SUSPECT ->
+      LOST, `QUERY_LOST`, no publication, and fencing holding after the worker
+      resumes.
+- [x] A15 live acceptance: `scripts/verify_a15_sse_drop.py` (+ `make verify-a15`)
+      resets the client connection mid-stream and reconnects with Last-Event-ID:
+      no gap, no duplicate, terminal event delivered.
+- [x] A18 literal blank-volume run (business stack): `down -v` -> up -> migrate ->
+      bootstrap -> schema check -> seed -> smoke -> demo load/verify -> analysis
+      with driver decomposition and chart. The run exposed two reproducibility
+      gaps, both fixed: `seed_sources.py` now creates the PostgreSQL fixture
+      tables and the MySQL `m2_heavy` cancel/timeout fixture.
+- [ ] Remaining M6 work: the DataHub part of the blank-volume flow, remaining
+      admin screens.
 ```

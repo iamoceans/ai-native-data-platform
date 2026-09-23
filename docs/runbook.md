@@ -163,3 +163,22 @@ cd frontend; npx playwright test
 - Result queries that decompose a full partition return fewer rows than expected:
   the platform paginates results (default page 100). Follow `next_cursor` or set a
   higher page `limit` (max 500 per request).
+
+## Blank-volume start (A18, verified 2026-09-23)
+
+The business stack reproduces from nothing with the documented commands:
+
+```bash
+docker compose -f compose.yaml --profile full down -v --remove-orphans
+docker compose -f compose.yaml -f compose.dev.yaml --profile full up -d --build
+docker compose -f compose.yaml run --rm --no-deps backend alembic upgrade head
+docker compose -f compose.yaml run --rm --no-deps backend python -m app.cli bootstrap
+make seed-sources          # PostgreSQL fixtures + MySQL (incl. m2_heavy) + Doris demo tables
+AIND_SMOKE_IN_CLUSTER=1 make smoke-core ARGS="--demo"   # or scripts/smoke_core.py --demo
+make demo-generate && make reset-demo CONFIRM=demo && make demo-verify
+make verify-a12 && make verify-a15 && make eval-agent
+```
+
+`seed-sources` fills `demo.*` with the small M2 connector fixture; the M4 dataset
+replaces it, which is why the first `demo-load` after seeding needs the explicit
+reset. The DataHub stack is a separate compose project and is not part of this run.

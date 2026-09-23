@@ -167,33 +167,40 @@ def open_authenticated_client(base_url: str, username: str, password: str, attem
     )
 
 
-def ensure_doris_datasource(client: httpx.Client, *, host: str, port: int) -> str:
-    """Register/refresh the Doris source and grant the admin role on it.
+def ensure_datasource(
+    client,
+    *,
+    name: str,
+    kind: str,
+    config: dict,
+    secret_ref: str,
+    schema: str,
+) -> str:
+    """Register or re-point a datasource at the platform's view of the source.
 
-    ``host``/``port`` are what the *platform* must use, not what this script
-    uses: the deployed backend reaches Doris as ``doris-fe:9030``, while the
-    host-side loader uses the published loopback port.
+    ``config`` is what the *deployed platform* must use, not what this script
+    uses: the backend reaches sources by compose service name, while host-side
+    scripts use the published loopback ports. The integration tests register the
+    host-side view, so a live acceptance run has to put it back.
     """
-    config = {
-        "host": host,
-        "port": port,
-        "database": "demo",
-        "connect_timeout_seconds": 5,
-    }
-    existing = api_json(client.get("/api/v1/datasources"), what="list datasources")["items"]
-    datasource = next((item for item in existing if item["name"] == "source-doris"), None)
+    existing = client.get("/api/v1/datasources")
+    if existing.status_code >= 400:
+        raise EvalError(f"list datasources: HTTP {existing.status_code} {existing.text[:200]}")
+    datasource = next(
+        (item for item in existing.json()["items"] if item["name"] == name), None
+    )
     if datasource is None:
         created = client.post(
             "/api/v1/datasources",
             json={
-                "name": "source-doris",
-                "kind": "doris",
+                "name": name,
+                "kind": kind,
                 "connection_config": config,
-                "secret_ref": "doris",
+                "secret_ref": secret_ref,
             },
         )
         if created.status_code != 201:
-            raise EvalError(f"register doris datasource: {created.text[:200]}")
+            raise EvalError(f"register {name}: {created.text[:200]}")
         datasource = created.json()
     elif datasource["connection_config"] != config:
         patched = client.patch(
@@ -201,23 +208,20 @@ def ensure_doris_datasource(client: httpx.Client, *, host: str, port: int) -> st
             json={"version": datasource["version"], "connection_config": config},
         )
         if patched.status_code != 200:
-            raise EvalError(f"update doris datasource: {patched.text[:200]}")
+            raise EvalError(f"update {name}: {patched.text[:200]}")
         datasource = patched.json()
-    refresh = api_json(
-        client.post(
-            f"/api/v1/admin/datasources/{datasource['id']}/catalog-refresh",
-            json={"schemas": ["demo"]},
-        ),
-        what="catalog refresh",
+    refresh = client.post(
+        f"/api/v1/admin/datasources/{datasource['id']}/catalog-refresh",
+        json={"schemas": [schema]},
     )
-    datasets = refresh["items"]
-    log(f"datasets registered: {sorted(item['object_name'] for item in datasets)}")
+    if refresh.status_code >= 400:
+        raise EvalError(f"catalog refresh on {name}: {refresh.text[:200]}")
+    datasets = refresh.json()["items"]
+    log(f"{name}: {len(datasets)} datasets registered")
     roles_response = client.get("/api/v1/admin/roles")
     if roles_response.status_code >= 400:
-        raise EvalError(f"list roles: HTTP {roles_response.status_code} {roles_response.text[:200]}")
-    role_id = next(
-        role["id"] for role in roles_response.json() if role["name"] == "admin"
-    )
+        raise EvalError(f"list roles: HTTP {roles_response.status_code}")
+    role_id = next(role["id"] for role in roles_response.json() if role["name"] == "admin")
     for dataset in datasets:
         for action in ("discover", "query"):
             granted = client.post(
@@ -225,8 +229,26 @@ def ensure_doris_datasource(client: httpx.Client, *, host: str, port: int) -> st
                 json={"role_id": role_id, "dataset_id": dataset["id"], "action": action},
             )
             if granted.status_code not in (201, 409):
-                raise EvalError(f"grant {action}: {granted.text[:200]}")
+                raise EvalError(f"grant {action} on {dataset['object_name']}: {granted.text[:200]}")
     return datasource["id"]
+
+
+def ensure_doris_datasource(client: httpx.Client, *, host: str, port: int) -> str:
+    """Register/refresh the Doris source and grant the admin role on it."""
+    return ensure_datasource(
+        client,
+        name="source-doris",
+        kind="doris",
+        config={
+            "host": host,
+            "port": port,
+            "database": "demo",
+            "connect_timeout_seconds": 5,
+        },
+        secret_ref="doris",
+        schema="demo",
+    )
+
 
 
 def api_json(response: httpx.Response, *, what: str) -> dict:

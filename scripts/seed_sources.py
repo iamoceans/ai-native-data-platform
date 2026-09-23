@@ -5,6 +5,9 @@ Creates small, deterministic tables on the MySQL and Doris sources so the
 connector acceptance (schema, types, query, timeout, cancel) runs against real
 engines:
 
+- PostgreSQL ``public.fixture_metrics`` / ``public.fixture_heavy`` (the connector
+  and UI fixtures the smoke test and the SQL workspace journey query; they are
+  not the M4 demo dataset, which the generator owns)
 - MySQL  ``app_release_config``   (spec 26.1 MySQL source)
 - Doris  ``demo.ads_revenue_daily`` per spec 26.2 (DUPLICATE KEY, 4 buckets, rn=1)
 - Doris  ``demo.iap_revenue_daily``, ``demo.user_daily`` (spec 26.1 shapes)
@@ -43,6 +46,19 @@ CREATE TABLE IF NOT EXISTS app_release_config (
   release_at DATETIME NOT NULL,
   rollout_note VARCHAR(255) NULL,
   PRIMARY KEY (platform, app_version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+# Cancel/timeout fixture: the connector acceptance cancels and times out against a
+# deliberately expensive 3-way self-join, which needs a table big enough that the
+# engine is still working when the platform intervenes.
+MYSQL_HEAVY_DDL = """
+CREATE TABLE IF NOT EXISTS m2_heavy (
+  id BIGINT NOT NULL,
+  bucket INT NOT NULL,
+  revenue_usd DECIMAL(20,6) NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_m2_heavy_bucket (bucket)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
@@ -127,6 +143,41 @@ def table_empty(cursor, schema: str, table: str) -> bool:
     return int(cursor.fetchone()[0]) == 0
 
 
+M2_HEAVY_ROWS = 200_000
+
+
+def seed_mysql_heavy(cur, database: str) -> int:
+    """Seed the cancel/timeout fixture once; returns its row count."""
+    cur.execute(MYSQL_HEAVY_DDL)
+    if not table_empty(cur, database, "m2_heavy"):
+        cur.execute("SELECT COUNT(*) FROM m2_heavy")
+        return int(cur.fetchone()[0])
+    cur.execute(
+        f"""
+        INSERT INTO m2_heavy (id, bucket, revenue_usd)
+        SELECT gs, gs % 100, ((gs % 10000) / 7.0)
+        FROM (
+          SELECT a.n + b.n * 10 + c.n * 100 + d.n * 1000 + e.n * 10000 + f.n * 100000 + 1 AS gs
+          FROM (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+          CROSS JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+          CROSS JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) c
+          CROSS JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) d
+          CROSS JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) e
+          CROSS JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+                UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) f
+        ) AS series
+        WHERE gs <= {M2_HEAVY_ROWS}
+        """
+    )
+    cur.execute("SELECT COUNT(*) FROM m2_heavy")
+    return int(cur.fetchone()[0])
+
+
 def seed_mysql(host: str, port: int, user: str, password: str, database: str) -> int:
     with connect_mysql(host, port, user, password, database) as conn:
         with conn.cursor() as cur:
@@ -151,6 +202,14 @@ def seed_mysql(host: str, port: int, user: str, password: str, database: str) ->
                 rows,
             )
             return len(rows)
+
+
+def seed_mysql_heavy_rows(
+    host: str, port: int, user: str, password: str, database: str
+) -> int:
+    with connect_mysql(host, port, user, password, database) as conn:
+        with conn.cursor() as cur:
+            return seed_mysql_heavy(cur, database)
 
 
 def seed_doris(host: str, port: int, user: str, password: str, database: str) -> dict[str, int]:
@@ -245,12 +304,73 @@ def seed_doris(host: str, port: int, user: str, password: str, database: str) ->
     return counts
 
 
+POSTGRES_FIXTURE_DDL = """
+CREATE TABLE IF NOT EXISTS public.fixture_metrics (
+  dt date NOT NULL,
+  country text NOT NULL,
+  platform text NOT NULL,
+  note text,
+  revenue_usd numeric(20,6) NOT NULL,
+  impressions bigint NOT NULL
+);
+CREATE TABLE IF NOT EXISTS public.fixture_heavy (
+  id bigint NOT NULL,
+  bucket integer NOT NULL,
+  revenue_usd numeric(20,6) NOT NULL
+);
+"""
+
+# Same shapes and the same deterministic series as the integration fixtures, so a
+# blank-volume start and a test run see identical numbers.
+POSTGRES_FIXTURE_DATA = """
+INSERT INTO public.fixture_metrics (dt, country, platform, note, revenue_usd, impressions)
+SELECT
+  DATE '2026-09-01' + (gs % 10),
+  CASE WHEN gs % 3 = 0 THEN 'US' ELSE 'DE' END,
+  CASE WHEN gs % 2 = 0 THEN 'android' ELSE 'ios' END,
+  CASE WHEN gs % 5 = 0 THEN NULL ELSE 'note-' || gs END,
+  ((gs % 997)::numeric / 10)::numeric(20,6),
+  (gs * 10)::bigint
+FROM generate_series(1, 2500) AS gs;
+
+INSERT INTO public.fixture_heavy (id, bucket, revenue_usd)
+SELECT gs, gs % 100, ((gs % 10000)::numeric / 7)::numeric(20,6)
+FROM generate_series(1, 100000) AS gs;
+"""
+
+
+def seed_postgres(host: str, port: int, user: str, password: str, database: str) -> dict[str, int]:
+    """Create the connector/UI fixture tables when they are missing or empty."""
+    import psycopg
+
+    counts: dict[str, int] = {}
+    with psycopg.connect(
+        host=host, port=port, user=user, password=password, dbname=database, connect_timeout=5
+    ) as conn:
+        conn.execute(POSTGRES_FIXTURE_DDL)
+        for table in ("fixture_metrics", "fixture_heavy"):
+            existing = conn.execute(f"SELECT COUNT(*) FROM public.{table}").fetchone()[0]
+            if existing:
+                counts[table] = int(existing)
+                continue
+            conn.execute(POSTGRES_FIXTURE_DATA)
+            counts[table] = int(
+                conn.execute(f"SELECT COUNT(*) FROM public.{table}").fetchone()[0]
+            )
+        conn.commit()
+    return counts
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="seed the M2 MySQL and Doris sources")
+    parser = argparse.ArgumentParser(
+        description="seed the PostgreSQL fixtures plus the M2 MySQL and Doris sources"
+    )
     parser.add_argument("--mysql-host", default=read_env("MYSQL_SEED_HOST", "127.0.0.1"))
     parser.add_argument("--mysql-port", type=int, default=int(read_env("MYSQL_DB_PORT", "33060")))
     parser.add_argument("--doris-host", default=read_env("DORIS_SEED_HOST", "127.0.0.1"))
     parser.add_argument("--doris-port", type=int, default=int(read_env("DORIS_FE_SQL_PORT", "19030")))
+    parser.add_argument("--pg-host", default=read_env("PG_SEED_HOST", "127.0.0.1"))
+    parser.add_argument("--pg-port", type=int, default=int(read_env("SOURCE_DB_PORT", "55433")))
     args = parser.parse_args()
 
     mysql_user = read_env("MYSQL_ADMIN_USER", "source_admin")
@@ -263,8 +383,20 @@ def main() -> int:
         print("missing passwords in .env; run scripts/setup_secrets.py first", file=sys.stderr)
         return 2
 
+    pg_user = read_env("SOURCE_BOOTSTRAP_USER", "source_admin")
+    pg_password = read_env("SOURCE_BOOTSTRAP_PASSWORD")
+    pg_db = read_env("SOURCE_DB_NAME", "ainative_source")
+    if pg_password:
+        pg_counts = seed_postgres(args.pg_host, args.pg_port, pg_user, pg_password, pg_db)
+        for table, count in sorted(pg_counts.items()):
+            print(f"postgres public.{table}: {count} rows")
+    else:
+        print("postgres fixture seed skipped: SOURCE_BOOTSTRAP_PASSWORD is not set", file=sys.stderr)
+
     mysql_rows = seed_mysql(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
     print(f"mysql app_release_config: {mysql_rows} rows")
+    heavy_rows = seed_mysql_heavy_rows(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
+    print(f"mysql m2_heavy: {heavy_rows} rows")
 
     doris_counts = seed_doris(args.doris_host, args.doris_port, doris_user, doris_password, "demo")
     for table, count in sorted(doris_counts.items()):

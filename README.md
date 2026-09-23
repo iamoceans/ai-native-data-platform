@@ -170,8 +170,15 @@ AIND_DATAHUB_ENABLED=1 make up-full   # core + MySQL 8.4.11 + Doris FE/BE 3.1.4
 
 # 3. generate, load and verify the demo dataset
 make demo-generate                    # SEED=42 AS_OF=2026-09-13 SCALE=small SCENARIO=ecpm_drop
-make demo-load                        # add --reset-demo to rebuild; first load needs no flag
+make demo-load                        # after `make seed-sources` the demo tables hold the M2
+                                      # connector fixture, so the first M4 load needs
+                                      # `make reset-demo CONFIRM=demo` to replace it
 make demo-verify                      # offline checks against the ground truth
+
+# 4. acceptance harnesses (deployed stack)
+make eval-agent                       # A09: ten fixed scenarios, scored vs ground truth
+make verify-a12                       # A12: pause the query worker mid-query -> SUSPECT -> LOST
+make verify-a15                       # A15: reset an SSE client mid-stream and reconnect
 
 # 4. catalog + context + lineage through DataHub
 make metadata-sync                    # queue ingestion for all registered sources
