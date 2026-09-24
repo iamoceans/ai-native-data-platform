@@ -237,6 +237,27 @@ The M5 configuration surface is administrator-only and environment-based:
 The API key is read from the configured mounted file. User questions cannot
 override the endpoint, model, key path, tool list, metric formulas or SQL policy.
 
+### Using a real model (DeepSeek is pre-configured)
+
+`.env` already points at DeepSeek's OpenAI-compatible endpoint; the only missing
+piece is the key:
+
+```bash
+# 1. paste the key (one line, replacing PASTE_DEEPSEEK_API_KEY_HERE)
+#    infra/local-secrets/llm_api_key        <- mounted read-only at /run/secrets
+# 2. prove the endpoint works (one structured call, prints model id/latency/tokens)
+make llm-check
+# 3. run the A09 evaluation over the ten fixed scenarios
+make eval-agent
+```
+
+Until a key is present the platform runs the deterministic template path and says
+so: the analysis state carries `llm_warning`, the model id stays
+`deterministic-template-v1`, and the A09 record reports
+`not_executed_no_real_model`. Nothing pretends a model was called. To switch
+models, change `AIND_LLM_MODEL` (for example `deepseek-reasoner`); endpoint,
+model and key path are administrator configuration, never request fields.
+
 ## 4. How to generate demo data
 
 The M4 generator creates a deterministic synthetic mobile-app dataset (no company

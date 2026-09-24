@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 
 from app.agent.budget import AnalysisBudget
-from app.agent.llm import configured_provider
+from app.agent.llm import resolve_provider
 from app.agent.planner import (
     InvestigationPlan,
     PlanStep,
@@ -63,6 +63,30 @@ DRIVER_ROLE = "driver_impressions"
 
 class AnalysisExecutionError(RuntimeError):
     pass
+
+
+class LLMUnavailable(RuntimeError):
+    """The configured model endpoint could not answer (key, auth, network, shape)."""
+
+
+def _call_provider(provider, *, task, messages, schema, budget, max_output_tokens):
+    """One structured model call, with a sanitized failure that keeps its cause.
+
+    Provider errors are re-raised as LLMUnavailable so the analysis records a
+    recognizable code instead of a generic execution error; the API key itself
+    never appears in the message.
+    """
+    try:
+        return provider.generate_structured(
+            messages=messages,
+            schema=schema,
+            budget=budget,
+            max_output_tokens=max_output_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        raise LLMUnavailable(
+            f"model endpoint {type(exc).__name__}: {str(exc)[:200]}"
+        ) from exc
 
 
 def _event(session, task, event_type: str, **payload) -> None:
@@ -215,9 +239,14 @@ def _prepare(session, *, task, settings: Settings) -> None:
     metric_key = str(context["metric_key"])
     metric_row, definition = _metric_definition(session, metric_key)
     dimensions = list(context.get("dimensions") or [])
-    provider = configured_provider(settings)
+    resolution = resolve_provider(settings)
+    provider = resolution.provider
     model_id = "deterministic-template-v1"
     prompt_version = "m5-v1"
+    if resolution.warning:
+        # A half-configured model endpoint is recorded, never hidden.
+        logger.warning("llm provider degraded: %s", resolution.warning)
+        _event(session, task, "analysis.llm.degraded", reason=resolution.warning)
     if provider is not None:
         consumed = dict(task.budget or {})
         budget = AnalysisBudget.start(
@@ -233,7 +262,9 @@ def _prepare(session, *, task, settings: Settings) -> None:
             queries=int(consumed.get("queries", 0)),
             sql_repairs=int(consumed.get("sql_repairs", 0)),
         )
-        generated = provider.generate_structured(
+        generated = _call_provider(
+            provider,
+            task=task,
             messages=[
                 {
                     "role": "system",
@@ -294,6 +325,7 @@ def _prepare(session, *, task, settings: Settings) -> None:
         **(task.state or {}),
         "metric_key": metric_key,
         "metric_version": int(metric_row.version),
+        "llm_warning": resolution.warning,
         "dimensions": dimensions,
         "queries": submitted,
         "pending_query_ids": [item["query_id"] for item in submitted],
@@ -1070,10 +1102,11 @@ def execute_claim(session, *, claim: queue_repo.AnalysisClaim, settings: Setting
         logger.exception("analysis execution failed", extra={"analysis_id": str(task.id)})
         if task.status not in TERMINAL_ANALYSIS_STATUSES:
             analyses_repo.set_status(task, AnalysisStatus.FAILED)
+            code = "LLM_UNAVAILABLE" if isinstance(exc, LLMUnavailable) else "ANALYSIS_EXECUTION_ERROR"
             task.state = {
                 **(task.state or {}),
-                "last_error": {"code": "ANALYSIS_EXECUTION_ERROR", "message": str(exc)[:500]},
+                "last_error": {"code": code, "message": str(exc)[:500]},
             }
-            _event(session, task, "analysis.failed", code="ANALYSIS_EXECUTION_ERROR")
+            _event(session, task, "analysis.failed", code=code)
         queue_repo.release_analysis_claim(session, claim, terminal=True, failed=True)
         return True

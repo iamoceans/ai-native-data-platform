@@ -29,6 +29,28 @@ class StructuredGeneration:
     finish_reason: str
 
 
+def read_api_key(path: Path | str) -> str | None:
+    """First usable key line from a mounted key file, or None.
+
+    The file is documented to hold comments plus one key line, so comments and
+    blank lines are skipped; a leftover placeholder counts as "no key yet". The
+    returned value is what goes into the Authorization header, so nothing else
+    from the file may leak into it.
+    """
+    try:
+        content = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for raw in content.splitlines():
+        line = raw.strip().strip('"').strip("'")
+        if not line or line.startswith("#"):
+            continue
+        if "PASTE" in line.upper():
+            return None
+        return line
+    return None
+
+
 class LLMProvider(Protocol):
     def generate_structured(
         self,
@@ -94,12 +116,11 @@ class OpenAICompatibleProvider:
     ) -> StructuredGeneration:
         estimated = sum(len(message.get("content", "")) for message in messages) // 4 + 1
         budget.reserve_model_call(estimated_input=estimated, max_output=max_output_tokens)
-        try:
-            api_key = self._api_key_file.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise RuntimeError("LLM API key file is unavailable") from exc
+        api_key = read_api_key(self._api_key_file)
         if not api_key:
-            raise RuntimeError("LLM API key file is empty")
+            raise RuntimeError(
+                f"no API key in {self._api_key_file}; paste one (see infra/local-secrets/llm_api_key)"
+            )
         response = httpx.post(
             f"{self._base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -135,17 +156,61 @@ class OpenAICompatibleProvider:
         )
 
 
-def configured_provider(settings) -> LLMProvider | None:
-    """Build the administrator-configured provider; fake mode stays fully offline."""
+@dataclass(frozen=True)
+class ProviderResolution:
+    """Outcome of resolving the configured provider.
+
+    ``provider`` is None when the deterministic template path runs instead, and
+    ``warning`` then says why - a half-configured endpoint (missing model, or a
+    key file that is absent/empty) degrades to the deterministic path *loudly*
+    rather than failing every analysis or silently pretending a model was called.
+    """
+
+    provider: LLMProvider | None
+    warning: str | None = None
+
+
+def resolve_provider(settings) -> ProviderResolution:
     if settings.llm_provider == "fake":
-        return None
+        return ProviderResolution(provider=None)
     if settings.llm_provider != "openai-compatible":
+        # An unknown provider name is a configuration error, not a degradation.
         raise RuntimeError(f"unsupported LLM provider '{settings.llm_provider}'")
-    if not settings.llm_model or settings.llm_api_key_file is None:
-        raise RuntimeError("openai-compatible LLM requires model and API key file")
-    return OpenAICompatibleProvider(
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
-        api_key_file=settings.llm_api_key_file,
-        timeout_seconds=settings.llm_timeout_seconds,
+    if not settings.llm_model:
+        return ProviderResolution(
+            provider=None,
+            warning=(
+                "AIND_LLM_PROVIDER=openai-compatible but AIND_LLM_MODEL is empty; "
+                "using the deterministic template"
+            ),
+        )
+    key_file = settings.llm_api_key_file
+    if key_file is None:
+        return ProviderResolution(
+            provider=None,
+            warning=(
+                "AIND_LLM_PROVIDER=openai-compatible but AIND_LLM_API_KEY_FILE is unset; "
+                "using the deterministic template"
+            ),
+        )
+    if read_api_key(key_file) is None:
+        return ProviderResolution(
+            provider=None,
+            warning=(
+                f"LLM key file {key_file} holds no key yet; using the deterministic "
+                "template (paste the API key into infra/local-secrets/llm_api_key)"
+            ),
+        )
+    return ProviderResolution(
+        provider=OpenAICompatibleProvider(
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            api_key_file=key_file,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
     )
+
+
+def configured_provider(settings) -> LLMProvider | None:
+    """Backwards-compatible strict accessor (provider or None)."""
+    return resolve_provider(settings).provider

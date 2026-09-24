@@ -115,6 +115,63 @@ def cmd_set_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_llm_check(args: argparse.Namespace) -> int:
+    """Prove the configured model endpoint works, with one structured request.
+
+    Prints what the analysis runner would use (provider, endpoint, model, key
+    file), then makes a single planning-shaped call and reports the model id it
+    answered with, the latency and the token usage. No key material is printed.
+    """
+    import time
+
+    from app.agent.budget import AnalysisBudget
+    from app.agent.llm import resolve_provider
+    from app.agent.planner import PlanningSelection
+    from app.config import get_settings
+
+    settings = get_settings()
+    print(f"provider: {settings.llm_provider}")
+    print(f"base_url: {settings.llm_base_url}")
+    print(f"model:    {settings.llm_model or '(unset)'}")
+    print(f"key file: {settings.llm_api_key_file or '(unset)'}")
+
+    resolution = resolve_provider(settings)
+    if resolution.warning:
+        print(f"warning:  {resolution.warning}")
+    if resolution.provider is None:
+        print("no model call was made: the deterministic template path is active")
+        return 0 if settings.llm_provider == "fake" else 1
+
+    started = time.monotonic()
+    try:
+        generated = resolution.provider.generate_structured(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Reply with one breakdown dimension from the allowlist.",
+                },
+                {
+                    "role": "user",
+                    "content": '{"allowed_dimensions": ["country", "platform"]}',
+                },
+            ],
+            schema=PlanningSelection,
+            budget=AnalysisBudget.start(),
+            max_output_tokens=100,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported to the administrator
+        print(f"FAILED after {time.monotonic() - started:.2f}s: {type(exc).__name__}: {str(exc)[:300]}")
+        return 1
+    latency = time.monotonic() - started
+    print(
+        f"ok: model_id={generated.model_id} latency={latency:.2f}s "
+        f"tokens_in={generated.usage.input_tokens} tokens_out={generated.usage.output_tokens} "
+        f"finish={generated.finish_reason}"
+    )
+    print(f"parsed value: {generated.value.model_dump(mode='json')}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli", description="AI-Native Data Platform CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -129,6 +186,11 @@ def build_parser() -> argparse.ArgumentParser:
     create_user.add_argument("--password", required=True)
     create_user.add_argument("--role", dest="roles", action="append", default=[])
     create_user.set_defaults(func=cmd_create_user)
+
+    llm_check = sub.add_parser(
+        "llm-check", help="verify the configured LLM endpoint with one structured call"
+    )
+    llm_check.set_defaults(func=cmd_llm_check)
 
     set_password = sub.add_parser("set-password", help="rotate a local password")
     set_password.add_argument("--username", required=True)

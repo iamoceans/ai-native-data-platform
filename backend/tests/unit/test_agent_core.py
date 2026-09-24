@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel
 
 from app.agent.budget import AnalysisBudget, BudgetExceeded
-from app.agent.llm import FakeLLMProvider, OpenAICompatibleProvider
+from app.agent.llm import (
+    FakeLLMProvider,
+    OpenAICompatibleProvider,
+    read_api_key,
+    resolve_provider,
+)
 from app.agent.planner import InvestigationPlan, PlanningSelection, comparison_plan, validate_plan
 from app.agent.repair import FailureClass, classify_failure, plan_repair
 from app.agent.report import (
@@ -366,3 +372,71 @@ def test_materiality_band_separates_noise_from_injected_change():
     assert [claim["id"] for claim in report["claims"]] == ["claim-1"]
     assert report["hypotheses"] == []
     assert any("材料性阈值" in item for item in report["limitations"])
+
+
+def test_key_file_comments_never_reach_the_authorization_header(workdir):
+    """A documented key file holds comments plus one key line.
+
+    The whole file must never become the bearer token (that produced an
+    `Illegal header value` against the endpoint once), and a leftover
+    placeholder must count as "not configured" instead of being sent.
+    """
+    placeholder = workdir / "llm_api_key"
+    placeholder.write_text(
+        "# Paste the model API key below\nPASTE_DEEPSEEK_API_KEY_HERE\n", encoding="utf-8"
+    )
+    assert read_api_key(placeholder) is None
+
+    settings = SimpleNamespace(
+        llm_provider="openai-compatible",
+        llm_base_url="https://api.deepseek.com/v1",
+        llm_model="deepseek-chat",
+        llm_api_key_file=placeholder,
+        llm_timeout_seconds=30.0,
+    )
+    resolution = resolve_provider(settings)
+    assert resolution.provider is None
+    assert "holds no key yet" in (resolution.warning or "")
+
+    real = workdir / "llm_api_key_real"
+    real.write_text("# comment line\n\nsk-live-key-value\n", encoding="utf-8")
+    assert read_api_key(real) == "sk-live-key-value"
+    resolved = resolve_provider(
+        SimpleNamespace(**{**vars(settings), "llm_api_key_file": real})
+    )
+    assert resolved.provider is not None
+    assert resolved.warning is None
+
+    # The adapter sends exactly the key line, nothing else from the file.
+    observed = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "model": "deepseek-chat",
+                "choices": [{"message": {"content": '{"dimensions":["country"]}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+            }
+
+    import app.agent.llm as llm_module
+
+    original = llm_module.httpx.post
+
+    def fake_post(url, *, headers, json, timeout):
+        observed.update(headers=headers)
+        return Response()
+
+    llm_module.httpx.post = fake_post
+    try:
+        resolved.provider.generate_structured(
+            messages=[{"role": "user", "content": "pick"}],
+            schema=PlanningSelection,
+            budget=AnalysisBudget.start(),
+            max_output_tokens=50,
+        )
+    finally:
+        llm_module.httpx.post = original
+    assert observed["headers"]["Authorization"] == "Bearer sk-live-key-value"

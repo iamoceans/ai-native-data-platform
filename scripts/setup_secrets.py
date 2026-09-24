@@ -9,6 +9,7 @@ Creates or completes:
   - infra/local-secrets/source-mysql.json      (M2 MySQL provider credentials)
   - infra/local-secrets/doris.json             (M2 Doris provider credentials)
   - infra/local-secrets/platform.json          (cursor signing secret)
+  - infra/local-secrets/llm_api_key            (model API key; paste yours here)
 
 Idempotent. Stdlib only.
 """
@@ -114,6 +115,34 @@ def write_provider_secret(filename: str, description: str, username: str, passwo
     return f"wrote {filename}"
 
 
+LLM_KEY_PLACEHOLDER = """# Paste the model API key on the line below (one line, no quotes, no "Bearer").
+#
+# DeepSeek: https://platform.deepseek.com/api_keys  ->  the key looks like sk-...
+# Matching settings live in .env (AIND_LLM_PROVIDER / BASE_URL / MODEL /
+# API_KEY_FILE). This directory is mounted read-only at /run/secrets inside the
+# containers and is git-ignored. After pasting, verify with: make llm-check
+PASTE_DEEPSEEK_API_KEY_HERE
+"""
+
+
+def write_llm_key_placeholder(force: bool) -> str:
+    """Create the model-key file if it is missing, and never clobber a real key."""
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+    path = SECRETS_DIR / "llm_api_key"
+    if path.exists():
+        content = path.read_text(encoding="utf-8", errors="replace")
+        if "PASTE_DEEPSEEK_API_KEY_HERE" in content or not content.strip():
+            path.write_text(LLM_KEY_PLACEHOLDER, encoding="utf-8")
+            return "rewrote llm_api_key placeholder"
+        return "kept existing llm_api_key (a key is present; delete the file to reset)"
+    path.write_text(LLM_KEY_PLACEHOLDER, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:  # pragma: no cover - Windows hosts without POSIX modes
+        pass
+    return "wrote llm_api_key placeholder"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="create local secrets")
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
@@ -122,6 +151,7 @@ def main() -> int:
     print(write_env(force=args.force))
     env = parse_env(ENV_FILE)
     print(write_platform_secret(env, force=args.force))
+    print(write_llm_key_placeholder(args.force))
     print(
         write_provider_secret(
             "source-postgres.json",
