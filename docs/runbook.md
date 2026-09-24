@@ -182,3 +182,22 @@ make verify-a12 && make verify-a15 && make eval-agent
 `seed-sources` fills `demo.*` with the small M2 connector fixture; the M4 dataset
 replaces it, which is why the first `demo-load` after seeding needs the explicit
 reset. The DataHub stack is a separate compose project and is not part of this run.
+
+### DataHub part of the flow (pinned v1.7.0.1)
+
+```bash
+# Git Bash on Windows: MSYS_NO_PATHCONV=1 for every command with a container path
+export HOME=/c/Users/<you>            # the pinned compose file mounts $HOME/.datahub and $HOME/.aws
+docker compose --project-name datahub --env-file .env   -f infra/datahub/compose.pinned.yaml -f infra/datahub/compose.ainative.yaml   --profile quickstart up -d
+AIND_DATAHUB_ENABLED=1 docker compose --profile full up -d backend query-worker agent-worker ingestion
+make metadata-sync                    # three-source ingestion + URN mapping
+uv run --project backend --frozen python scripts/verify_metadata.py   # context/lineage/metrics
+make demo-lineage DEMO_RUN=<run>      # declared lineage via the DataHub SDK
+```
+
+After `make demo-lineage`, give the DataHub search index a few minutes before
+judging the lineage view (SDK-published edges took ~10 minutes here; the GraphQL
+`searchAcrossLineage` query from the source side shows them earlier). Integration
+tests re-point datasources at the host's loopback ports, so a live run needs
+`ensure_datasource` (scripts/eval_agent.py) or the admin screen to put the
+platform's own view back.

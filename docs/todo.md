@@ -502,7 +502,14 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
 - [x] Catalog additions: an upstream lineage panel driven by the real endpoint
       (the M1-era "lineage lands in M3" text was stale) and an access-request
       form, so the request -> queue -> mock loop is walkable in the UI.
-- [ ] Remaining M6 work: the DataHub part of the blank-volume flow; the spec's
-      `/datasets/:id` route is served by the catalog detail panel rather than its
-      own page.
+- [x] DataHub part of the full flow, rerun 2026-09-24 against the pinned
+      v1.7.0.1 stack: three-source ingestion mapped 13/13 datasets (PG 4/4,
+      MySQL 2/2, Doris 8/8 incl. the confirmed secure view), `verify_metadata.py`
+      all checks passed, a real `extracted` view->table edge, and two
+      `declared_by_demo_pipeline` edges published via the SDK and read back. Two
+      operational findings recorded in compatibility.md (Git Bash path/locale
+      traps, `demo-lineage` manifest path fixed, ~10 min search-index lag for
+      SDK-published lineage).
+- [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
+      panel rather than its own page; real-model A09 needs a configured provider.
 ```

@@ -211,3 +211,40 @@ loopback) plus either `Connection: close` or one connection per request
 (`scripts/eval_agent.py`). Browsers are not affected, which is why the Playwright
 journeys and the UI are reliable. The platform's own request path is unaffected:
 the API, its session validation and the DB state were verified independently.
+
+## M6 environment findings on this host (2026-09-24)
+
+### Git Bash mangles container paths and swallows docker output
+
+Two traps showed up while running the acceptance scripts from Git Bash on Windows:
+
+1. **MSYS path conversion** rewrites arguments that look like absolute POSIX paths,
+   so `docker compose run ... /opt/ainative/publish_lineage.py` reaches the
+   container as `D:/dev/Git/opt/ainative/publish_lineage.py` and fails (or, with a
+   plain `--entrypoint sh`, fails silently from the caller's point of view).
+   Prefix such commands with `MSYS_NO_PATHCONV=1`.
+2. **`timeout <cmd>` around the Windows `docker` CLI loses the container's
+   output**: `timeout 600 docker compose run ...` exited 0 with an empty log while
+   the same command without `timeout` printed the full result. Do not wrap docker
+   invocations with the coreutils `timeout` in Git Bash.
+
+### `make demo-lineage` pointed at the wrong manifest
+
+The target mounted `runtime/` at `/data/runtime` but asked for
+`/data/runtime/$(DEMO_RUN)/pipeline_lineage.json`, while the runs live under
+`runtime/demo/<run>/`; it also ran without the `full` profile and without
+`AIND_DATAHUB_ENABLED=1`. Fixed: the target now requests
+`/data/runtime/demo/$(DEMO_RUN)/pipeline_lineage.json`, runs with `--profile full`
+and enables DataHub.
+
+### DataHub search index lag for SDK-published lineage
+
+Lineage published through the DataHub SDK (the declared demo pipeline) took about
+**10 minutes** here before `searchAcrossLineage` returned it, while the connector's
+`extracted` edge was searchable within the platform's 45 s visibility window. The
+platform's lineage endpoint reads `searchAcrossLineage`, so during the lag it
+reports the honest `no_upstream` state - that is not a platform bug, but an
+operational expectation: after `make demo-lineage`, allow the index to catch up
+before judging the lineage view. A useful probe is the same GraphQL query from the
+source side (`direction: DOWNSTREAM`), which showed the edge earlier than the
+target-side query.

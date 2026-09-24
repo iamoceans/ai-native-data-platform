@@ -141,9 +141,10 @@ demo-load: ## Load the newest demo run into Doris/MySQL/PostgreSQL
 	$(UV) scripts/demo_load.py
 
 demo-lineage: ## Publish declared demo lineage (DataHub SDK in the ingestion image)
-	docker compose run --rm --no-deps -v "$(CURDIR)/runtime:/data/runtime:ro" \
+	AIND_DATAHUB_ENABLED=1 docker compose --profile full run --rm --no-deps \
+		-v "$(CURDIR)/runtime:/data/runtime:ro" \
 		--entrypoint python ingestion /opt/ainative/publish_lineage.py \
-		--manifest /data/runtime/$(DEMO_RUN)/pipeline_lineage.json
+		--manifest /data/runtime/demo/$(DEMO_RUN)/pipeline_lineage.json
 
 demo-verify: ## Verify the newest demo run against its ground truth (offline)
 	$(UV) scripts/demo_verify.py
