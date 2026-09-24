@@ -41,7 +41,7 @@ DEMO_RUN ?= $(shell ls -td runtime/demo/*/ 2>/dev/null | head -n1 | xargs -r -n1
         test-core test-unit test-integration test-security smoke-core \
         api-spec types build-core logs ps seed-sources up-full-data \
         demo-generate demo-load demo-lineage metadata-sync demo-verify eval-agent \
-        verify-a12 verify-a15 reset-demo smoke-full evaluate-live llm-check
+        verify-a12 verify-a15 reset-demo smoke-full evaluate-live llm-check align-sources
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -151,6 +151,9 @@ demo-verify: ## Verify the newest demo run against its ground truth (offline)
 
 eval-agent: ## A09 harness: run the fixed scenarios through the deployed analysis loop
 	$(UV) scripts/eval_agent.py --cases $(CASES) --scale $(SCALE) --password "$(AIND_SMOKE_PASSWORD)"
+
+align-sources: ## Point datasources at the platform's view (after integration runs)
+	$(UV) scripts/align_sources.py --password "$(AIND_SMOKE_PASSWORD)"
 
 llm-check: ## Verify the configured model endpoint with one structured call
 	$(COMPOSE) run --rm --no-deps backend python -m app.cli llm-check

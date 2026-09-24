@@ -212,3 +212,19 @@ default of 5 applies and a third run inside the same window will be rate
 limited. If the frontend answers 502 after rebuilding the backend, it is the
 nginx upstream cache: the shipped config re-resolves via Docker DNS, so rebuild
 the frontend image once to pick that up.
+
+### After any integration run: `make align-sources`
+
+The integration suite registers datasources with the host's loopback ports (it
+runs the app in-process, where that is correct). The control database is shared
+with the deployed stack, so the platform's own ingestion, analyses and the
+browser journeys then cannot reach the sources until the connection config is put
+back to the compose service names:
+
+```bash
+make align-sources          # re-points postgres/mysql/doris, refreshes catalogs, grants admin
+```
+
+This is also the state the E2E journeys and `make eval-agent` expect, so run it
+after `make test-integration`/`make test-full` and before a demo or acceptance
+session.
