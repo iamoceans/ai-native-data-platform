@@ -13,18 +13,6 @@ import { expect, test } from "@playwright/test";
  */
 const enabled = Boolean(process.env.E2E_BASE_URL);
 
-/** Count rows only once the number stops moving (a table can still be loading). */
-async function stableCount(locator: import("@playwright/test").Locator): Promise<number> {
-  let previous = -1;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const current = await locator.count();
-    if (current === previous) return current;
-    previous = current;
-    await new Promise((resolve) => setTimeout(resolve, 400));
-  }
-  return previous;
-}
-
 async function selectDatasource(page: import("@playwright/test").Page, name: string) {
   const option = page.locator('[data-testid="datasource-select"] option', { hasText: name });
   await expect(option.first()).toBeAttached();
@@ -36,16 +24,11 @@ test.describe("SQL workspace", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
   test("login, run a query, inspect results and history", async ({ page }) => {
-    const user = process.env.E2E_ADMIN_USER ?? "admin";
-    const password = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
     const datasourceName = process.env.E2E_DATASOURCE_NAME ?? "source-postgres";
     const table = process.env.E2E_TABLE ?? "fixture_metrics";
 
-    await page.goto("/login");
-    await page.getByTestId("login-username").fill(user);
-    await page.getByTestId("login-password").fill(password);
-    await page.getByTestId("login-submit").click();
-
+    // Signed in by global setup (one login per run, rate limit aware).
+    await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
     await selectDatasource(page, datasourceName);
 
@@ -72,14 +55,9 @@ test.describe("SQL workspace", () => {
   });
 
   test("rejects a write statement with a visible error", async ({ page }) => {
-    const user = process.env.E2E_ADMIN_USER ?? "admin";
-    const password = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
     const datasourceName = process.env.E2E_DATASOURCE_NAME ?? "source-postgres";
 
-    await page.goto("/login");
-    await page.getByTestId("login-username").fill(user);
-    await page.getByTestId("login-password").fill(password);
-    await page.getByTestId("login-submit").click();
+    await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
     await selectDatasource(page, datasourceName);
 
@@ -101,25 +79,25 @@ test.describe("Analysis and charts", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
   test("start an analysis, read its chart and drill into a group", async ({ page }) => {
-    const user = process.env.E2E_ADMIN_USER ?? "admin";
-    const password = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
     const metric = process.env.E2E_ANALYSIS_METRIC ?? "ads_revenue";
 
-    await page.goto("/login");
-    await page.getByTestId("login-username").fill(user);
-    await page.getByTestId("login-password").fill(password);
-    await page.getByTestId("login-submit").click();
-    // Login lands on /sql; wait for the session to be live before navigating.
+    await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
-
     await page.getByRole("link", { name: "Ask" }).click();
     await expect(page.getByTestId("analysis-metric")).toBeVisible();
     await page.getByTestId("analysis-metric").selectOption(metric);
+    // The picker belongs to the selected metric: wait for it, and verify the
+    // checkbox is really checked before submitting. Switching metrics resets the
+    // selection, so a click that races that reset would otherwise submit an
+    // analysis with no breakdown (and therefore no chart).
+    await expect(page.getByTestId("dimension-country")).toBeVisible();
     await page.getByTestId("baseline-start").fill("2026-09-11");
     await page.getByTestId("baseline-end").fill("2026-09-12");
     await page.getByTestId("current-start").fill("2026-09-12");
     await page.getByTestId("current-end").fill("2026-09-13");
+    const countryBox = page.getByTestId("dimension-country").locator("input");
     await page.getByTestId("dimension-country").click();
+    await expect(countryBox).toBeChecked();
     await page.getByTestId("start-analysis").click();
 
     // The analysis page polls until a terminal state.
@@ -157,14 +135,9 @@ test.describe("Administration", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
   test("datasource health, catalog refresh, grants and the request queue", async ({ page }) => {
-    const user = process.env.E2E_ADMIN_USER ?? "admin";
-    const password = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
     const datasourceName = process.env.E2E_DATASOURCE_NAME ?? "source-postgres";
 
-    await page.goto("/login");
-    await page.getByTestId("login-username").fill(user);
-    await page.getByTestId("login-password").fill(password);
-    await page.getByTestId("login-submit").click();
+    await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
 
     // The catalog offers the access request that feeds the administrator queue.
@@ -196,30 +169,39 @@ test.describe("Administration", () => {
     }
     await expect(page.locator('[data-testid="request-table"]')).toContainText("未授权");
 
-    // A real grant is created and revoked through the form. The journey must be
-    // repeatable, so any leftover grant for the same triple is revoked first.
+    // A real grant is created and revoked through the form. Assertions are made
+    // on the rows matching this role/dataset pair only: the table also holds
+    // grants created by other tests and by the seed, so an absolute row count
+    // would be measuring the environment instead of the screen.
     const rows = page.locator('[data-testid="grant-table"] tbody tr');
     await expect(rows.first()).toBeVisible();
     const datasetSelect = page.getByTestId("grant-dataset");
     await datasetSelect.selectOption({ index: 1 });
     const datasetLabel = (await datasetSelect.locator("option:checked").innerText()).trim();
-    let count = await stableCount(rows);
-    for (let index = count - 1; index >= 0; index -= 1) {
-      const text = (await rows.nth(index).innerText()).replace(/\s+/g, " ");
-      if (text.includes("viewer") && text.includes(datasetLabel) && text.includes("query")) {
-        await rows.nth(index).getByRole("button", { name: "撤回" }).click();
-        await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
-      }
+    // The exact triple: role + dataset + action. Filtering without the action
+    // would also match the `discover` grant that other suites create.
+    const matching = () =>
+      rows.filter({ hasText: "viewer" }).filter({ hasText: datasetLabel }).filter({ hasText: "query" });
+    for (let guard = 0; guard < 10; guard += 1) {
+      const found = await matching().count();
+      if (found === 0) break;
+      await matching().first().getByRole("button", { name: "撤回" }).click();
+      await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
+      // Wait for the list to settle before touching the next row: the refetch
+      // replaces the rows, and a click aimed at a replaced row never lands.
+      await expect(matching()).toHaveCount(found - 1, { timeout: 15_000 });
     }
-    const before = await stableCount(rows);
+    await expect(matching()).toHaveCount(0, { timeout: 15_000 });
+
     await page.getByTestId("grant-role").selectOption({ label: "viewer" });
     await page.getByTestId("grant-action").selectOption("query");
     await page.getByTestId("create-grant").click();
     await expect(page.getByTestId("admin-notice")).toContainText("真实授权");
-    await expect(rows).toHaveCount(before + 1, { timeout: 15_000 });
-    await rows.last().getByRole("button", { name: "撤回" }).click();
+    await expect(matching()).toHaveCount(1, { timeout: 15_000 });
+
+    await matching().first().getByRole("button", { name: "撤回" }).click();
     await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
-    await expect(rows).toHaveCount(before, { timeout: 15_000 });
+    await expect(matching()).toHaveCount(0, { timeout: 15_000 });
   });
 });
 
@@ -228,15 +210,12 @@ test.describe("Administration" + " capability gate", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
   test("a viewer sees no administration entry point and no admin data", async ({ page }) => {
-    const admin = process.env.E2E_ADMIN_USER ?? "admin";
-    const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
     const viewerName = process.env.E2E_VIEWER_USER ?? "e2e-viewer";
     const viewerPassword = process.env.E2E_VIEWER_PASSWORD ?? "e2e-viewer-password-123";
 
-    await page.goto("/login");
-    await page.getByTestId("login-username").fill(admin);
-    await page.getByTestId("login-password").fill(adminPassword);
-    await page.getByTestId("login-submit").click();
+    // Starts signed in as the administrator (global setup); this journey is the
+    // one that deliberately signs out and back in as somebody else.
+    await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
 
     // Create (or reuse) a viewer account through the screen itself.

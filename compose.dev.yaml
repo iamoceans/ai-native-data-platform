@@ -30,3 +30,12 @@ services:
   doris-be:
     ports:
       - "127.0.0.1:${DORIS_BE_HTTP_PORT:-18040}:8040"
+
+  # The E2E journeys sign in more than once per run (an administrator plus the
+  # viewer identity the capability gate checks). The platform's production
+  # default stays at 5 attempts / 5 minutes per account and IP - that control is
+  # covered by the integration suite - but a local stack would otherwise rate
+  # limit its own tests.
+  backend:
+    environment:
+      AIND_LOGIN_RATE_LIMIT_ATTEMPTS: "50"

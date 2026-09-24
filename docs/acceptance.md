@@ -206,7 +206,9 @@ full-stack test, DataHub not started), and both live acceptances passed.
 
 After the administration screens (2026-09-24): **242 static passed**, the
 three-engine matrix reported **68 passed, 1 skipped** (one new integration test
-covers the administrator request queue), and **5 Playwright journeys passed**.
+covers the administrator request queue), and **5 Playwright journeys passed**
+(2026-09-25: three consecutive runs, 5/5 each, after the E2E harness fixes
+described in compatibility.md).
 That journey pair also caught a real UI defect: signing out and signing in as
 another account left the previous profile (and its capabilities) in the React
 Query cache, so the shell could briefly render administration links for a

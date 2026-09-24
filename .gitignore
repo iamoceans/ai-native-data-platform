@@ -38,3 +38,8 @@ Thumbs.db
 # Playwright
 frontend/test-results/
 frontend/playwright-report/
+
+# Playwright session state (contains live cookies) and run artifacts
+frontend/tests/e2e/.auth/
+frontend/test-results/
+frontend/playwright-report/

@@ -13,9 +13,13 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   retries: 0,
   reporter: [["list"]],
+  // One sign-in per run (see global-setup.ts): the platform's login rate limit
+  // is 5 attempts / 5 minutes per account and IP.
+  globalSetup: "./tests/e2e/global-setup.ts",
   use: {
     baseURL: baseURL ?? "http://127.0.0.1:3000",
     headless: true,
     trace: "retain-on-failure",
+    storageState: process.env.E2E_BASE_URL ? "tests/e2e/.auth/admin.json" : undefined,
   },
 });

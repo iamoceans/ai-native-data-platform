@@ -248,3 +248,30 @@ operational expectation: after `make demo-lineage`, allow the index to catch up
 before judging the lineage view. A useful probe is the same GraphQL query from the
 source side (`direction: DOWNSTREAM`), which showed the edge earlier than the
 target-side query.
+
+## E2E harness findings on this host (2026-09-25)
+
+Three issues made the browser journeys flaky while the platform itself was
+healthy; all three are fixed:
+
+1. **nginx cached the backend's address.** The frontend proxies `/api/` to
+   `backend:8000`, and nginx resolves an upstream host name once at startup.
+   Rebuilding or recreating the backend container (a rebuild, a `compose up`)
+   changes its IP, after which every proxied call answered **502** until the
+   frontend container was restarted too. `frontend/nginx.conf` now uses Docker's
+   embedded resolver (`resolver 127.0.0.11 valid=10s`) with a variable upstream,
+   so it re-resolves instead of pinning the first address.
+2. **The login rate limit collided with the journeys.** The platform allows 5
+   login attempts / 5 minutes per account and IP (spec 12/29), while five
+   journeys each signing in needed more. The suite now signs in once per run
+   (`tests/e2e/global-setup.ts` stores the session, `storageState` reuses it) and
+   the local dev override raises the limit to 50 - the production default stays 5
+   and is covered by the integration test that asserts rate limiting.
+3. **Two assertion races in the journeys.** The grant assertions counted *all*
+   table rows (the table also holds grants created by other suites), and the
+   dimension checkbox could be reset by the metric switch that precedes it,
+   submitting an analysis with no breakdown. The journeys now assert on the
+   exact role/dataset/action triple and verify the checkbox is checked before
+   submitting.
+
+Verified: three consecutive full-suite runs, 5 journeys passed each time.

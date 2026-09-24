@@ -201,3 +201,14 @@ judging the lineage view (SDK-published edges took ~10 minutes here; the GraphQL
 tests re-point datasources at the host's loopback ports, so a live run needs
 `ensure_datasource` (scripts/eval_agent.py) or the admin screen to put the
 platform's own view back.
+
+### Running the browser journeys repeatedly
+
+`npx playwright test` signs in once per run and reuses the stored session
+(`tests/e2e/.auth/admin.json`); the capability-gate journey additionally signs in
+as its viewer. The local dev override raises the login rate limit to 50 attempts
+per 5 minutes so back-to-back runs work; without the override the platform's
+default of 5 applies and a third run inside the same window will be rate
+limited. If the frontend answers 502 after rebuilding the backend, it is the
+nginx upstream cache: the shipped config re-resolves via Docker DNS, so rebuild
+the frontend image once to pick that up.
