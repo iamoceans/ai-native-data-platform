@@ -275,3 +275,24 @@ healthy; all three are fixed:
    submitting.
 
 Verified: three consecutive full-suite runs, 5 journeys passed each time.
+
+## Host memory exhaustion: how it shows up (2026-09-25)
+
+This machine's Docker Desktop VM has 15.35 GiB and the full stack (Doris FE/BE,
+two PostgreSQLs, MySQL, DataHub when running, plus host-side pytest processes)
+grows into it. Three symptoms were observed, all environmental rather than
+product defects:
+
+1. the Docker daemon becomes unreachable (`dockerDesktopLinuxEngine` pipe missing)
+   and every container exits at once (137/143) - observed three times today;
+2. Argon2id password hashing fails with `argon2.exceptions.HashingError: Memory
+   allocation error` during test fixtures, which surfaces as collection/fixture
+   errors (6 in one matrix run, none in the rerun after memory was freed);
+3. a fixture that shells out to `seed_sources.py` reports a generic
+   `seed_sources.py failed` with an empty message.
+
+Freeing memory is the fix: restarting Doris reclaims the largest share (its FE
+had grown to 7.8 GiB once and 3.3 GiB on another occasion; a restart returns it
+to ~1.2 GiB and the demo data survives in its volumes). Checking
+`MemAvailable` before a full-matrix or multi-container run is worthwhile on this
+host.
