@@ -12,7 +12,9 @@ from app.api.dto import (
     AuditEntry,
     AuditListResponse,
     CatalogRefreshRequest,
+    PermissionRequestApprove,
     PermissionRequestListResponse,
+    PermissionRequestReject,
     CatalogRefreshResponse,
     DatasetSummary,
     GrantCreate,
@@ -443,6 +445,128 @@ def list_permission_requests(
         items=[PermissionRequestResponse(**permission_request_to_response(row)) for row in rows],
         next_cursor=next_cursor,
     )
+
+@router.post("/permission-requests/{request_id}/approve", response_model=PermissionRequestResponse)
+def approve_permission_request(
+    request_id: uuid.UUID,
+    payload: PermissionRequestApprove,
+    request: Request,
+    auth: AuthContext = Depends(require_csrf),
+    session: Session = Depends(get_db),
+) -> PermissionRequestResponse:
+    """Approve a request by creating the real grant it asked for.
+
+    This is the only path that turns a request into access: the grant is created
+    for the role the administrator names (with `discover` implied by `query`,
+    spec 12.1), the policy revision is bumped so live queries re-check, and the
+    request is marked APPROVED - a different state from MOCK_APPROVED, which
+    never grants anything.
+    """
+    from app.models.orm import PermissionRequest
+
+    if "admin.manage" not in auth.capabilities:
+        raise ApiError(ErrorCode.FORBIDDEN, "administrator capability required")
+    row = session.get(PermissionRequest, request_id)
+    if row is None:
+        raise ApiError(ErrorCode.NOT_FOUND, "permission request not found")
+    if row.status == "APPROVED":
+        raise ApiError(ErrorCode.CONFLICT, "this request was already approved")
+    role = users_repo.get_role(session, payload.role_id)
+    if role is None:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "unknown role")
+    dataset = datasets_repo.get_dataset(session, row.dataset_id)
+    if dataset is None or not dataset.active:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "unknown dataset")
+
+    action = DatasetAction(payload.action)
+    if action is DatasetAction.QUERY and not datasets_repo.has_dataset_action(
+        session, [role.id], dataset.id, DatasetAction.DISCOVER
+    ):
+        datasets_repo.create_grant(
+            session,
+            role_id=role.id,
+            dataset_id=dataset.id,
+            action=DatasetAction.DISCOVER,
+            expires_at=payload.expires_at,
+            created_by=auth.user.id,
+        )
+    if not datasets_repo.has_dataset_action(session, [role.id], dataset.id, action):
+        grant = datasets_repo.create_grant(
+            session,
+            role_id=role.id,
+            dataset_id=dataset.id,
+            action=action,
+            expires_at=payload.expires_at,
+            created_by=auth.user.id,
+        )
+        audit_repo.add_audit(
+            session,
+            actor_id=auth.user.id,
+            action="grant.create",
+            resource_type="permission",
+            resource_id=str(grant.id),
+            trace_id=get_trace_id(request),
+            outcome="success",
+            details={
+                "role": role.name,
+                "dataset_id": str(dataset.id),
+                "action": action.value,
+                "from_request": str(row.id),
+            },
+        )
+    policy_repo.bump_revision(session)
+    row.status = "APPROVED"
+    session.flush()
+    audit_repo.add_audit(
+        session,
+        actor_id=auth.user.id,
+        action="permission_request.approve",
+        resource_type="permission_request",
+        resource_id=str(row.id),
+        trace_id=get_trace_id(request),
+        outcome="success",
+        details={
+            "role": role.name,
+            "dataset_id": str(dataset.id),
+            "action": action.value,
+            "requester": str(row.user_id),
+        },
+    )
+    return PermissionRequestResponse(**permission_request_to_response(row))
+
+
+@router.post("/permission-requests/{request_id}/reject", response_model=PermissionRequestResponse)
+def reject_permission_request(
+    request_id: uuid.UUID,
+    payload: PermissionRequestReject,
+    request: Request,
+    auth: AuthContext = Depends(require_csrf),
+    session: Session = Depends(get_db),
+) -> PermissionRequestResponse:
+    """Decline a request. No grant is created and no revision is bumped."""
+    from app.models.orm import PermissionRequest
+
+    if "admin.manage" not in auth.capabilities:
+        raise ApiError(ErrorCode.FORBIDDEN, "administrator capability required")
+    row = session.get(PermissionRequest, request_id)
+    if row is None:
+        raise ApiError(ErrorCode.NOT_FOUND, "permission request not found")
+    if row.status == "APPROVED":
+        raise ApiError(ErrorCode.CONFLICT, "an approved request cannot be rejected")
+    row.status = "REJECTED"
+    session.flush()
+    audit_repo.add_audit(
+        session,
+        actor_id=auth.user.id,
+        action="permission_request.reject",
+        resource_type="permission_request",
+        resource_id=str(row.id),
+        trace_id=get_trace_id(request),
+        outcome="success",
+        details={"note": (payload.note or "")[:500], "requester": str(row.user_id)},
+    )
+    return PermissionRequestResponse(**permission_request_to_response(row))
+
 
 @router.post("/permission-requests/{request_id}/mock-approve", response_model=PermissionRequestResponse)
 def mock_approve_permission_request(

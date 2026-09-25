@@ -1012,6 +1012,27 @@
       }
     },
     "/api/v1/permission-requests": {
+      "get": {
+        "tags": [
+          "saved-queries",
+          "permissions"
+        ],
+        "summary": "List My Permission Requests",
+        "description": "A requester's own requests and their states (spec 24).\n\nThe requester sees exactly their own rows - never anybody else's, and never\nthe administrator queue - which is what lets the catalog screen show\n\"REQUESTED / APPROVED / REJECTED\" honestly.",
+        "operationId": "list_my_permission_requests_api_v1_permission_requests_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "saved-queries",
@@ -1532,6 +1553,127 @@
         }
       }
     },
+    "/api/v1/charts/{chart_id}": {
+      "get": {
+        "tags": [
+          "charts"
+        ],
+        "summary": "Get Chart",
+        "operationId": "get_chart_api_v1_charts__chart_id__get",
+        "parameters": [
+          {
+            "name": "chart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chart Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Chart Api V1 Charts  Chart Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/charts/{chart_id}/drilldown": {
+      "post": {
+        "tags": [
+          "charts"
+        ],
+        "summary": "Drilldown",
+        "operationId": "drilldown_api_v1_charts__chart_id__drilldown_post",
+        "parameters": [
+          {
+            "name": "chart_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chart Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChartDrilldownRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartDrilldownResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "tags": [
@@ -1862,6 +2004,136 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CatalogRefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/permission-requests": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Permission Requests",
+        "description": "The administrator's queue: what people asked for, and in which state.\n\nThe state is either a real request state or the explicitly named\n``MOCK_APPROVED``; approving here never creates a grant (spec 22/24).",
+        "operationId": "list_permission_requests_api_v1_admin_permission_requests_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/permission-requests/{request_id}/approve": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Approve Permission Request",
+        "description": "Approve a request by creating the real grant it asked for.\n\nThis is the only path that turns a request into access: the grant is created\nfor the role the administrator names (with `discover` implied by `query`,\nspec 12.1), the policy revision is bumped so live queries re-check, and the\nrequest is marked APPROVED - a different state from MOCK_APPROVED, which\nnever grants anything.",
+        "operationId": "approve_permission_request_api_v1_admin_permission_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionRequestApprove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/permission-requests/{request_id}/reject": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reject Permission Request",
+        "description": "Decline a request. No grant is created and no revision is bumped.",
+        "operationId": "reject_permission_request_api_v1_admin_permission_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionRequestReject"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRequestResponse"
                 }
               }
             }
@@ -2525,6 +2797,71 @@
           "items"
         ],
         "title": "CatalogRefreshResponse"
+      },
+      "ChartDrilldownRequest": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Dimension"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Value"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "current"
+            ],
+            "title": "Period",
+            "default": "current"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dimension",
+          "value"
+        ],
+        "title": "ChartDrilldownRequest"
+      },
+      "ChartDrilldownResponse": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Analysis Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Parent Id"
+          },
+          "filters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Filters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "status",
+          "parent_id",
+          "filters"
+        ],
+        "title": "ChartDrilldownResponse"
       },
       "ColumnInfo": {
         "properties": {
@@ -3853,6 +4190,17 @@
           "formula": {
             "type": "string",
             "title": "Formula"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
           }
         },
         "type": "object",
@@ -3903,6 +4251,43 @@
         ],
         "title": "MySQLConnectionConfig"
       },
+      "PermissionRequestApprove": {
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "discover",
+              "query"
+            ],
+            "title": "Action",
+            "default": "query"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role_id"
+        ],
+        "title": "PermissionRequestApprove",
+        "description": "Approving a request creates a real grant for the requester's role.\n\nThe administrator names the role and the action explicitly: the platform\nnever infers \"what the user probably needs\" from the request text."
+      },
       "PermissionRequestCreate": {
         "properties": {
           "dataset_id": {
@@ -3924,6 +4309,52 @@
           "reason"
         ],
         "title": "PermissionRequestCreate"
+      },
+      "PermissionRequestListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionRequestResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PermissionRequestListResponse"
+      },
+      "PermissionRequestReject": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PermissionRequestReject"
       },
       "PermissionRequestResponse": {
         "properties": {

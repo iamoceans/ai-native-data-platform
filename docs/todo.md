@@ -510,6 +510,15 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       operational findings recorded in compatibility.md (Git Bash path/locale
       traps, `demo-lineage` manifest path fixed, ~10 min search-index lag for
       SDK-published lineage).
+- [x] Access-request workflow closed (2026-09-25): `POST /admin/permission-requests/{id}/approve`
+      creates the real grant (with `discover` implied by `query`, policy revision
+      bumped, audited as `permission_request.approve` + `grant.create`),
+      `POST .../reject` declines without granting, `GET /permission-requests` lets a
+      requester see only their own requests, and the new `APPROVED` state is a
+      schema-level distinction from `MOCK_APPROVED` (migration
+      `7c1d5a9e4b02`). The Permissions screen gained per-request
+      approve/reject with an explicit role+action choice, and the catalog shows
+      "我的申请" with its status.
 - [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
       panel rather than its own page; real-model A09 needs a configured provider.
 ```

@@ -227,12 +227,13 @@ export type AdminGrant = {
   expires_at: string | null;
   created_by: string;
 };
+export type PermissionRequestStatus = "REQUESTED" | "MOCK_APPROVED" | "APPROVED" | "REJECTED";
 export type PermissionRequest = {
   id: string;
   user_id: string;
   dataset_id: string;
   reason: string;
-  status: "REQUESTED" | "MOCK_APPROVED" | "REJECTED";
+  status: PermissionRequestStatus;
   created_at: string;
 };
 export type AuditEntry = {
@@ -326,6 +327,31 @@ export async function listPermissionRequests(
 
 export async function mockApprovePermissionRequest(requestId: string): Promise<PermissionRequest> {
   return apiFetch(`/api/v1/admin/permission-requests/${requestId}/mock-approve`, { method: "POST" });
+}
+
+export async function approvePermissionRequest(
+  requestId: string,
+  input: { role_id: string; action: "discover" | "query"; expires_at?: string | null },
+): Promise<PermissionRequest> {
+  return apiFetch(`/api/v1/admin/permission-requests/${requestId}/approve`, {
+    method: "POST",
+    body: { role_id: input.role_id, action: input.action, expires_at: input.expires_at ?? null },
+  });
+}
+
+export async function rejectPermissionRequest(
+  requestId: string,
+  note?: string,
+): Promise<PermissionRequest> {
+  return apiFetch(`/api/v1/admin/permission-requests/${requestId}/reject`, {
+    method: "POST",
+    body: { note: note ?? null },
+  });
+}
+
+/** The requester's own requests and their states (never anybody else's). */
+export async function listMyPermissionRequests(): Promise<{ items: PermissionRequest[] }> {
+  return apiFetch("/api/v1/permission-requests");
 }
 
 export async function requestDatasetAccess(input: {

@@ -257,6 +257,10 @@ class MetricSummary(BaseModel):
     aggregation_kind: str
     datasets: list[str] = Field(default_factory=list)
     formula: str
+    # The definition's own caveat (for example "禁止 AVG(每日或各组 eCPM)").
+    # Surfaced so a user picking dimensions can read the aggregation constraint
+    # the governance layer attached to the metric.
+    notes: str | None = None
 
 
 class MetricListResponse(BaseModel):
@@ -495,6 +499,22 @@ class PermissionRequestResponse(BaseModel):
 class PermissionRequestListResponse(BaseModel):
     items: list[PermissionRequestResponse]
     next_cursor: str | None = None
+
+
+class PermissionRequestApprove(StrictModel):
+    """Approving a request creates a real grant for the requester's role.
+
+    The administrator names the role and the action explicitly: the platform
+    never infers "what the user probably needs" from the request text.
+    """
+
+    role_id: uuid.UUID
+    action: Literal["discover", "query"] = "query"
+    expires_at: datetime | None = None
+
+
+class PermissionRequestReject(StrictModel):
+    note: str | None = Field(default=None, max_length=500)
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,25 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
   getDatasetContext,
   getDatasetLineage,
   getDatasetSchema,
   listDatasets,
+  listMyPermissionRequests,
   requestDatasetAccess,
 } from "../api/endpoints";
 import { StatusBadge } from "../components/StatusBadge";
 
+/** Marks the grain entries that address time, which Ask data reads from the period picker. */
+function isTemporal(columnType: string): boolean {
+  const type = columnType.toLowerCase();
+  return type.includes("date") || type.includes("time");
+}
+
 export function CatalogPage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const datasets = useQuery({
@@ -33,11 +42,16 @@ export function CatalogPage() {
     enabled: Boolean(selected),
   });
   const [reason, setReason] = useState("");
+  const myRequests = useQuery({
+    queryKey: ["my-permission-requests"],
+    queryFn: listMyPermissionRequests,
+  });
   const accessRequest = useMutation({
     mutationFn: () => requestDatasetAccess({ dataset_id: selected as string, reason }),
     onSuccess: () => {
       setReason("");
-      setRequestNotice("申请已记录（REQUESTED）。管理员可在 Permissions 页看到；Mock 批准不会产生真实授权。");
+      setRequestNotice("申请已记录（REQUESTED）。管理员在 Permissions 页处理；批准后会创建真实授权。");
+      queryClient.invalidateQueries({ queryKey: ["my-permission-requests"] });
     },
   });
   const [requestNotice, setRequestNotice] = useState<string | null>(null);
@@ -91,6 +105,44 @@ export function CatalogPage() {
               {schema.data ? <> · source {schema.data.source}</> : null}
             </p>
           ) : null}
+          {context.data &&
+          (context.data.description ||
+            (context.data.grain?.length ?? 0) > 0 ||
+            (context.data.metric_keys ?? []).length > 0) ? (
+            <div className="semantic-block" data-testid="dataset-semantics">
+              <div className="card-head">
+                <h3>语义维度（grain）</h3>
+                <span className="muted small">来自 metadata/semantic，是可下钻维度的登记表</span>
+              </div>
+              {context.data.description ? <p className="muted small">{context.data.description}</p> : null}
+              <div className="chips">
+                {(context.data.grain ?? []).map((dimension) => (
+                  <span className="chip mono-id" key={dimension} data-testid={`dataset-dimension-${dimension}`}>
+                    {dimension}
+                  </span>
+                ))}
+                {context.data.business_timezone ? (
+                  <span className="chip">业务时区 {context.data.business_timezone}</span>
+                ) : null}
+                {context.data.currency ? <span className="chip">币种 {context.data.currency}</span> : null}
+              </div>
+              {(context.data.metric_keys ?? []).length > 0 ? (
+                <p className="muted small">
+                  已声明指标：{(context.data.metric_keys ?? []).join(" · ")} —{" "}
+                  <Link to="/ask">去 Ask data 使用</Link>
+                </p>
+              ) : (
+                <p className="muted small">
+                  这张表还没有声明指标，因此它在 Ask data 里不可选；要按它的维度做分析，先在治理侧声明指标口径。
+                </p>
+              )}
+              {(context.data.join_keys ?? []).length > 0 ? (
+                <p className="muted small">
+                  Join keys：{(context.data.join_keys ?? []).join(", ")}（跨源关联只走白名单 relation）
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {schema.data ? (
             <div className="table-scroll">
               <table className="result-table plain">
@@ -99,6 +151,7 @@ export function CatalogPage() {
                     <th>Column</th>
                     <th>Type</th>
                     <th>Nullable</th>
+                    <th>分析角色</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,6 +160,13 @@ export function CatalogPage() {
                       <td>{column.name}</td>
                       <td>{column.type}</td>
                       <td>{column.nullable === null ? "—" : column.nullable ? "yes" : "no"}</td>
+                      <td>
+                        {(context.data?.grain ?? []).includes(column.name) ? (
+                          <span className="tag">维度{isTemporal(column.type) ? " · 时间列" : ""}</span>
+                        ) : (
+                          <span className="muted small">非维度列</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -178,6 +238,48 @@ export function CatalogPage() {
               {requestNotice}
             </p>
           ) : null}
+
+          <div className="card-head">
+            <h3>我的申请</h3>
+            <span className="muted small">只有你自己看得到；批准即创建真实授权</span>
+          </div>
+          {(myRequests.data?.items ?? []).length ? (
+            <table className="data-table" data-testid="my-requests-table">
+              <thead>
+                <tr>
+                  <th scope="col">数据集</th>
+                  <th scope="col">理由</th>
+                  <th scope="col">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(myRequests.data?.items ?? []).map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.dataset_id === selected ? "本数据集" : item.dataset_id.slice(0, 8)}</td>
+                    <td className="small">{item.reason}</td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          item.status === "APPROVED"
+                            ? "ok"
+                            : item.status === "MOCK_APPROVED"
+                              ? "wait"
+                              : "muted"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                      {item.status === "MOCK_APPROVED" ? (
+                        <span className="muted small"> 未授权</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted small">还没有提交过申请。</p>
+          )}
         </section>
       ) : null}
     </div>

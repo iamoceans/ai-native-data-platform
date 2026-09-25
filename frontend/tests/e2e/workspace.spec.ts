@@ -157,17 +157,22 @@ test.describe("Administration", () => {
     await page.getByTestId(`refresh-${datasourceName}`).click();
     await expect(page.getByTestId("catalog-refresh-result")).toContainText("注册");
 
-    // Permissions: the request is visible, mock approval is labelled as a mock.
+    // Permissions: the request filed above is in the queue and can be approved
+    // into a real grant (the mock state, which grants nothing, is covered by the
+    // integration suite; here the journey walks the path a user depends on).
     await page.getByTestId("nav-admin-permissions").click();
     await expect(page.getByTestId("admin-permissions")).toBeVisible();
     const requestRow = page.locator('[data-testid="request-table"] tbody tr').first();
     await expect(requestRow).toBeVisible();
-    const approve = requestRow.getByTestId(/^mock-approve-/);
-    if (await approve.isEnabled()) {
-      await approve.click();
-      await expect(page.getByTestId("admin-notice")).toContainText("Mock 状态");
+    await page.getByTestId("decision-role").selectOption({ label: "viewer" });
+    await page.getByTestId("decision-action").selectOption("query");
+    const approveButton = requestRow.getByTestId(/^approve-/);
+    if (await approveButton.isEnabled()) {
+      await approveButton.click();
+      await expect(page.getByTestId("admin-notice")).toContainText("已批准");
+      await expect(requestRow).toContainText("APPROVED");
+      await expect(requestRow).toContainText("已创建真实授权");
     }
-    await expect(page.locator('[data-testid="request-table"]')).toContainText("未授权");
 
     // A real grant is created and revoked through the form. Assertions are made
     // on the rows matching this role/dataset pair only: the table also holds

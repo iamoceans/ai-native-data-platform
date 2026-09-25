@@ -501,7 +501,7 @@ class PermissionRequest(Base):
     )
     __table_args__ = (
         CheckConstraint(
-            "status IN ('REQUESTED','MOCK_APPROVED','REJECTED')",
+            "status IN ('REQUESTED','MOCK_APPROVED','APPROVED','REJECTED')",
             name="permission_requests_status_check",
         ),
     )

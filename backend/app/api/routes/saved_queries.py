@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_auth, get_db, get_settings_dep, get_trace_id, require_csrf
 from app.api.dto import (
+    PermissionRequestListResponse,
     PermissionRequestCreate,
     PermissionRequestResponse,
     SavedQueryCreate,
@@ -111,6 +112,52 @@ def delete_saved_query(
         raise ApiError(ErrorCode.NOT_FOUND, "saved query not found or not visible")
     session.delete(row)
     return Response(status_code=204)
+
+
+MY_REQUESTS_ROUTE = "GET /permission-requests"
+
+
+@router.get("/permission-requests", response_model=PermissionRequestListResponse)
+def list_my_permission_requests(
+    request: Request,
+    auth: AuthContext = Depends(current_auth),
+    session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+) -> PermissionRequestListResponse:
+    """A requester's own requests and their states (spec 24).
+
+    The requester sees exactly their own rows - never anybody else's, and never
+    the administrator queue - which is what lets the catalog screen show
+    "REQUESTED / APPROVED / REJECTED" honestly.
+    """
+    cursor = request.query_params.get("cursor")
+    try:
+        limit = int(request.query_params.get("limit", 20))
+    except ValueError as exc:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "limit must be an integer") from exc
+    if not 1 <= limit <= 100:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "limit must be between 1 and 100")
+    offset = (
+        decode_list_cursor(settings.resolved_cursor_secret(), cursor, route=MY_REQUESTS_ROUTE)
+        if cursor
+        else 0
+    )
+    rows, total = datasets_repo.list_permission_requests_for_user(
+        session, auth.user.id, limit=limit, offset=offset
+    )
+    next_cursor = (
+        encode_list_cursor(
+            settings.resolved_cursor_secret(),
+            route=MY_REQUESTS_ROUTE,
+            offset=offset + len(rows),
+        )
+        if offset + len(rows) < total
+        else None
+    )
+    return PermissionRequestListResponse(
+        items=[PermissionRequestResponse(**permission_request_to_response(row)) for row in rows],
+        next_cursor=next_cursor,
+    )
 
 
 @router.post("/permission-requests", response_model=PermissionRequestResponse, status_code=201)

@@ -108,7 +108,11 @@ What the M6 work so far adds:
   apart from real grants), grants, users/roles and the sanitized audit list.
   Both are gated by the `admin.manage` capability and every admin endpoint
   re-checks it server-side; datasource credentials are only ever referenced by
-  `secret_ref`.
+  `secret_ref`;
+- the access-request loop: a user asks for a dataset from the catalog and sees
+  their own request status, an administrator approves it into a real grant (or
+  rejects it), and `APPROVED` is a distinct schema state from the mock approval
+  that grants nothing.
 
 Still open: a real-model A09 run, the live worker-kill and network-drop
 acceptances, a literal blank-volume run and the remaining admin screens; see

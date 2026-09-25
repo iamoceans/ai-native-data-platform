@@ -126,7 +126,7 @@ A17 resource report (medium scale, reference host):
 | A01 | Three-source connectors | **passed** (M2) | PostgreSQL, MySQL 8.4.11 and Doris 3.1.4: connection, schema, query, types, timeout and cancel each executed; see the two M2 test files |
 | A02 | DataHub metadata | **passed** (M3) | Three sources ingested (Doris 8/8 incl. the confirmed secure view, PostgreSQL 4/4, MySQL 2/2); search/schema/description served from DataHub; a real `extracted` view->table edge and two `declared_by_demo_pipeline` demo edges verified through the API |
 | A03 | SQL safety corpus + engines | **passed** | 14-statement corpus rejected on all three engines through the API + engine-specific validator corpus (Doris dialect, MySQL dialect) |
-| A04 | Permissions across users/roles | **passed** (M3) | SQL, catalog, results, SSE, context and lineage covered; the M3 suite verifies permission-filtered search, admin-only DataHub deep link, permission-filtered lineage (`permission_filtered`) and 403 on denied context |
+| A04 | Permissions across users/roles | **passed, request workflow included** (2026-09-25) | SQL, catalog, results, SSE, context and lineage are permission filtered, with the admin-only DataHub deep link and `permission_filtered` lineage verified in M3. The access-request workflow is now closed end to end: a requester files a request and sees only their own (`GET /permission-requests`), an administrator approves it into a **real grant** (discover implied by query, policy revision bumped) or rejects it (creating nothing), and the mock state stays a label that provably grants nothing. Verified live: viewer 403 before approval -> request -> approve -> viewer query SUCCEEDED, plus 2 integration tests and the browser journey |
 | A05 | Read-only account blocks writes | **passed** | PG `42501` + `25006`; MySQL `1792` + `1142`; Doris SELECT_PRIV "denied" |
 | A06 | Canonical 67 numerical check | **passed** (M4) | Loaded into the source PostgreSQL and queried **through the Query Gateway**: total 10,000 -> 9,000 (delta -1,000, change_pct -0.1); target -670, net decline share 0.67, contribution -6.7 pp; `test_analysis_sql.py` + canonical_67 generator scenario |
 | A07 | Factor decomposition | **passed** (M4) | Symmetric impression x eCPM split; unit tests assert the 1e-6 USD tolerance over random Decimal inputs; live check on the loaded Doris demo reproduces it for the scenario target |
@@ -203,6 +203,11 @@ cd frontend && E2E_BASE_URL=http://127.0.0.1:3000 E2E_ADMIN_PASSWORD=<admin pw> 
 After the A12/A15/A18 work (2026-09-23) the three-engine matrix was rerun from
 the freshly seeded blank-volume state: **67 passed, 1 skipped** (the DataHub
 full-stack test, DataHub not started), and both live acceptances passed.
+
+After the approval workflow (2026-09-25): **243 static passed**, the three-engine
+matrix reported **70 passed, 1 skipped**, and **5 Playwright journeys passed**
+(the administration journey now files a request and approves it into a real
+grant).
 
 After the administration screens (2026-09-24): **242 static passed**, the
 three-engine matrix reported **68 passed, 1 skipped** (one new integration test

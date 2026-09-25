@@ -228,3 +228,16 @@ make align-sources          # re-points postgres/mysql/doris, refreshes catalogs
 This is also the state the E2E journeys and `make eval-agent` expect, so run it
 after `make test-integration`/`make test-full` and before a demo or acceptance
 session.
+
+### Access requests: what the states mean
+
+`REQUESTED` - filed by a user, nobody has decided yet; it grants nothing.
+`APPROVED` - an administrator approved it *and* the real grant was created (the
+policy revision is bumped, so live queries re-check); the requester can query.
+`MOCK_APPROVED` - a demo label only: it never creates a grant, which is why the
+Permissions screen prints "Mock 标记，未授权" next to it.
+`REJECTED` - declined, no grant created.
+
+Approving needs the role and the action (`discover`/`query`); granting `query`
+implies `discover` (spec 12.1). The requester sees their own requests through
+`GET /permission-requests`, never anybody else's and never the admin queue.

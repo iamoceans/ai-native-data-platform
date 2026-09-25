@@ -270,6 +270,27 @@ def list_permission_requests(
     return list(rows), int(total)
 
 
+def list_permission_requests_for_user(
+    session: Session, user_id: uuid.UUID, limit: int, offset: int
+) -> tuple[list[PermissionRequest], int]:
+    """A requester's own requests, newest first (spec 24: the user sees status)."""
+    total = session.execute(
+        select(func.count()).select_from(PermissionRequest).where(PermissionRequest.user_id == user_id)
+    ).scalar_one()
+    rows = (
+        session.execute(
+            select(PermissionRequest)
+            .where(PermissionRequest.user_id == user_id)
+            .order_by(PermissionRequest.created_at.desc(), PermissionRequest.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows), int(total)
+
+
 def list_grants(
     session: Session, limit: int, offset: int, dataset_id: uuid.UUID | None = None
 ) -> tuple[list[Permission], int]:

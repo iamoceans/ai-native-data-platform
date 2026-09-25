@@ -45,6 +45,7 @@ def list_metrics(
                 aggregation_kind=str(definition.get("aggregation_kind", "")),
                 datasets=[str(item) for item in datasets],
                 formula=str(definition.get("formula", "")),
+                notes=definition.get("notes"),
             )
         )
     return MetricListResponse(items=items)

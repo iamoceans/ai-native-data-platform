@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError } from "../api/client";
 import {
+  approvePermissionRequest,
   createAdminRole,
   createAdminUser,
   createGrant,
@@ -13,6 +14,7 @@ import {
   listGrants,
   listPermissionRequests,
   mockApprovePermissionRequest,
+  rejectPermissionRequest,
   updateUserRoles,
   type PermissionRequest,
 } from "../api/endpoints";
@@ -30,6 +32,7 @@ import { PermissionGate } from "../components/PermissionGate";
 export function AdminPermissionsPage() {
   const queryClient = useQueryClient();
   const [requestFilter, setRequestFilter] = useState<"ALL" | PermissionRequest["status"]>("ALL");
+  const [decision, setDecision] = useState({ roleId: "", action: "query" as "discover" | "query" });
   const [userForm, setUserForm] = useState({ username: "", password: "", roleIds: [] as string[] });
   const [roleName, setRoleName] = useState("");
   const [grantForm, setGrantForm] = useState({
@@ -134,6 +137,30 @@ export function AdminPermissionsPage() {
     onError: onFailure,
   });
 
+  const approved = useMutation({
+    mutationFn: (requestId: string) =>
+      approvePermissionRequest(requestId, {
+        role_id: decision.roleId,
+        action: decision.action,
+      }),
+    onSuccess: (request) => {
+      setNotice(
+        `申请 ${request.id.slice(0, 8)} 已批准，并创建了真实授权（${decision.action}）—— 策略 revision 已递增`,
+      );
+      invalidate();
+    },
+    onError: onFailure,
+  });
+
+  const rejected = useMutation({
+    mutationFn: (requestId: string) => rejectPermissionRequest(requestId, "管理员拒绝"),
+    onSuccess: (request) => {
+      setNotice(`申请 ${request.id.slice(0, 8)} 已拒绝 —— 未创建任何授权`);
+      invalidate();
+    },
+    onError: onFailure,
+  });
+
   const mockApproved = useMutation({
     mutationFn: (requestId: string) => mockApprovePermissionRequest(requestId),
     onSuccess: (request) => {
@@ -188,6 +215,44 @@ export function AdminPermissionsPage() {
               </select>
             </label>
           </div>
+          <div className="form-row">
+            <label>
+              批准时授予的角色
+              <select
+                data-testid="decision-role"
+                value={decision.roleId}
+                onChange={(event) =>
+                  setDecision((current) => ({ ...current, roleId: event.target.value }))
+                }
+              >
+                <option value="">选择角色…</option>
+                {(roles.data ?? []).map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              动作
+              <select
+                data-testid="decision-action"
+                value={decision.action}
+                onChange={(event) =>
+                  setDecision((current) => ({
+                    ...current,
+                    action: event.target.value as "discover" | "query",
+                  }))
+                }
+              >
+                <option value="query">query（含 discover）</option>
+                <option value="discover">discover</option>
+              </select>
+            </label>
+            <span className="muted small">
+              「批准并授权」创建真实授权；「标记 Mock」只改状态，不授权
+            </span>
+          </div>
           <table className="data-table" data-testid="request-table">
             <thead>
               <tr>
@@ -206,7 +271,13 @@ export function AdminPermissionsPage() {
                   <td className="small">{request.reason}</td>
                   <td>
                     <span
-                      className={`badge ${request.status === "MOCK_APPROVED" ? "wait" : "muted"}`}
+                      className={`badge ${
+                        request.status === "APPROVED"
+                          ? "ok"
+                          : request.status === "MOCK_APPROVED"
+                            ? "wait"
+                            : "muted"
+                      }`}
                       data-testid={`request-status-${request.id}`}
                     >
                       {request.status}
@@ -214,15 +285,34 @@ export function AdminPermissionsPage() {
                     {request.status === "MOCK_APPROVED" ? (
                       <span className="muted small"> Mock 标记，未授权</span>
                     ) : null}
+                    {request.status === "APPROVED" ? (
+                      <span className="muted small"> 已创建真实授权</span>
+                    ) : null}
                   </td>
-                  <td>
+                  <td className="row-actions">
+                    <button
+                      className="primary small"
+                      data-testid={`approve-${request.id}`}
+                      disabled={request.status !== "REQUESTED" || approved.isPending || !decision.roleId}
+                      onClick={() => approved.mutate(request.id)}
+                    >
+                      批准并授权
+                    </button>
+                    <button
+                      className="ghost small"
+                      data-testid={`reject-${request.id}`}
+                      disabled={request.status === "APPROVED" || rejected.isPending}
+                      onClick={() => rejected.mutate(request.id)}
+                    >
+                      拒绝
+                    </button>
                     <button
                       className="ghost small"
                       data-testid={`mock-approve-${request.id}`}
                       disabled={request.status !== "REQUESTED" || mockApproved.isPending}
                       onClick={() => mockApproved.mutate(request.id)}
                     >
-                      标记 Mock 批准
+                      标记 Mock（不授权）
                     </button>
                   </td>
                 </tr>
