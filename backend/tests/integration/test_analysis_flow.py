@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from decimal import Decimal
 
 import pytest
@@ -447,3 +448,28 @@ def test_chart_artifact_reads_and_drills_down(admin_client, integration_env):
         json={"dimension": "revenue_usd", "value": "1", "period": "current"},
     )
     assert refused.status_code == 422, refused.text
+
+
+def test_metric_registry_exposes_its_declared_caveats(admin_client):
+    """The metric YAML's `notes` must reach the API, not stop at the registry.
+
+    The Ask screen shows them as the metric's 口径说明; without the passthrough
+    the UI silently renders nothing for metrics that declare a caveat (for
+    example "禁止 AVG(每日或各组 eCPM)").
+    """
+    from app.metrics.registry import load_metric_definitions, sync_metric_definitions
+
+    declared = {
+        definition.metric_key: definition.notes
+        for definition in load_metric_definitions(Path(__file__).resolve().parents[3] / "metadata")
+    }
+    with session_scope() as session:
+        sync_metric_definitions(session, list(load_metric_definitions(Path(__file__).resolve().parents[3] / "metadata")))
+
+    response = admin_client.get("/api/v1/metrics")
+    assert response.status_code == 200, response.text
+    served = {item["metric_key"]: item.get("notes") for item in response.json()["items"]}
+    with_notes = {key: note for key, note in declared.items() if note}
+    assert with_notes, "the shipped metric definitions declare at least one caveat"
+    for key, note in with_notes.items():
+        assert served.get(key) == note, f"metric {key} served notes {served.get(key)!r}, declared {note!r}"
