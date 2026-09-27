@@ -1,5 +1,7 @@
 # AI-Native Data Platform (M0-M6 delivered)
 
+[简体中文](README.zh-CN.md) · English
+
 A local, single-machine data platform where people ask questions in SQL (and later in
 natural language) against governed data sources, with strict read-only safety, explicit
 permissions, cancellable asynchronous execution, auditable evidence and replayable
