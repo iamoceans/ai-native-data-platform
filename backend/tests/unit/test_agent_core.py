@@ -210,6 +210,103 @@ def test_openai_compatible_adapter_uses_admin_key_file_and_validates_json(monkey
     assert "local-test-key" not in str(observed["body"])
 
 
+def _capture_adapter_call(monkeypatch, key_file, content):
+    """Run one adapter call and return the request body the provider sent."""
+    observed = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "model": "test-model-exact",
+                "choices": [
+                    {"message": {"content": content}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 5},
+            }
+
+    def fake_post(url, *, headers, json, timeout):
+        observed.update(url=url, headers=headers, body=json, timeout=timeout)
+        return Response()
+
+    monkeypatch.setattr("app.agent.llm.httpx.post", fake_post)
+    return observed
+
+
+def test_json_object_is_the_default_mode_and_the_prompt_carries_the_schema(monkeypatch, workdir):
+    """DeepSeek rejects response_format json_schema, so the portable mode is the default.
+
+    json_object mode is only accepted when the prompt contains the word "json", and
+    the model still has to be shown the fields that response_format used to carry.
+    """
+    key_file = workdir / "llm.key"
+    key_file.write_text("local-test-key", encoding="utf-8")
+    observed = _capture_adapter_call(monkeypatch, key_file, '{"dimensions":["country"]}')
+    provider = OpenAICompatibleProvider(
+        base_url="http://model.local/v1",
+        model="test-model",
+        api_key_file=key_file,
+    )
+    provider.generate_structured(
+        messages=[
+            {"role": "system", "content": "Select up to three useful breakdown dimensions."},
+            {"role": "user", "content": '{"metric_key":"revenue"}'},
+        ],
+        schema=PlanningSelection,
+        budget=AnalysisBudget.start(),
+        max_output_tokens=100,
+    )
+
+    body = observed["body"]
+    assert body["response_format"] == {"type": "json_object"}
+    instruction = body["messages"][0]
+    assert instruction["role"] == "system"
+    assert "json" in instruction["content"].lower()
+    assert '"dimensions"' in instruction["content"]
+    # The caller's messages are preserved after the injected instruction.
+    assert [message["role"] for message in body["messages"][1:]] == ["system", "user"]
+    assert body["messages"][1]["content"] == "Select up to three useful breakdown dimensions."
+
+
+def test_json_schema_mode_stays_available_for_strict_providers(monkeypatch, workdir):
+    key_file = workdir / "llm.key"
+    key_file.write_text("local-test-key", encoding="utf-8")
+    observed = _capture_adapter_call(monkeypatch, key_file, '{"dimensions":["country"]}')
+    provider = OpenAICompatibleProvider(
+        base_url="http://model.local/v1",
+        model="test-model",
+        api_key_file=key_file,
+        response_format="json_schema",
+    )
+    provider.generate_structured(
+        messages=[{"role": "user", "content": "choose"}],
+        schema=PlanningSelection,
+        budget=AnalysisBudget.start(),
+        max_output_tokens=100,
+    )
+
+    body = observed["body"]
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["name"] == "PlanningSelection"
+    assert body["response_format"]["json_schema"]["strict"] is True
+    # The provider enforces the schema itself, so no prompt addition is made.
+    assert body["messages"] == [{"role": "user", "content": "choose"}]
+
+
+def test_unknown_response_format_is_a_configuration_error(workdir):
+    key_file = workdir / "llm.key"
+    key_file.write_text("local-test-key", encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        OpenAICompatibleProvider(
+            base_url="http://model.local/v1",
+            model="test-model",
+            api_key_file=key_file,
+            response_format="yaml",
+        )
+
+
 def test_structured_plan_cannot_turn_prompt_injection_into_a_tool():
     with pytest.raises(ValueError):
         InvestigationPlan.model_validate(
@@ -393,6 +490,7 @@ def test_key_file_comments_never_reach_the_authorization_header(workdir):
         llm_model="deepseek-chat",
         llm_api_key_file=placeholder,
         llm_timeout_seconds=30.0,
+        llm_response_format="json_object",
     )
     resolution = resolve_provider(settings)
     assert resolution.provider is None

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key_file: Path | None = None
     llm_timeout_seconds: float = 30.0
+    # "json_object" is the portable mode (DeepSeek and most OpenAI-compatible
+    # servers reject "json_schema"; the schema then travels in the prompt and the
+    # response is validated against it locally). Set "json_schema" only for
+    # providers that implement strict structured outputs.
+    llm_response_format: str = "json_object"
     agent_max_input_tokens: int = 60_000
     agent_max_output_tokens: int = 12_000
     agent_max_tool_calls: int = 20

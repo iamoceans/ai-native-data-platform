@@ -134,6 +134,7 @@ def cmd_llm_check(args: argparse.Namespace) -> int:
     print(f"base_url: {settings.llm_base_url}")
     print(f"model:    {settings.llm_model or '(unset)'}")
     print(f"key file: {settings.llm_api_key_file or '(unset)'}")
+    print(f"format:   {settings.llm_response_format}")
 
     resolution = resolve_provider(settings)
     if resolution.warning:

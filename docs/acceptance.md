@@ -1,4 +1,4 @@
-# Acceptance record (M0-M5)
+# Acceptance record (M0-M6)
 
 Evidence below was produced on the reference machine: M0-M2 on 2026-09-14,
 M3/M4 on 2026-09-16. Anything not listed as "executed" is **not executed** and
@@ -131,7 +131,7 @@ A17 resource report (medium scale, reference host):
 | A06 | Canonical 67 numerical check | **passed** (M4) | Loaded into the source PostgreSQL and queried **through the Query Gateway**: total 10,000 -> 9,000 (delta -1,000, change_pct -0.1); target -670, net decline share 0.67, contribution -6.7 pp; `test_analysis_sql.py` + canonical_67 generator scenario |
 | A07 | Factor decomposition | **passed** (M4) | Symmetric impression x eCPM split; unit tests assert the 1e-6 USD tolerance over random Decimal inputs; live check on the loaded Doris demo reproduces it for the scenario target |
 | A08 | Additive groups | **passed** (M4) | Group deltas must sum to the parent delta (mismatch raises `GROUP_SUM_MISMATCH`); NULL bucket and zero-fill covered by unit tests; demo-verify asserts the partition sum for every scenario |
-| A09 | Real-agent accuracy | **harness ready, not executed** | `scripts/eval_agent.py` + `make eval-agent` run ten fixed (scenario, seed) cases through the deployed loop and score them against the generator's ground truth (model id, prompt version, tokens, latency, per-case failure recorded). The recorded 2026-09-19 run reports `a09_status=not_executed_no_real_model` - no provider is configured - with a deterministic baseline of target-in-top3 7/7 target cases, no forced attribution 3/3 no-target cases and evidence-consistent 10/10 |
+| A09 | Real-agent accuracy | **passed** (2026-09-27) | `scripts/eval_agent.py` + `make eval-agent` run ten fixed (scenario, seed) cases through the deployed loop and score them against the generator's ground truth (model id, prompt version, tokens, latency, per-case failure recorded). Executed against DeepSeek (`AIND_LLM_MODEL=deepseek-chat`, which the endpoint serves as `deepseek-flash`) on the full profile (MySQL 8.4.11 + Doris 3.1.4, DataHub not started): `a09_status=passed`, target-in-top3 **7/7** target cases (six ranked 1st, `schema_drift` 3rd), no forced attribution **3/3** no-target cases, evidence-consistent **10/10**, fully scored **10/10**, 9 COMPLETED + 1 PARTIAL (`incomplete_day`, A10's expected outcome), 2,169 input / 140 output tokens over 34 gateway queries, per-case latency 2.19-5.98 s, prompt version `m5-v1` (`runtime/eval/a09-20260927-224114.json`). The earlier 2026-09-19 record was the deterministic baseline `not_executed_no_real_model` with the same 7/7 - 3/3 - 10/10 |
 | A10 | No-anomaly / incomplete-day handling | **passed** (M5, 2026-09-19) | Generator/kernel paths still pass; the runner now applies a documented 0.5% materiality band, so a change inside it is reported as immaterial with no contributor claim and no hypotheses. Verified through the deployed stack by the A09 harness: `no_change` and `config_duplicate` end COMPLETED with no forced attribution, `incomplete_day` ends PARTIAL without numeric claims (3/3 no-target cases) |
 | A11 | Cancel on three engines | **passed** (M2) | PostgreSQL `57014`-based, MySQL `KILL QUERY` (1317), Doris `KILL QUERY` ("cancel query by user"); timeouts verified per engine |
 | A12 | Restart recovery | **passed** (live, 2026-09-23) | `scripts/verify_a12_worker_kill.py` pauses the real `query-worker` container mid-execution: the lease goes ACTIVE -> SUSPECT (reconciler) -> LOST after the grace window, the terminal code is `QUERY_LOST`, nothing is published, and after the frozen worker resumes the fencing token keeps the job LOST with zero result rows. The M5 runner also re-enters any phase after a claim loss (EXECUTING re-reads the query set, OBSERVING re-decides, SYNTHESIZING rewrites artifacts idempotently by content hash) |
@@ -151,12 +151,25 @@ A17 resource report (medium scale, reference host):
 - MySQL `KILL QUERY` for other users' connections (needs PROCESS) is out of scope;
   the platform only kills its own dedicated connections.
 - Doris multi-BE topologies, workload groups and external catalogs are out of V1 scope.
-- No real LLM provider was configured for this run, so A09 itself is open: the
-  harness (`scripts/eval_agent.py`) ran the ten cases on the deterministic path
-  (model id `deterministic-template-v1`, zero model tokens) and labels the record
-  `not_executed_no_real_model`. A10's scenario-through-agent behaviour *is*
-  executed there (no_target cases 3/3 unforced), but a real-model A09 accuracy
-  number does not exist yet.
+- A09 was executed against a real model on 2026-09-27 (DeepSeek), so the
+  "no real LLM provider was configured" caveat that stood here is closed. The
+  harness still records what happened, including the model the endpoint actually
+  served (`deepseek-flash` for the requested `deepseek-chat`). Reaching it needed
+  one adapter fix: the OpenAI-compatible adapter sent
+  `response_format: {"type": "json_schema"}`, an OpenAI structured-outputs feature
+  that DeepSeek rejects with HTTP 400 (`This response_format type is unavailable
+  now`). The portable `json_object` mode is now the default
+  (`AIND_LLM_RESPONSE_FORMAT`): the schema travels in the prompt and the reply is
+  validated against it locally, with `json_schema` kept for providers that
+  implement strict structured outputs. A reply that does not validate fails that
+  analysis loudly - there is no format-repair loop, only the SQL repair budget.
+
+- 2026-09-27 real-model run inputs, for reproducibility: stack `compose.yaml +
+  compose.dev.yaml --profile full` (MySQL 8.4.11 + Doris 3.1.4, DataHub not
+  started, `AIND_DATAHUB_ENABLED=0`), backend image rebuilt from the working tree
+  so the metric registry matches `metadata/` (10 definitions), datasources
+  re-aligned with `scripts/align_sources.py`, then
+  `python scripts/eval_agent.py --cases 10 --scale small`.
 - The full three-engine matrix was rerun on 2026-09-19 (67 passed, 1 skipped);
   the skipped case is the DataHub full-stack test, which needs the DataHub stack
   up (`make datahub-up`). DataHub-backed behaviour is still covered by its own
@@ -229,5 +242,13 @@ profile, plus the A09 harness run against the full profile (MySQL 8.4.11 +
 Doris 3.1.4, DataHub not started): `a09_status=not_executed_no_real_model`,
 target-in-top3 **7/7** target cases, no forced attribution **3/3** no-target
 cases, evidence-consistent **10/10**
-(`runtime/eval/a09-20260919-175727.json`). The full-profile *test matrix* has not
-been rerun after M5 and is not represented as current.
+(`runtime/eval/a09-20260919-175727.json`).
+
+The 2026-09-27 record adds the real-model run on the same full profile, after the
+`json_object` adapter change: **248 static passed** (`pytest backend/tests/unit
+backend/tests/security backend/tests/contract -q`) and `a09_status=passed` against
+`deepseek-flash` - target-in-top3 **7/7**, no forced attribution **3/3**,
+evidence-consistent **10/10**, 2,169 input / 140 output tokens, 34 gateway
+queries, 2.19-5.98 s per case (`runtime/eval/a09-20260927-224114.json`). The
+PostgreSQL integration profile and the full-profile *test matrix* have not been
+rerun after the adapter change and are not represented as current.

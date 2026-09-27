@@ -1,8 +1,9 @@
 # TODO and stage acceptance record
 
 Project: AI-Native Data Platform (spec v1.0)
-Scope currently delivered: **M0-M4 plus the first M5 governed-analysis vertical
-slice**. M5 real-model evaluation and adaptive analysis remain open.
+Scope currently delivered: **M0-M6**. Open items are listed per milestone below:
+model-driven step/tool selection (M5), and the specification's `/datasets/:id`
+route, which the catalog detail panel serves instead (M6).
 Rule followed: a stage counts as done only when its gate ran on real services; tests
 that were not executed are marked "not executed" and never counted as passed.
 
@@ -382,6 +383,21 @@ uv run --project backend --frozen python scripts/eval_agent.py --cases 10 --pass
 #    runtime/eval/a09-20260919-175727.json
 ```
 
+### M5 real-model evidence (executed 2026-09-27)
+
+```powershell
+# static suites (unit + security + contract), after the json_object adapter change
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# -> 248 passed
+
+# A09 harness against the deployed full profile with a real model (DeepSeek)
+uv run --project backend --frozen python scripts/eval_agent.py --cases 10 --scale small --password <admin pw>
+# -> a09_status=passed; target_top3=7/7; unforced=3/3; scored=10/10
+#    model deepseek-flash (requested deepseek-chat); 2,169 in / 140 out tokens;
+#    34 gateway queries; 2.19-5.98 s per case; 9 COMPLETED + incomplete_day PARTIAL
+#    runtime/eval/a09-20260927-224114.json
+```
+
 ### M4 test evidence (executed 2026-09-16)
 
 ```powershell
@@ -417,7 +433,7 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
 
 ---
 
-## M5 - governed analysis loop (closed on 2026-09-19; A09 still needs a real model)
+## M5 - governed analysis loop (loop closed on 2026-09-19; real-model A09 passed 2026-09-27)
 
 - [x] Explicit analysis state machine and immutable budget accounting.
 - [x] Deterministic fake adapter and OpenAI-compatible structured adapter; API
@@ -455,14 +471,21 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       (scenario, seed) cases through the deployed stack, scored against the
       generator's ground truth with model id, prompt version, tokens, latency and
       per-case failure reasons recorded in `runtime/eval/a09-*.json`.
-- [ ] A09 result: **not executed (no real model configured)**. The recorded run
-      is a deterministic-path baseline: status `not_executed_no_real_model`,
-      target cell in the top-3 contributors 7/7 target cases, no forced
-      attribution 3/3 no-target cases, evidence-consistent 10/10. Configure
-      `AIND_LLM_PROVIDER=openai-compatible` with a model and key file and re-run
-      `make eval-agent` to produce the real A09 record.
-```
-- [x] M6 charts: `app/charts/spec.py` implements the controlled ChartSpec
+- [x] A09 result: **passed on a real model** (2026-09-27). Ten fixed cases through
+      the deployed full profile against DeepSeek (`deepseek-chat` requested, served
+      as `deepseek-flash`): `a09_status=passed`, target cell in the top-3
+      contributors 7/7 target cases, no forced attribution 3/3 no-target cases,
+      evidence-consistent 10/10, 2,169 input / 140 output tokens, 34 gateway
+      queries, per-case latency 2.19-5.98 s, 9 COMPLETED + `incomplete_day` PARTIAL
+      (`runtime/eval/a09-20260927-224114.json`). Reaching it needed one adapter
+      fix: the JSON-schema response format is an OpenAI structured-outputs feature
+      that DeepSeek and most OpenAI-compatible servers reject with HTTP 400, so the
+      portable `json_object` mode is now the default (`AIND_LLM_RESPONSE_FORMAT`,
+      the schema travels in the prompt and the reply is validated against it
+      locally) and `json_schema` remains opt-in.
+## M6 - charts, drilldown, administration screens and release acceptance (closed 2026-09-25)
+
+- [x] Charts: `app/charts/spec.py` implements the controlled ChartSpec
       (kinds line/bar/table, unknown fields rejected, <=1000 points, ordered line
       x without silent zero fill, units from the metric contract). The runner
       writes a bar chart artifact for every contribution calculation, sets
@@ -520,5 +543,5 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       approve/reject with an explicit role+action choice, and the catalog shows
       "我的申请" with its status.
 - [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
-      panel rather than its own page; real-model A09 needs a configured provider.
-```
+      panel rather than its own page. Real-model A09 is no longer outstanding - it
+      passed on 2026-09-27 (see the M5 section).

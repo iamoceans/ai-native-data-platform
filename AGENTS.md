@@ -12,9 +12,13 @@ PostgreSQL, MySQL and Doris are first-class engines behind one Query Gateway;
 DataHub is the authoritative catalog for search, context and lineage.
 
 The design contract is the platform specification (v1.0); it is not part of this
-repository and is not modified by work here. Delivered scope: **M0-M4 plus the first
-M5 governed-analysis vertical slice**.
-M5 real-model evaluation and adaptive analysis are open - see `docs/todo.md`.
+repository and is not modified by work here. Delivered scope: **M0-M6**, with the
+per-milestone notes and open items in `docs/todo.md` and the known limits in
+`README.md` section 7.
+M5's real-model evaluation passed on 2026-09-27 (`docs/acceptance.md`). The runner's
+driver decomposition is rule-driven and integration-tested; model-driven step
+selection, iterative tool selection and the specification's `/datasets/:id` route
+remain open - see `docs/todo.md`.
 
 ## Layout
 
@@ -78,7 +82,10 @@ queue, otherwise you will fight the running workers over claims.
 Baseline as of 2026-09-18: **235 static tests pass**; the PostgreSQL core profile
 integration run reported **43 passed / 22 skipped** (skips are the absent MySQL,
 Doris and DataHub services). The earlier M4 full-profile record is **63 passed**
-and has not been rerun since the M5 changes.
+and has not been rerun since the M5 changes. Re-observed 2026-09-27 after the
+`json_object` adapter change: **248 static tests pass**
+(`pytest backend/tests/unit backend/tests/security backend/tests/contract -q`) and
+the A09 harness passed against a real model (DeepSeek).
 
 ## Invariants - do not break these
 

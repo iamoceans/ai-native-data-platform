@@ -1,15 +1,16 @@
-# AI-Native Data Platform (M0 - M5 in progress)
+# AI-Native Data Platform (M0-M6 delivered)
 
 A local, single-machine data platform where people ask questions in SQL (and later in
 natural language) against governed data sources, with strict read-only safety, explicit
 permissions, cancellable asynchronous execution, auditable evidence and replayable
 results. The design contract is the project specification (v1.0); this repository
-currently implements **M0 (foundations and version freeze), M1 (the PostgreSQL query
-closed
+implements **M0 (foundations and version freeze), M1 (the PostgreSQL query closed
 loop), M2 (MySQL/Doris providers and the three-source loop), M3 (DataHub catalog,
 context, lineage and the metadata-first substrate), M4 (deterministic demo
-generator and analysis kernel), and the first complete M5 governed-analysis
-vertical slice**.
+generator and analysis kernel), M5 (the governed analysis loop, with the real-model
+A09 evaluation passed on 2026-09-27) and M6 (charts, drilldown, administration
+screens and the release acceptance)**. Known deviations and limits are listed in
+section 7.
 
 What "M1" delivered (still the core of the platform):
 
@@ -232,6 +233,11 @@ The M5 configuration surface is administrator-only and environment-based:
 
 - `AIND_LLM_PROVIDER` (e.g. `openai-compatible`), `AIND_LLM_BASE_URL`,
   `AIND_LLM_MODEL`, `AIND_LLM_API_KEY_FILE` (mounted secret, never a request field);
+- `AIND_LLM_RESPONSE_FORMAT`: `json_object` (the default) carries the JSON schema in
+  the prompt and validates the reply against it locally - the portable mode, because
+  DeepSeek and most OpenAI-compatible servers answer HTTP 400 for `json_schema`
+  (`This response_format type is unavailable now`). Use `json_schema` only for a
+  provider that implements strict structured outputs;
 - `AIND_LLM_PROVIDER=fake` for the offline path, or `openai-compatible` to let a
   configured model select up to three dimensions from the metric allowlist;
 - budgets: 60,000 input / 12,000 output tokens per analysis, 20 tool calls,
@@ -244,7 +250,8 @@ override the endpoint, model, key path, tool list, metric formulas or SQL policy
 ### Using a real model (DeepSeek is pre-configured)
 
 `.env` already points at DeepSeek's OpenAI-compatible endpoint; the only missing
-piece is the key:
+piece is the key. This path was executed on 2026-09-27 and produced the A09 record
+in section 5:
 
 ```bash
 # 1. paste the key (one line, replacing PASTE_DEEPSEEK_API_KEY_HERE)
@@ -350,12 +357,13 @@ The M5 analysis loop additionally has an evaluation harness:
 make eval-agent                      # ten fixed (scenario, seed) cases, full profile
 ```
 
-Its 2026-09-19 record (`runtime/eval/a09-*.json`) reports
-`a09_status=not_executed_no_real_model`: no LLM provider is configured, so the run
-is a deterministic-path baseline (target cell in the top three contributors 7/7
-target cases, no forced attribution 3/3 no-target cases, evidence-consistent
-10/10). Configure `AIND_LLM_PROVIDER=openai-compatible` plus a model and key file
-to produce the real A09 record.
+Its 2026-09-27 record (`runtime/eval/a09-20260927-224114.json`) is the real-model
+run against DeepSeek: `a09_status=passed`, target cell in the top three
+contributors 7/7 target cases, no forced attribution 3/3 no-target cases,
+evidence-consistent 10/10, 2,169 input / 140 output tokens over 34 gateway
+queries, 2.19-5.98 s per case. The 2026-09-19 record is the deterministic baseline
+(`not_executed_no_real_model`, no provider was configured then) with the same
+7/7 - 3/3 - 10/10.
 
 The M4 full-profile run also recorded
 **three engine smokes passed**, `verify_metadata.py` all checks passed
@@ -386,11 +394,21 @@ make up-core     # start again; state is where you left it
 ## 7. Known limitations
 
 - The current analysis runner covers metric period comparison and allowlisted
-  contribution dimensions. Adaptive driver decomposition and iterative tool
-  selection remain open.
-- The OpenAI-compatible adapter has an offline contract test, but no real provider
-  was configured in this environment; A09 model-accuracy evidence is still open.
-- Ask and analysis detail pages exist; charts, drilldown and admin screens remain M6.
+  contribution dimensions, and extends its plan with a rule-driven
+  `driver_decomposition` step when the metric declares one and the materiality,
+  budget and depth gates allow (integration-tested). Model-driven step selection is
+  not implemented: the model's only decision is which allowlisted dimensions to
+  break down, and there is no iterative tool-selection loop.
+- A09 now has real-model evidence (DeepSeek, 2026-09-27, `docs/acceptance.md`).
+  Model replies are validated against the closed plan schema locally, and a reply
+  that does not validate fails that analysis loudly - there is no format-repair
+  loop, only the SQL repair budget.
+- The UI covers the V1 routes: login, the SQL workspace, results and history,
+  ask/analysis with charts, table view and drilldown, and the two administration
+  screens. Two things worth stating plainly: the specification's `/datasets/:id`
+  deep link is served by the catalog detail panel instead of its own route, and the
+  shared/dashboard screens are not part of the V1 specification, so they were not
+  invented.
 - DataHub auth-enabled mode is untested: the pinned quickstart disables GMS
   authentication (`scripts/datahub_token.py --check` reports this).
 - DataHub profiling is disabled in the recipes; column-level lineage is out of scope.
@@ -415,8 +433,8 @@ make up-core     # start again; state is where you left it
 | M2 | MySQL and Doris providers, three-source seed, engine-specific cancel/timeout | **done**: MySQL `MAX_EXECUTION_TIME`/`KILL QUERY`, Doris `query_timeout`/`KILL QUERY`, corpus on all engines |
 | M3 | DataHub ingestion, URN mapping, metadata context, lineage | **done**: pinned `v1.7.0.1` stack, three-source ingestion, real view->table edge, admin-only deep links |
 | M4 | Synthetic demo generator, deterministic compare/contribution/driver kernels, bounded cross-source joins | **done**: A06-A08/A14 acceptance through real SQL, A17 resource report recorded |
-| M5 | LLM adapter, planner, tool runner, evidence protocol, budget enforcement | **in progress**: governed comparison loop and UI pass; real-model A09/adaptive drivers open |
-| M6 | Full UI (charts, drilldown, SSE everywhere, admin screens), release acceptance | A16/A17/A18 complete |
+| M5 | LLM adapter, planner, tool runner, evidence protocol, budget enforcement | **done**: governed comparison loop, evidence-bound reports, budget enforcement and the deterministic fake path; the real-model A09 evaluation passed on 2026-09-27 (7/7 - 3/3 - 10/10 against DeepSeek) |
+| M6 | Full UI (charts, drilldown, SSE everywhere, admin screens), release acceptance | **done for the verified routes**: charts, drilldown and the analysis journey (A16), administration screens, the A12/A15 live acceptances and the A18 blank-volume run; the spec's `/datasets/:id` route is served by the catalog detail panel |
 | Production | Kyuubi/Spark batch provider, Flink streaming jobs, MCP egress, enterprise semantics | identity mapping, HA, object storage, SLOs |
 
 ## 9. Repository map and documents
@@ -438,8 +456,8 @@ docs/architecture.md       module boundaries, query lifecycle, M3/M4 flows
 docs/security.md           security model and explicit non-goals
 docs/compatibility.md      pinned versions, digests, verified vs pending, findings
 docs/runbook.md            start/stop/recover/troubleshoot
-docs/acceptance.md         acceptance matrix with executed evidence (M0-M5)
-docs/todo.md               milestone tracker (M0-M4 done, M5 in progress)
+docs/acceptance.md         acceptance matrix with executed evidence (M0-M6)
+docs/todo.md               milestone tracker (M0-M6, with per-milestone open items)
 ```
 
 Every "supported" claim in these documents must have been executed on this machine;

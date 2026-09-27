@@ -62,6 +62,25 @@ class LLMProvider(Protocol):
     ) -> StructuredGeneration: ...
 
 
+RESPONSE_FORMATS = ("json_object", "json_schema")
+
+
+def schema_instruction(schema: type[BaseModel]) -> str:
+    """The system message that carries the schema in json_object mode.
+
+    ``response_format: json_schema`` is an OpenAI structured-outputs feature that
+    DeepSeek and most OpenAI-compatible servers reject with HTTP 400, so the
+    portable mode sends ``json_object`` instead. That mode requires the word
+    "json" to appear in the prompt, and the model still has to be told which
+    fields are allowed - the same schema the response_format used to carry.
+    """
+    return (
+        "Reply with a single json object and nothing else - no prose, no markdown "
+        "fence, no extra keys. It must validate against this JSON Schema: "
+        + json.dumps(schema.model_json_schema(), ensure_ascii=False, separators=(",", ":"))
+    )
+
+
 class FakeLLMProvider:
     """Returns scripted objects and deterministic token accounting."""
 
@@ -100,11 +119,39 @@ class OpenAICompatibleProvider:
         model: str,
         api_key_file: Path,
         timeout_seconds: float = 30.0,
+        response_format: str = "json_object",
     ) -> None:
+        if response_format not in RESPONSE_FORMATS:
+            # A misspelled mode is a configuration error, not a degradation.
+            raise RuntimeError(
+                f"unsupported LLM response format '{response_format}'; expected one of "
+                f"{', '.join(RESPONSE_FORMATS)}"
+            )
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key_file = Path(api_key_file)
         self._timeout_seconds = timeout_seconds
+        self._response_format = response_format
+
+    def _request_messages(
+        self, *, messages: list[dict[str, str]], schema: type[BaseModel]
+    ) -> list[dict[str, str]]:
+        if self._response_format == "json_schema":
+            # The schema is enforced by the provider; no prompt addition needed.
+            return messages
+        return [{"role": "system", "content": schema_instruction(schema)}, *messages]
+
+    def _response_format_body(self, schema: type[BaseModel]) -> dict[str, Any]:
+        if self._response_format == "json_schema":
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema.__name__,
+                    "strict": True,
+                    "schema": schema.model_json_schema(),
+                },
+            }
+        return {"type": "json_object"}
 
     def generate_structured(
         self,
@@ -114,7 +161,8 @@ class OpenAICompatibleProvider:
         budget: AnalysisBudget,
         max_output_tokens: int = 1000,
     ) -> StructuredGeneration:
-        estimated = sum(len(message.get("content", "")) for message in messages) // 4 + 1
+        request_messages = self._request_messages(messages=messages, schema=schema)
+        estimated = sum(len(message.get("content", "")) for message in request_messages) // 4 + 1
         budget.reserve_model_call(estimated_input=estimated, max_output=max_output_tokens)
         api_key = read_api_key(self._api_key_file)
         if not api_key:
@@ -126,17 +174,10 @@ class OpenAICompatibleProvider:
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": self._model,
-                "messages": messages,
+                "messages": request_messages,
                 "max_tokens": max_output_tokens,
                 "temperature": 0,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema.__name__,
-                        "strict": True,
-                        "schema": schema.model_json_schema(),
-                    },
-                },
+                "response_format": self._response_format_body(schema),
             },
             timeout=self._timeout_seconds,
         )
@@ -207,6 +248,7 @@ def resolve_provider(settings) -> ProviderResolution:
             model=settings.llm_model,
             api_key_file=key_file,
             timeout_seconds=settings.llm_timeout_seconds,
+            response_format=settings.llm_response_format,
         )
     )
 

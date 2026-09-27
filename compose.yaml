@@ -20,6 +20,7 @@ x-app-env: &app-env
   AIND_LLM_BASE_URL: ${AIND_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
   AIND_LLM_MODEL: ${AIND_LLM_MODEL:-}
   AIND_LLM_API_KEY_FILE: ${AIND_LLM_API_KEY_FILE:-}
+  AIND_LLM_RESPONSE_FORMAT: ${AIND_LLM_RESPONSE_FORMAT:-json_object}
 
 x-app-service: &app-service
   build:
