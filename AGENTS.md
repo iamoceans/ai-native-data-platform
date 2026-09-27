@@ -11,9 +11,9 @@ grants, cancellable asynchronous execution, audit evidence and replayable result
 PostgreSQL, MySQL and Doris are first-class engines behind one Query Gateway;
 DataHub is the authoritative catalog for search, context and lineage.
 
-The design contract is the specification **outside this repository**
-(`../AI-Native-Data-Platform-Implementation-Spec.md`); it is not modified by work
-here. Delivered scope: **M0-M4 plus the first M5 governed-analysis vertical slice**.
+The design contract is the platform specification (v1.0); it is not part of this
+repository and is not modified by work here. Delivered scope: **M0-M4 plus the first
+M5 governed-analysis vertical slice**.
 M5 real-model evaluation and adaptive analysis are open - see `docs/todo.md`.
 
 ## Layout

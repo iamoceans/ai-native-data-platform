@@ -3,9 +3,9 @@
 A local, single-machine data platform where people ask questions in SQL (and later in
 natural language) against governed data sources, with strict read-only safety, explicit
 permissions, cancellable asynchronous execution, auditable evidence and replayable
-results. The design contract is the project specification
-(`AI-Native-Data-Platform-Implementation-Spec.md`); this repository currently
-implements **M0 (foundations and version freeze), M1 (the PostgreSQL query closed
+results. The design contract is the project specification (v1.0); this repository
+currently implements **M0 (foundations and version freeze), M1 (the PostgreSQL query
+closed
 loop), M2 (MySQL/Doris providers and the three-source loop), M3 (DataHub catalog,
 context, lineage and the metadata-first substrate), M4 (deterministic demo
 generator and analysis kernel), and the first complete M5 governed-analysis
@@ -444,3 +444,11 @@ docs/todo.md               milestone tracker (M0-M4 done, M5 in progress)
 
 Every "supported" claim in these documents must have been executed on this machine;
 unverified combinations stay marked `pending`/`not executed`.
+
+## 10. License
+
+Apache License 2.0 - see [LICENSE](LICENSE). Copyright 2026 oceans.
+
+Third-party components (PostgreSQL, MySQL, Doris, DataHub and the Python and Node
+dependencies pinned in `backend/uv.lock` and `frontend/package-lock.json`) keep their
+own licenses.

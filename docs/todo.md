@@ -1,6 +1,6 @@
 # TODO and stage acceptance record
 
-Project: AI-Native Data Platform (spec `AI-Native-Data-Platform-Implementation-Spec.md`, v1.0)
+Project: AI-Native Data Platform (spec v1.0)
 Scope currently delivered: **M0-M4 plus the first M5 governed-analysis vertical
 slice**. M5 real-model evaluation and adaptive analysis remain open.
 Rule followed: a stage counts as done only when its gate ran on real services; tests
