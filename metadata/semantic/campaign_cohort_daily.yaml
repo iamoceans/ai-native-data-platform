@@ -4,4 +4,5 @@ grain: [cohort_date, observation_day, campaign_id]
 business_timezone: UTC
 currency: USD
 join_keys: [campaign_id]
+metric_keys: [campaign_spend, campaign_attributed_revenue]
 notes: 与 PostgreSQL campaign_config 通过 campaign_cohort_to_config 白名单关系按生效区间关联；成本为独立列，不从收入推导

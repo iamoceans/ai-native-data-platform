@@ -1,0 +1,15 @@
+metric_key: campaign_attributed_revenue
+version: 1
+name: 归因收入（cohort 观测口径）
+dataset: demo.campaign_cohort_daily
+components:
+  revenue: {aggregation: sum, column: revenue_usd}
+formula: revenue
+unit: USD
+currency: USD
+timezone: UTC
+grain: [cohort_date, observation_day, campaign_id]
+allowed_dimensions: [campaign_id, observation_day]
+aggregation_kind: sum
+freshness: {date_column: cohort_date, completeness_source: demo_manifest}
+notes: 与 campaign_spend 同表同粒度；两者相除只得到「按观测日口径」的比值，spec 定义的 ROI_D1 需要 cohort 成熟窗口与当日获客成本，需另行声明

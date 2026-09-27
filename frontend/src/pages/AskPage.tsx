@@ -2,16 +2,26 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { createAgentSession, createAnalysis, listMetrics, type MetricSummary } from "../api/endpoints";
+import {
+  createAgentSession,
+  createAnalysis,
+  getDatasetContext,
+  getDatasetSchema,
+  listDatasets,
+  listMetrics,
+  type ColumnInfo,
+  type MetricSummary,
+} from "../api/endpoints";
 
 /**
- * The dimension list on this page is not a fixed menu: it is the selected
- * metric's declared `allowed_dimensions`, which the metric compiler enforces
- * (app/metrics/compiler.py rejects anything else with
- * METRIC_DIMENSION_NOT_ALLOWED). The picker therefore shows the metric's whole
- * declared grain and marks the entries that are time columns rather than
- * breakdown dimensions, so the list is readable as a contract instead of as a
- * short menu of unclear origin.
+ * Two things drive this page. The dataset picker answers "what is in this table
+ * and can I analyse it": it reads the platform catalog (grain, description,
+ * currency) plus the live schema, so a table without a declared metric says so
+ * instead of just being absent. The metric picker then pins the governed
+ * contract: dimensions are the metric's declared `allowed_dimensions`, which the
+ * compiler enforces (app/metrics/compiler.py rejects anything else with
+ * METRIC_DIMENSION_NOT_ALLOWED), so the declared grain is shown as it is -
+ * checkable dimensions, plus the time column that the period picker owns.
  */
 
 const MAX_DIMENSIONS = 3;
@@ -34,11 +44,19 @@ function isTimeColumn(name: string): boolean {
   return name === "dt" || name === "date" || name.endsWith("_date") || name.endsWith("_at");
 }
 
+function isNumericType(columnType: string): boolean {
+  return /int|decimal|double|float|numeric|long/i.test(columnType);
+}
+
 function datasetLabel(metric: MetricSummary): string {
   const datasets = metric.datasets ?? [];
   if (datasets.length === 0) return "未标注数据集";
   if (datasets.length === 1) return datasets[0];
   return `跨数据集 · ${datasets.join(" + ")}`;
+}
+
+function qualifier(schemaName: string, objectName: string): string {
+  return `${schemaName}.${objectName}`;
 }
 
 export function AskPage() {
@@ -55,11 +73,71 @@ export function AskPage() {
   const [currentStart, setCurrentStart] = useState("2026-09-12");
   const [currentEnd, setCurrentEnd] = useState("2026-09-13");
 
-  const datasets = useMemo(() => {
-    const names = new Set<string>();
-    metrics.forEach((metric) => (metric.datasets ?? []).forEach((name) => names.add(name)));
-    return [...names].sort();
-  }, [metrics]);
+  const catalogQuery = useQuery({ queryKey: ["datasets"], queryFn: () => listDatasets() });
+
+  // Dataset options come from the catalog, so a table without a declared metric
+  // is still visible and can say why it cannot be analysed, plus any dataset a
+  // metric names that the catalog did not return to this user. Datasets that
+  // have metrics sort first.
+  const datasetOptions = useMemo(() => {
+    const metricCounts = new Map<string, number>();
+    metrics.forEach((metric) =>
+      (metric.datasets ?? []).forEach((name) =>
+        metricCounts.set(name, (metricCounts.get(name) ?? 0) + 1),
+      ),
+    );
+    (catalogQuery.data ?? []).forEach((dataset) => {
+      const key = qualifier(dataset.schema_name, dataset.object_name);
+      if (!metricCounts.has(key)) metricCounts.set(key, 0);
+    });
+    return [...metricCounts.entries()]
+      .map(([name, metricCount]) => ({ name, metricCount }))
+      .sort((left, right) =>
+        left.metricCount === right.metricCount
+          ? left.name.localeCompare(right.name)
+          : right.metricCount - left.metricCount,
+      );
+  }, [metrics, catalogQuery.data]);
+
+  // The selected dataset is looked up in the catalog for its semantic context
+  // and live schema; both lookups degrade to "not readable" instead of blocking
+  // the metric path.
+  const datasetId = useMemo(
+    () =>
+      (catalogQuery.data ?? []).find(
+        (dataset) => qualifier(dataset.schema_name, dataset.object_name) === datasetFilter,
+      )?.id,
+    [catalogQuery.data, datasetFilter],
+  );
+  const contextQuery = useQuery({
+    queryKey: ["dataset", datasetId],
+    queryFn: () => getDatasetContext(datasetId as string),
+    enabled: Boolean(datasetId),
+  });
+  const schemaQuery = useQuery({
+    queryKey: ["dataset-schema", datasetId],
+    queryFn: () => getDatasetSchema(datasetId as string),
+    enabled: Boolean(datasetId),
+  });
+
+  const datasetMetrics = useMemo(
+    () => metrics.filter((metric) => (metric.datasets ?? []).includes(datasetFilter)),
+    [metrics, datasetFilter],
+  );
+  const datasetGrain = useMemo(
+    () => contextQuery.data?.grain ?? datasetMetrics[0]?.grain ?? [],
+    [contextQuery.data, datasetMetrics],
+  );
+  // Measure candidates: numeric columns that are not part of the declared grain.
+  const datasetMeasures = useMemo(
+    () => {
+      const grain = new Set(datasetGrain);
+      return (schemaQuery.data?.columns ?? []).filter(
+        (column: ColumnInfo) => isNumericType(column.type) && !grain.has(column.name),
+      );
+    },
+    [schemaQuery.data, datasetGrain],
+  );
 
   const visibleMetrics = useMemo(
     () =>
@@ -166,9 +244,10 @@ export function AskPage() {
               onChange={(event) => setDatasetFilter(event.target.value)}
             >
               <option value="">全部数据集（{metrics.length} 个指标）</option>
-              {datasets.map((dataset) => (
-                <option key={dataset} value={dataset}>
-                  {dataset}
+              {datasetOptions.map((option) => (
+                <option key={option.name} value={option.name}>
+                  {option.name}
+                  {option.metricCount > 0 ? ` · ${option.metricCount} 个指标` : " · 未声明指标"}
                 </option>
               ))}
             </select>
@@ -196,6 +275,67 @@ export function AskPage() {
           </label>
         </div>
 
+        {datasetFilter ? (
+          <div className="dataset-profile" data-testid="dataset-profile">
+            <div className="card-head">
+              <h3 className="mono-id">{datasetFilter}</h3>
+              <span className="muted small">
+                {contextQuery.isLoading
+                  ? "读取目录上下文…"
+                  : contextQuery.data
+                    ? "来自平台目录 + 语义登记"
+                    : "该数据集不在你的目录可见范围内"}
+              </span>
+            </div>
+            {contextQuery.data?.description ? (
+              <p className="muted small">{contextQuery.data.description}</p>
+            ) : null}
+            <div className="chips">
+              {(datasetGrain ?? []).map((dimension) => (
+                <span className="chip mono-id" key={dimension} data-testid={`profile-dimension-${dimension}`}>
+                  {dimension}
+                  {isTimeColumn(dimension) ? " · 时间列" : ""}
+                </span>
+              ))}
+              {contextQuery.data?.business_timezone ? (
+                <span className="chip">业务时区 {contextQuery.data.business_timezone}</span>
+              ) : null}
+              {contextQuery.data?.currency ? <span className="chip">币种 {contextQuery.data.currency}</span> : null}
+            </div>
+            <p className="muted small" data-testid="profile-measures">
+              度量列：
+              {datasetMeasures.length > 0
+                ? datasetMeasures.map((column) => column.name).join(" · ")
+                : "无可加总的数值列（配置类表）"}
+            </p>
+            {datasetMetrics.length > 0 ? (
+              <p className="muted small">
+                这张表已声明的指标（点选即切换分析口径）：
+                {datasetMetrics.map((metric) => (
+                  <button
+                    className="link-button"
+                    key={metric.metric_key}
+                    data-testid={`profile-metric-${metric.metric_key}`}
+                    onClick={() => {
+                      setRequestedMetric(metric.metric_key);
+                      setRequestedDimensions([]);
+                    }}
+                  >
+                    {metric.name}
+                  </button>
+                ))}
+              </p>
+            ) : (
+              <p className="notice warn" data-testid="profile-not-analysable">
+                这张表在 Ask data 里还不能分析：它没有声明任何指标，因此没有可用的聚合口径与版本。
+                {datasetMeasures.length > 0
+                  ? "它确实有度量列，需要先在治理侧为该表声明指标（口径、聚合方式、可用维度）才能进入分析。"
+                  : "它也没有可加总的度量列，属于配置/清单类表，只能作为分析中的关联背景。"}
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {selected ? (
           <div className="metric-provenance" data-testid="metric-provenance">
             <div className="chips">
@@ -210,7 +350,7 @@ export function AskPage() {
             <dl className="metric-facts">
               <div>
                 <dt>单位</dt>
-                <dd>{selected.currency ? `${selected.unit} · ${selected.currency}` : selected.unit}</dd>
+                <dd>{selected.currency && selected.currency !== selected.unit ? `${selected.unit} · ${selected.currency}` : selected.unit}</dd>
               </div>
               <div>
                 <dt>业务时区</dt>

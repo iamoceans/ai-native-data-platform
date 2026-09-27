@@ -1,0 +1,14 @@
+metric_key: cohort_size
+version: 1
+name: 注册 cohort 规模
+dataset: demo.retention_daily
+components:
+  cohort_size: {aggregation: sum, column: cohort_size}
+formula: cohort_size
+unit: users
+timezone: UTC
+grain: [cohort_date, country, platform]
+allowed_dimensions: [country, platform]
+aggregation_kind: sum
+freshness: {date_column: cohort_date, completeness_source: demo_manifest}
+notes: 按注册日 cohort 汇总新增规模；d1_users/d7_users 在 cohort 未成熟时为 NULL，留存「率」要等成熟度规则落地后再声明，不能用 SUM(d1_users)/SUM(cohort_size) 顶替

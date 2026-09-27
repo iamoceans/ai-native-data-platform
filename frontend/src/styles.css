@@ -476,7 +476,7 @@ button.ghost:hover:not(:disabled) {
 .dimension-picker { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
 .dimension-picker legend { color: var(--muted); font-size: 12px; padding: 0 6px; }
 .check { display: inline-flex; align-items: center; gap: 6px; margin-right: 18px; }
-.check.closed { color: var(--muted); }
+.check.closed { color: var(--muted); flex-basis: 100%; flex-direction: row; align-items: center; justify-content: flex-start; white-space: nowrap; }
 .dimension-options { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-bottom: 8px; }
 .dimension-picker .muted.small { margin: 0; }
 
@@ -496,6 +496,10 @@ button.ghost:hover:not(:disabled) {
 .semantic-block { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 8px; }
 .semantic-block h3 { font-size: 13px; margin: 0; }
 .semantic-block p { margin: 0; }
+/* Dataset-first entry point: what the picked table contains, before the metric contract. */
+.dataset-profile { border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fcfcfd; padding: 12px; display: grid; gap: 8px; }
+.dataset-profile h3 { font-size: 13px; margin: 0; }
+.dataset-profile p { margin: 0; }
 @media (max-width: 720px) {
   .scope-dataset { min-width: 100%; }
 }

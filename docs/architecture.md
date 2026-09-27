@@ -1,4 +1,4 @@
-# Architecture (M0-M5 implemented slice)
+# Architecture (M0-M6 implemented slice)
 
 This document describes what is actually implemented. The authoritative long-term
 design is the project specification; sections marked "planned" are not built yet.
@@ -202,6 +202,17 @@ with `scripts/capture_datahub_fixtures.py`).
   `[valid_from, valid_to)` as-of matching, amount preservation).
 - Relations are registered in `metadata/relations/*.yaml`; a model can only
   choose a `relation_id`, never a join expression.
+- Metric coverage is declared per table in `metadata/metrics/*.yaml`, and a
+  table without a declaration is deliberately not analysable: the Ask screen
+  says so (with the table's grain and measure columns) instead of guessing an
+  aggregation. `campaign_spend` and `campaign_attributed_revenue` over
+  `demo.campaign_cohort_daily` and `cohort_size` over `demo.retention_daily` are
+  declared; their `freshness.date_column` is `cohort_date`, not `dt`. The cohort
+  *rates* (D1/D7 retention, ROI_D1) stay undeclared until cohort maturity and a
+  day-0 cost rule are enforced in the compiler - `SUM(d1_users)/SUM(cohort_size)`
+  would mix immature cohorts and read as a plausible wrong number, and the
+  generator writes a cost row per observation day rather than one acquisition
+  cost per cohort.
 
 ## Planned modules (not built)
 

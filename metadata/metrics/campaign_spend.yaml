@@ -1,0 +1,15 @@
+metric_key: campaign_spend
+version: 1
+name: 投放支出（cohort 观测口径）
+dataset: demo.campaign_cohort_daily
+components:
+  cost: {aggregation: sum, column: cost_usd}
+formula: cost
+unit: USD
+currency: USD
+timezone: UTC
+grain: [cohort_date, observation_day, campaign_id]
+allowed_dimensions: [campaign_id, observation_day]
+aggregation_kind: sum
+freshness: {date_column: cohort_date, completeness_source: demo_manifest}
+notes: 生成器为每个 (cohort_date, campaign_id, observation_day) 各写一条独立成本，因此这里求和得到的是「该期间按观测日记录的累计支出」，不是某个 cohort 的一次性获客成本；不要用它与 cohort 收入直接相除当作 ROI_D1

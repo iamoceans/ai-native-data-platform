@@ -25,7 +25,20 @@ def definitions() -> dict[str, MetricDefinitionModel]:
 
 
 def test_all_shipped_metrics_compile(definitions):
-    assert len(definitions) == 7
+    # Pinned by key rather than by count: a new definition must be a deliberate
+    # addition here, with the dataset it reads and the dimensions it opens.
+    assert set(definitions) == {
+        "ads_revenue",
+        "campaign_attributed_revenue",
+        "campaign_spend",
+        "cohort_size",
+        "dau",
+        "ecpm",
+        "iap_revenue",
+        "impressions",
+        "new_users",
+        "total_revenue",
+    }
     for definition in definitions.values():
         dimensions = list(definition.allowed_dimensions)[:1]
         compiled = compile_metric(definition, dimensions=dimensions, **PERIOD)
@@ -71,6 +84,27 @@ def test_dau_compiles_daily_rows_for_averaging(definitions):
     assert query.group_by[0] == "dt"
     assert query.post_aggregation == "daily_average"
     assert any("average across days" in warning for warning in compiled.warnings)
+
+
+def test_campaign_metrics_read_their_own_cohort_date_column(definitions):
+    """The cohort tables are keyed on cohort_date, so freshness decides the period filter."""
+    compiled = compile_metric(definitions["campaign_spend"], dimensions=["campaign_id"], **PERIOD)
+    query = compiled.queries[0]
+    assert "FROM demo.campaign_cohort_daily" in query.sql
+    assert "cohort_date >= :start AND cohort_date < :end" in query.sql
+    assert query.group_by == ("campaign_id",)
+    assert "(SUM(cost_usd)) AS campaign_spend" in query.sql
+    assert query.parameters["start"] == "2026-09-11"
+
+
+def test_cohort_size_sums_the_cohort_without_inventing_a_retention_rate(definitions):
+    """Only the cohort denominator is declared; the NULL-bearing rate columns stay out."""
+    compiled = compile_metric(definitions["cohort_size"], dimensions=["country"], **PERIOD)
+    query = compiled.queries[0]
+    assert "FROM demo.retention_daily" in query.sql
+    assert "(SUM(cohort_size)) AS cohort_size" in query.sql
+    assert "d1_users" not in query.sql and "d7_users" not in query.sql
+    assert query.group_by == ("country",)
 
 
 def test_dimension_must_be_allowed(definitions):
