@@ -545,3 +545,13 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
 - [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
       panel rather than its own page. Real-model A09 is no longer outstanding - it
       passed on 2026-09-27 (see the M5 section).
+
+---
+
+## Future phases (specification sections 31-32) - not started
+
+Not implemented and never represented as delivered: a Kyuubi/Spark batch provider,
+Flink streaming jobs, MCP egress, and the enterprise semantics layer (identity
+mapping, HA, object storage, SLOs). The preconditions each phase will need were
+recorded while the delivered milestones were built; this section exists so the
+front page does not have to carry a roadmap table.

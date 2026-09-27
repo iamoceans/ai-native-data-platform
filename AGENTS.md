@@ -14,7 +14,7 @@ DataHub is the authoritative catalog for search, context and lineage.
 The design contract is the platform specification (v1.0); it is not part of this
 repository and is not modified by work here. Delivered scope: **M0-M6**, with the
 per-milestone notes and open items in `docs/todo.md` and the known limits in
-`README.md` section 7.
+`README.md` (section "Known limitations").
 M5's real-model evaluation passed on 2026-09-27 (`docs/acceptance.md`). The runner's
 driver decomposition is rule-driven and integration-tested; model-driven step
 selection, iterative tool selection and the specification's `/datasets/:id` route

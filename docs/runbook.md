@@ -91,6 +91,24 @@ Facts to remember:
   return `available` for `demo.ads_revenue_by_country` (view -> table, label
   `extracted`) and for `demo.revenue_daily_total` (declared demo pipeline).
 
+### 2.2 Registering a datasource and granting access by hand
+
+`scripts/metadata_sync.py` does this idempotently for the demo sources; the
+manual path (spec sections 11 and 12) is, as an administrator:
+
+1. put the source credentials in `infra/local-secrets/<name>.json`
+   (`{"username": ..., "password": ...}`) - the file is mounted read-only and a
+   password is never accepted as a request field;
+2. `POST /api/v1/datasources` with
+   `{name, kind: "postgres", connection_config, secret_ref}`;
+3. `POST /api/v1/datasources/{id}/test` -> expect `HEALTHY`;
+4. `POST /api/v1/admin/datasources/{id}/catalog-refresh` with `{"schemas": ["public"]}`
+   (base tables with sensitive-looking columns are skipped, views require explicit
+   confirmation);
+5. `POST /api/v1/admin/grants` for the roles that should see the data.
+
+`scripts/smoke_core.py --demo` automates all of the above and runs one real query.
+
 ## 3. Running the test suites
 
 Unit / security / contract tests need no services:

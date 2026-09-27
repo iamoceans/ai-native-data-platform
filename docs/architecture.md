@@ -214,8 +214,17 @@ with `scripts/capture_datahub_fixtures.py`).
   generator writes a cost row per observation day rather than one acquisition
   cost per cohort.
 
-## Planned modules (not built)
+## Not built
 
-- M5: LLM adapter, constrained planner, checkpointed tool runner, analysis state
-  machine and evidence protocol (initial vertical slice implemented).
-- M6: full UI surface (charts, drilldown, admin screens), SSE in all views.
+- Model-driven plan and tool selection. The planning call may only choose up to
+  three dimensions from the metric's `allowed_dimensions`; the plan's steps come
+  from `comparison_plan()` and the one adaptive extension is rule-driven
+  (`_extend_with_driver_step`: materiality + a declared `driver_decomposition`
+  metric + budget and depth gates). Nothing yet lets a model choose steps or
+  iterate over tools.
+- The specification's `/datasets/:id` deep link: the catalog detail panel serves
+  that content instead of a dedicated route. The shared/dashboard screens are not
+  part of the V1 specification and were not invented.
+- The production phases of the specification (sections 31-32): Kyuubi/Spark batch
+  provider, Flink streaming jobs, MCP egress and enterprise semantics. See the
+  roadmap row in `docs/todo.md`.
