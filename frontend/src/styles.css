@@ -545,3 +545,14 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
   .data-table tr { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .data-table td, .data-table th { border: none; padding: 2px 0; }
 }
+
+/* Business memory: learned statements with provenance and curation state. */
+.memory-panel { border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fcfcfd; padding: 12px; display: grid; gap: 8px; }
+.memory-panel h3 { font-size: 13px; margin: 0; }
+.memory-panel p { margin: 0; }
+.memory-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.memory-row { display: grid; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+.memory-statement { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.memory-text { font-size: 13px; }
+.memory-text.rejected { color: var(--muted); text-decoration: line-through; }
+.memory-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

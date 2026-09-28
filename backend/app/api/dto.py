@@ -68,16 +68,17 @@ from app.datasource.config_models import (  # noqa: E402
     DorisConnectionConfig,
     MySQLConnectionConfig,
     PostgresConnectionConfig,
+    SparkConnectionConfig,
 )
 
 # The API accepts any engine config here; the service validates the payload
 # against the config model for the declared kind (extra fields forbidden).
-ConnectionConfig = PostgresConnectionConfig | MySQLConnectionConfig | DorisConnectionConfig
+ConnectionConfig = PostgresConnectionConfig | MySQLConnectionConfig | DorisConnectionConfig | SparkConnectionConfig
 
 
 class DatasourceCreate(StrictModel):
     name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
-    kind: Literal["postgres", "mysql", "doris"]
+    kind: Literal["postgres", "mysql", "doris", "spark"]
     connection_config: ConnectionConfig
     secret_ref: str = Field(
         min_length=3, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
@@ -265,6 +266,42 @@ class MetricSummary(BaseModel):
 
 class MetricListResponse(BaseModel):
     items: list[MetricSummary]
+
+
+# ---------------------------------------------------------------------------
+# Business memory: what the platform learned from earlier analyses
+# ---------------------------------------------------------------------------
+class MemoryItem(BaseModel):
+    id: uuid.UUID
+    metric_key: str
+    kind: str
+    statement: str
+    scope_datasets: list[str] = Field(default_factory=list)
+    scope_dimensions: list[str] = Field(default_factory=list)
+    status: str
+    source: str
+    model_id: str | None = None
+    analysis_id: uuid.UUID | None = None
+    calculation_id: uuid.UUID | None = None
+    seen_count: int = 1
+    reuse_count: int = 0
+    last_used_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MemoryListResponse(BaseModel):
+    items: list[MemoryItem]
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
+class AnalysisMemoryResponse(BaseModel):
+    """The memories one analysis leaned on, and the ones it produced."""
+
+    used: list[MemoryItem] = Field(default_factory=list)
+    learned: list[MemoryItem] = Field(default_factory=list)
+    reinforced: list[MemoryItem] = Field(default_factory=list)
+    extraction: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

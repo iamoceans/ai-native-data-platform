@@ -246,6 +246,7 @@ def discover_urn(
        platform never stores an unverified URN.
     """
     table = qualifier.partition(".")[2] or qualifier
+    platform = {"spark": "hive"}.get(kind, kind)
     deadline = time.monotonic() + timeout_seconds
     attempts = 0
     while time.monotonic() < deadline:
@@ -265,7 +266,11 @@ def discover_urn(
             if not match:
                 continue
             name = match.group("name")
-            if name.endswith(qualifier) and name.startswith(f"{platform_instance}."):
+            if (
+                urn.startswith(f"urn:li:dataset:(urn:li:dataPlatform:{platform},")
+                and name.endswith(qualifier)
+                and name.startswith(f"{platform_instance}.")
+            ):
                 return urn
         time.sleep(4)
 
@@ -296,7 +301,7 @@ def verify_candidate_urn(
     kind: str,
     env: str,
 ) -> str | None:
-    platform = {"postgres": "postgres", "mysql": "mysql", "doris": "doris"}.get(kind, kind)
+    platform = {"postgres": "postgres", "mysql": "mysql", "doris": "doris", "spark": "hive"}.get(kind, kind)
     names = [f"{platform_instance}.{qualifier}", qualifier]
     envs = [env, "PROD", "DEV"]
     for name in names:

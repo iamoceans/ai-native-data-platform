@@ -100,6 +100,8 @@ def compile_query(
         max_subquery_depth=settings.max_subquery_depth,
         engine=str(datasource.kind),
     )
+    if datasource.kind == "spark" and (validated.placeholder_names or parameters):
+        raise ApiError(ErrorCode.SQL_UNSUPPORTED, "Spark parameterized queries are not supported")
     # Authorization: query + discover on every referenced dataset (spec 12.1).
     for relation in validated.relations:
         ensure_dataset_action(

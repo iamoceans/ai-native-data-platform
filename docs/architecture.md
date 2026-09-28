@@ -5,6 +5,17 @@ design is the project specification; sections marked "planned" are not built yet
 
 ## Processes and trust boundaries
 
+The optional Spark path uses an existing Spark Thrift Server for SQL execution
+and the same Hive Metastore's Thrift endpoint for DataHub ingestion. Both are
+external services. One registered `spark` datasource owns each table and its
+single DataHub `hive` URN. The API still only validates and enqueues user SQL;
+the worker uses Impyla against Spark Thrift Server. Spark listener events must
+use the same DataHub platform instance and environment to attach job lineage.
+The current GraphQL lineage response exposes granted registered datasets only;
+Spark DataJob nodes are not a separate UI entity yet. The connector path was
+accepted live on 2026-09-28/29 (`docs/acceptance.md`); Spark job lineage,
+read-only source authorization and browser E2E coverage are still open.
+
 ```
 Browser (React SPA, 127.0.0.1:3000)
    |  cookies + CSRF header, same-origin via nginx
@@ -213,6 +224,46 @@ with `scripts/capture_datahub_fixtures.py`).
   would mix immature cohorts and read as a plausible wrong number, and the
   generator writes a cost row per observation day rather than one acquisition
   cost per cohort.
+
+## Business memory (learned business knowledge)
+
+The platform learns from its own analyses: ask more, and the planner knows more
+about the business. `app/agent/memory.py` and `business_memory` (a table beyond
+the specification's frozen DDL list) implement the loop in three steps.
+
+1. **Learn.** When an analysis reaches COMPLETED or PARTIAL, the agent worker
+   builds a digest of the *governed record only* - question, metric contract,
+   the kernel's ranked segments with a direction and support flag, the kernel's
+   own limitations - and asks the configured model for at most three durable
+   statements. Validation is what makes prose safe: a statement may not contain
+   a percentage, an amount, or any figure that does not appear verbatim in that
+   record (a version id such as `4.2.1` is a value the analysis actually
+   grouped by; "down 67%" is refused). Every stored row links to its analysis
+   and its comparison artifact.
+2. **Recall.** Planning reads the metric's memories back (most-reused first) and
+   puts them in the planner prompt as a labelled, untrusted data block. They
+   influence only which dimensions the model selects, and the existing allowlist
+   validation still decides what is legal. Use is counted (`reuse_count`), so the
+   store converges on the statements that keep earning their place.
+3. **Curate.** A fresh row is `proposed`: already used as a hint, labelled as
+   such in the UI, and confirmable or rejectable by an administrator
+   (`POST /memory/{id}/confirm|reject`, audited). A rejected statement is never
+   used again, and re-learning it later bumps the counter instead of resurrecting
+   it.
+
+Failures here can never change an analysis outcome: extraction runs after the
+analysis is published, in its own transaction, and records a loud
+`analysis.memory.skipped` event when the model endpoint is not configured. A
+catch-up pass in the worker loop picks up analyses whose extraction never ran,
+so learning is self-healing rather than best-effort. The visible surfaces are
+the 业务记忆 panel on the Ask screen (scoped to the selected metric, with
+curation) and `GET /analyses/{id}/memory` on the analysis screen (what this run
+read and what it produced).
+
+Deliberate limits: retrieval is metric-scoped text, not embeddings; statements
+are number-free by construction, so figures still live only in the evidence
+chain; and a second worker would need a claim/lease for extraction before the
+loop could run at that scale.
 
 ## Not built
 

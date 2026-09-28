@@ -122,6 +122,17 @@ def list_for_user(
     return list(rows), int(total)
 
 
+def list_recent_terminal(session: Session, *, limit: int) -> list[AnalysisTask]:
+    """Freshest finished analyses first; the learning loop's catch-up source."""
+    rows = session.execute(
+        select(AnalysisTask)
+        .where(AnalysisTask.status.in_(tuple(TERMINAL_ANALYSIS_STATUSES)))
+        .order_by(AnalysisTask.finished_at.desc().nullslast(), AnalysisTask.created_at.desc())
+        .limit(limit)
+    ).scalars()
+    return list(rows)
+
+
 def set_status(task: AnalysisTask, target: str) -> None:
     task.status = transition(task.status, target)
     task.checkpoint_version = int(task.checkpoint_version) + 1

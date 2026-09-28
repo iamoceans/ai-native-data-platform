@@ -9,7 +9,11 @@ natural language) against governed sources, with strict read-only safety,
 default-deny per-dataset grants, cancellable asynchronous execution, an audit trail
 for every step, and results whose numbers can be recomputed from stored evidence.
 It runs on a single machine: PostgreSQL, MySQL and Doris sit behind one query
-gateway, and DataHub supplies the catalog, context and lineage.
+gateway, and DataHub supplies the catalog, context and lineage. A Spark Thrift
+Server adapter for a shared Hive Metastore is available as an external-service
+integration: its connector, cancellation and timeout paths were accepted against
+a real Spark/Hive stack on 2026-09-28/29, with Spark job lineage, read-only
+source authorization and browser E2E still open.
 
 ## Status
 
@@ -51,6 +55,12 @@ gateway, and DataHub supplies the catalog, context and lineage.
 - **Catalog and lineage**: DataHub (off by default) provides search, context and
   lineage; real `extracted` edges and declared demo-pipeline edges are labelled
   apart.
+- **Business memory**: every finished analysis can teach the platform something -
+  the model distils at most three statements per run, and they may not contain a
+  figure the analysis did not produce, so prose never becomes a second source of
+  numbers. Later questions read those statements back as advisory context for
+  choosing dimensions, and an administrator confirms or rejects each one (`业务
+  记忆` on the Ask screen). Ask more, and it knows more.
 - **UI**: a React SPA with the SQL workspace, catalog, history, Ask/Analysis
   (charts, table-equivalent view, drilldown) and the datasource and permission
   administration screens.
@@ -177,8 +187,19 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
 
 ## Known limitations
 
+- Spark/Hive requires an existing shared Hive Metastore and Spark Thrift Server.
+  The adapter accepts only NOSASL connections and non-parameterized SQL. Spark
+  does not expose a transactional read-only session here; deploy a read-only
+  source identity and enforce a server-side query timeout. The connector,
+  cancellation and timeout paths were accepted live on 2026-09-28/29; Spark job
+  lineage, read-only source authorization and browser E2E coverage still need
+  live acceptance. See the
+  [Spark/Hive runbook](docs/runbook.md#spark--hive-shared-metastore-preview).
 - The analysis runner extends its plan by rule; letting the model choose steps or
   iterate over tools is not implemented.
+- Business memory is ranked text, not embeddings, and is platform-wide rather
+  than per-team; extraction runs inline in the agent worker, so several workers
+  would need a claim before the loop scales past one.
 - Plan replies are validated against a closed schema locally, and a reply that does
   not validate fails that analysis loudly - there is no format-repair loop, only
   the SQL repair budget.

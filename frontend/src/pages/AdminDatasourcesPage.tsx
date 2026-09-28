@@ -34,10 +34,12 @@ export function AdminDatasourcesPage() {
   });
   const [register, setRegister] = useState({
     name: "",
-    kind: "postgres" as "postgres" | "mysql" | "doris",
+    kind: "postgres" as "postgres" | "mysql" | "doris" | "spark",
     host: "",
     port: "",
     database: "",
+    metastoreHost: "",
+    metastorePort: "9083",
     secretRef: "",
   });
   const [error, setError] = useState<ApiError | null>(null);
@@ -95,11 +97,15 @@ export function AdminDatasourcesPage() {
           port: Number(register.port),
           database: register.database,
           connect_timeout_seconds: 5,
+          ...(register.kind === "spark" ? {
+            metastore_host: register.metastoreHost,
+            metastore_port: Number(register.metastorePort),
+          } : {}),
         },
         secret_ref: register.secretRef,
       }),
     onSuccess: () => {
-      setRegister({ name: "", kind: "postgres", host: "", port: "", database: "", secretRef: "" });
+      setRegister({ name: "", kind: "postgres", host: "", port: "", database: "", metastoreHost: "", metastorePort: "9083", secretRef: "" });
       setError(null);
       queryClient.invalidateQueries({ queryKey: ["admin-datasources"] });
     },
@@ -277,8 +283,23 @@ export function AdminDatasourcesPage() {
                 <option value="postgres">postgres</option>
                 <option value="mysql">mysql</option>
                 <option value="doris">doris</option>
+                <option value="spark">spark</option>
               </select>
             </label>
+            {register.kind === "spark" ? (
+              <>
+                <label>
+                  Hive Metastore host
+                  <input value={register.metastoreHost} onChange={(event) =>
+                    setRegister((current) => ({ ...current, metastoreHost: event.target.value }))} />
+                </label>
+                <label>
+                  Hive Metastore port
+                  <input value={register.metastorePort} onChange={(event) =>
+                    setRegister((current) => ({ ...current, metastorePort: event.target.value }))} />
+                </label>
+              </>
+            ) : null}
             <label>
               host
               <input

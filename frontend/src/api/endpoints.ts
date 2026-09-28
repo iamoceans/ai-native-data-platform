@@ -15,6 +15,8 @@ export type ResultPayload = components["schemas"]["ResultPayload"];
 export type ColumnInfo = components["schemas"]["ColumnInfo"];
 export type DatasetSchemaResponse = components["schemas"]["DatasetSchemaResponse"];
 export type MetricSummary = components["schemas"]["MetricSummary"];
+export type MemoryItem = components["schemas"]["MemoryItem"];
+export type AnalysisMemoryResponse = components["schemas"]["AnalysisMemoryResponse"];
 export type AnalysisDetail = components["schemas"]["AnalysisDetail"];
 export type AnalysisListResponse = components["schemas"]["AnalysisListResponse"];
 
@@ -159,6 +161,30 @@ export async function cancelAnalysis(analysisId: string): Promise<AnalysisDetail
 
 export async function getAnalysisEvidence(analysisId: string): Promise<Record<string, unknown>> {
   return apiFetch<Record<string, unknown>>(`/api/v1/analyses/${analysisId}/evidence`);
+}
+
+// ---------------------------------------------------------------------------
+// Business memory: statements learned from earlier analyses (advisory only).
+// ---------------------------------------------------------------------------
+export async function listMemory(
+  metricKey?: string,
+  limit = 200,
+): Promise<{ items: MemoryItem[]; counts: Record<string, number> }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (metricKey) params.set("metric_key", metricKey);
+  return apiFetch(`/api/v1/memory?${params.toString()}`);
+}
+
+export async function confirmMemory(memoryId: string): Promise<MemoryItem> {
+  return apiFetch<MemoryItem>(`/api/v1/memory/${memoryId}/confirm`, { method: "POST" });
+}
+
+export async function rejectMemory(memoryId: string): Promise<MemoryItem> {
+  return apiFetch<MemoryItem>(`/api/v1/memory/${memoryId}/reject`, { method: "POST" });
+}
+
+export async function getAnalysisMemory(analysisId: string): Promise<AnalysisMemoryResponse> {
+  return apiFetch<AnalysisMemoryResponse>(`/api/v1/analyses/${analysisId}/memory`);
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +393,7 @@ export async function listAudits(): Promise<{ items: AuditEntry[] }> {
 
 export async function createDatasource(input: {
   name: string;
-  kind: "postgres" | "mysql" | "doris";
+  kind: "postgres" | "mysql" | "doris" | "spark";
   connection_config: Record<string, unknown>;
   secret_ref: string;
 }): Promise<Datasource> {

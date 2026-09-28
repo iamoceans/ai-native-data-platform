@@ -36,6 +36,7 @@ _PARSE_DIALECTS: dict[str, str] = {
     SourceKind.POSTGRES: "postgres",
     SourceKind.MYSQL: "mysql",
     SourceKind.DORIS: "doris",
+    SourceKind.SPARK: "spark",
 }
 
 # Generation dialect: postgres natively renders %(name)s (psycopg style);
@@ -44,6 +45,7 @@ _CODEGEN_DIALECTS: dict[str, object] = {
     SourceKind.POSTGRES: "postgres",
     SourceKind.MYSQL: PyformatMySQL,
     SourceKind.DORIS: PyformatDoris,
+    SourceKind.SPARK: "spark",
 }
 
 

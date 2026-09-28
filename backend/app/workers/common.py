@@ -107,6 +107,7 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
     stop.install()
     worker_id = worker_identity("aw")
     store = get_result_store()
+    from app.agent import memory as business_memory
     from app.agent import runner as analysis_runner
     logger.info(
         "agent worker started (reconciler and analysis runner)",
@@ -123,6 +124,35 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
             if claim is not None:
                 with session_scope() as session:
                     analysis_runner.execute_claim(session, claim=claim, settings=settings)
+                # Learning runs after the analysis is published and in its own
+                # transaction, so a model failure here cannot change an outcome,
+                # and a failure in it cannot stall the rest of the pass.
+                try:
+                    with session_scope() as session:
+                        learned = business_memory.remember_completed(
+                            session, analysis_id=claim.analysis_id, settings=settings
+                        )
+                    if learned.get("status") == "extracted":
+                        logger.info(
+                            "business memory learned",
+                            extra={
+                                "analysis_id": str(claim.analysis_id),
+                                "created_count": len(learned.get("created_ids") or []),
+                                "reinforced_count": len(learned.get("reinforced_ids") or []),
+                            },
+                        )
+                except Exception:
+                    logger.exception(
+                        "business memory extraction crashed",
+                        extra={"analysis_id": str(claim.analysis_id)},
+                    )
+            # Self-healing: an analysis that finished while this worker was down
+            # (or while the model endpoint was unavailable) still gets learned.
+            try:
+                with session_scope() as session:
+                    business_memory.catch_up(session, settings=settings)
+            except Exception:
+                logger.exception("business memory catch-up failed")
             interesting = {k: v for k, v in summary.items() if _has_activity(v)}
             if interesting:
                 logger.info(

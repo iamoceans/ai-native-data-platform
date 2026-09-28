@@ -601,22 +601,24 @@ def dataset_lineage(
                 "mapped": True,
             }
         )
-    for node in nodes:
-        if mapped.get(node.urn) is None:
-            # Unregistered upstream/downstream assets are reported without a
-            # platform dataset id (they are visible in DataHub only).
-            visible.append(
-                {
-                    "urn": node.urn,
-                    "dataset_id": None,
-                    "name": node.name,
-                    "namespace": None,
-                    "platform": node.platform,
-                    "degree": node.degree,
-                    "label": "external",
-                    "mapped": False,
-                }
-            )
+    if dataset.catalog_name != "spark_catalog":
+        # Preserve the existing external-node display for the original engines.
+        # Spark's shared Metastore can contain many unregistered Hive assets;
+        # those must not leak through the new lineage surface.
+        for node in nodes:
+            if mapped.get(node.urn) is None:
+                visible.append(
+                    {
+                        "urn": node.urn,
+                        "dataset_id": None,
+                        "name": node.name,
+                        "namespace": None,
+                        "platform": node.platform,
+                        "degree": node.degree,
+                        "label": "external",
+                        "mapped": False,
+                    }
+                )
     visible_urns = {node["urn"] for node in visible} | {dataset.datahub_urn}
     labels_by_urn = {node["urn"]: node["label"] for node in visible}
     result["edges"] = [

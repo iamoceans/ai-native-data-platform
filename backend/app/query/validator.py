@@ -32,7 +32,7 @@ from app.query.resolver import (
     schema_dict_for,
 )
 
-DIALECTS = {"postgres": "postgres", "mysql": "mysql", "doris": "doris"}
+DIALECTS = {"postgres": "postgres", "mysql": "mysql", "doris": "doris", "spark": "spark"}
 
 _ALLOWED_FUNC_CLASSES = frozenset(
     {

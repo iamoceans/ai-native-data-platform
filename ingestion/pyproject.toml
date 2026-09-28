@@ -7,7 +7,7 @@ dependencies = [
     # Not installed by our build (the base image already provides the SDK and
     # the postgres/mysql/doris sources). This pin documents the PyPI release
     # line for anyone rebuilding the runner without the official image.
-    "acryl-datahub[postgres,mysql,doris]==1.7.0.10",
+    "acryl-datahub[postgres,mysql,doris,hive-metastore]==1.7.0.10",
 ]
 
 [tool.uv]

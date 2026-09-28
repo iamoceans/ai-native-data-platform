@@ -121,25 +121,26 @@ def test_postgres_provider_implements_protocol_surface():
     assert missing == []
 
 
-def test_default_registry_supports_all_three_engines():
+def test_default_registry_supports_registered_engines():
     from app.providers.registry import get_registry
 
-    assert get_registry().kinds() == ["doris", "mysql", "postgres"]
+    assert get_registry().kinds() == ["doris", "mysql", "postgres", "spark"]
 
 
-def test_mysql_doris_providers_implement_protocol_surface():
+def test_mysql_doris_spark_providers_implement_protocol_surface():
     import inspect
 
     from app.providers.base import QueryProvider
     from app.providers.doris import DorisProvider
     from app.providers.mysql import MySQLProvider
+    from app.providers.spark import SparkProvider
 
     protocol_methods = {
         name
         for name, _ in inspect.getmembers(QueryProvider, predicate=inspect.isfunction)
         if not name.startswith("_")
     }
-    for provider_class in (MySQLProvider, DorisProvider):
+    for provider_class in (MySQLProvider, DorisProvider, SparkProvider):
         missing = [name for name in protocol_methods if not hasattr(provider_class, name)]
         assert missing == [], f"{provider_class.__name__} missing {missing}"
 

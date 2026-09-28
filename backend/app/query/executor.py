@@ -336,6 +336,15 @@ def execute_claim(
             # The monitor-decided outcome handles the cancel/complete race and
             # distinguishes user cancel from the engine-enforced deadline.
             status_override = _cancel_outcome(monitor, session_factory, claim)
+        elif classification == "error" and monitor.cancel_sent:
+            # Some engines cannot name their own cancellation: Spark's Impyla
+            # cursor raises an untyped error once the cancelled operation stops
+            # reporting a state. Once the monitor has sent a cancel, that cancel
+            # decides the outcome - FAILED is not even a legal transition out of
+            # CANCEL_REQUESTED, so failing here would strand the job until the
+            # lease expires. Specific engine verdicts (permission, schema,
+            # syntax, unavailable) keep their own codes above.
+            status_override = _cancel_outcome(monitor, session_factory, claim)
         elif classification == "permission":
             failure = (
                 ErrorCode.PERMISSION_DENIED,
@@ -524,10 +533,10 @@ def _publish_terminal(
 ) -> None:
     try:
         with _tx(session_factory) as session:
-            published = queue_repo.publish_terminal(
+            published = _publish_terminal_status(
                 session, claim, status=status, code=code, message=message, details=details
             )
-            if published:
+            if published is not None:
                 audit_repo.add_audit(
                     session,
                     actor_id=claim.user_id,
@@ -535,10 +544,10 @@ def _publish_terminal(
                     resource_type="query",
                     resource_id=str(claim.query_id),
                     trace_id=f"worker:{claim.worker_id}",
-                    outcome=status,
+                    outcome=published,
                     details={"code": code, "duration_ms": round(duration_ms, 2)},
                 )
-            if published and status == QueryStatus.LOST:
+            if published == QueryStatus.LOST:
                 events_repo.add_event(
                     session,
                     resource_kind="query",
@@ -548,6 +557,40 @@ def _publish_terminal(
                 )
     except Exception:
         logger.exception("could not publish terminal status", extra={"query_id": str(claim.query_id)})
+
+
+def _publish_terminal_status(
+    session,
+    claim,
+    *,
+    status: str,
+    code: str,
+    message: str,
+    details: dict | None,
+) -> str | None:
+    """Write the terminal status, resolving a pending cancel instead of refusing.
+
+    A job in CANCEL_REQUESTED may only become CANCELLED/TIMED_OUT/LOST (spec 13
+    allow-table), so an engine error that arrives after the monitor sent a cancel
+    must not be written as FAILED: the transition would be refused and the job
+    would look running until its lease expired, then be recorded LOST minutes
+    later. Returns the status actually written, or None when nothing was.
+    """
+    job = queries_repo.get_query(session, claim.query_id)
+    if (
+        job is not None
+        and job.status == QueryStatus.CANCEL_REQUESTED
+        and QueryStatus(status) not in (QueryStatus.CANCELLED, QueryStatus.TIMED_OUT, QueryStatus.LOST)
+    ):
+        published = queue_repo.publish_terminal(
+            session, claim, status=QueryStatus.CANCELLED,
+            code=ErrorCode.QUERY_CANCELLED, message="query was cancelled", details=details,
+        )
+        return QueryStatus.CANCELLED if published else None
+    published = queue_repo.publish_terminal(
+        session, claim, status=status, code=code, message=message, details=details
+    )
+    return status if published else None
 
 
 def _short(exc: BaseException) -> str:

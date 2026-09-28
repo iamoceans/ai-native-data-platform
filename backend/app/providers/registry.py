@@ -40,11 +40,13 @@ def build_default_registry() -> ProviderRegistry:
     from app.providers.doris import DorisProvider
     from app.providers.mysql import MySQLProvider
     from app.providers.postgres import PostgresProvider
+    from app.providers.spark import SparkProvider
 
     registry = ProviderRegistry()
     registry.register(SourceKind.POSTGRES, PostgresProvider.from_datasource)
     registry.register(SourceKind.MYSQL, MySQLProvider.from_datasource)
     registry.register(SourceKind.DORIS, DorisProvider.from_datasource)
+    registry.register(SourceKind.SPARK, SparkProvider.from_datasource)
     return registry
 
 

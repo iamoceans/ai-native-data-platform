@@ -26,21 +26,22 @@ remain open - see `docs/todo.md`.
 backend/      FastAPI API + query/agent workers (one image), Alembic, tests
   app/api/routes/     HTTP surface; DTOs in app/api/dto.py
   app/query/          gateway, validator, resolver, limits, scheduler, executor
-  app/providers/      base protocol + postgres/mysql/doris implementations
-  app/agent/          M5 planner, adapters, budget, runner, report
+  app/providers/      base protocol + postgres/mysql/doris/spark implementations
+  app/agent/          M5 planner, adapters, budget, runner, report, business memory
   app/analysis/       deterministic kernel (compare/contribution/drivers/join)
   app/metrics/        versioned metric registry + closed-grammar SQL compiler
   app/metadata/       DataHub GraphQL adapter, ingestion tasks, recipes, context
   app/results/        Arrow IPC + JSON store, signed cursors
-  app/workers/        query_worker, agent_worker (reconciler + analyses)
-  app/models/orm.py   control schema (27 tables, spec section 8)
-  migrations/         Alembic (single baseline revision 4f36847b8351)
+  app/workers/        query_worker, agent_worker (reconciler + analyses + learning)
+  app/models/orm.py   control schema (28 tables: the spec 8 list + business_memory)
+  migrations/         Alembic (baseline 4f36847b8351 + permission state + business memory)
   tests/              unit / security / contract / integration
 frontend/     React 19 + Vite 8 SPA, OpenAPI-generated types, Playwright journeys
 demo/         M4 deterministic generator, scenarios, schemas, loaders
 ingestion/    pinned DataHub ingestion image + platform runner / lineage publisher
 metadata/     versioned contracts: recipes/, semantic/, metrics/, relations/
-infra/        versions.env, pinned DataHub compose, per-engine init scripts
+infra/        versions.env, pinned DataHub compose, per-engine init scripts,
+              spark-preview/ (throwaway Spark Thrift + HMS fixture for acceptance)
 scripts/      doctor, setup_secrets, smoke_core, verify_schema, demo_*, dev.ps1
 docs/         architecture, security, compatibility, runbook, acceptance, todo
 ```
@@ -85,7 +86,20 @@ Doris and DataHub services). The earlier M4 full-profile record is **63 passed**
 and has not been rerun since the M5 changes. Re-observed 2026-09-27 after the
 `json_object` adapter change: **248 static tests pass**
 (`pytest backend/tests/unit backend/tests/security backend/tests/contract -q`) and
-the A09 harness passed against a real model (DeepSeek).
+the A09 harness passed against a real model (DeepSeek). Re-observed 2026-09-29
+after the business-memory, Spark-preview and Spark-cancellation-fix changes:
+**281 static tests pass** and the **full matrix is 73 passed**
+(`pytest backend/tests/integration backend/tests/contract -m integration -q`,
+MySQL + Doris + DataHub live, workers stopped). The full matrix needs four things
+this host does not default to: `-f compose.dev.yaml` for the DB ports, Doris
+running (`test_datahub_metadata` asserts its health), the `ecpm_drop` demo
+scenario loaded (`test_a07_driver_decomposition_on_loaded_demo`), and the
+deployed containers started with `AIND_DATAHUB_ENABLED=1` for the
+deployed-stack DataHub test; on this host also pass
+`--basetemp=runtime/pytest-tmp` or pytest cannot create its tmpdir. The Spark
+preview's live acceptance - including the cancellation fix and the server-side
+timeout - is recorded in `docs/acceptance.md`; `infra/spark-preview/` is the
+throwaway Spark/HMS fixture that makes it reproducible.
 
 ## Invariants - do not break these
 

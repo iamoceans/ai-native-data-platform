@@ -17,6 +17,7 @@ from app.api.routes import (
     datasets,
     datasources,
     health,
+    memory,
     metrics,
     queries,
     saved_queries,
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(datasets.router, prefix=prefix)
     app.include_router(queries.router, prefix=prefix)
     app.include_router(metrics.router, prefix=prefix)
+    app.include_router(memory.router, prefix=prefix)
     app.include_router(saved_queries.router, prefix=prefix)
     app.include_router(analyses.router, prefix=prefix)
     app.include_router(charts.router, prefix=prefix)

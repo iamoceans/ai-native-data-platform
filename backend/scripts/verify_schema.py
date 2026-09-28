@@ -21,6 +21,8 @@ EXPECTED_TABLES = {
     "analysis_tasks",
     "audit_logs",
     "auth_sessions",
+    # Beyond the spec's frozen DDL list: the learned business knowledge store.
+    "business_memory",
     "datasets",
     "datasources",
     "execution_capacity",
@@ -48,6 +50,9 @@ EXPECTED_CONSTRAINTS = {
     "ck_analysis_status",
     "ck_queue_state",
     "ck_step_status",
+    "ck_business_memory_kind",
+    "ck_business_memory_status",
+    "ck_business_memory_source",
 }
 
 EXPECTED_INDEXES = {
@@ -68,6 +73,7 @@ EXPECTED_INDEXES = {
     "ix_leases_user",
     "ix_results_expiry",
     "ix_roles_users",
+    "ix_business_memory_metric",
 }
 
 

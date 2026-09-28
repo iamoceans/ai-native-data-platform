@@ -171,7 +171,16 @@ def resolve_relations(
                 "db",
                 exp.Identifier(this=dataset.schema_name, quoted=_needs_quoting(dataset.schema_name)),
             )
-        else:
+        elif engine == "spark":
+            if ref_catalog and not _match(ref_catalog, "spark_catalog", _quoted(catalog_identifier)):
+                raise ApiError(ErrorCode.DATASET_NOT_REGISTERED, "only spark_catalog is supported")
+            candidates = [d for d in datasets if _match(table_name, d.object_name, name_quoted)]
+            if ref_db:
+                candidates = [d for d in candidates if _match(ref_db, d.schema_name, _quoted(db_identifier))]
+            dataset = _pick_unique(candidates, table_name)
+            node.set("catalog", None)
+            node.set("db", exp.Identifier(this=dataset.schema_name, quoted=_needs_quoting(dataset.schema_name)))
+        elif engine == "postgres":
             dataset = _resolve_postgres(
                 datasets,
                 table_name=table_name,
@@ -187,6 +196,8 @@ def resolve_relations(
                 "db",
                 exp.Identifier(this=dataset.schema_name, quoted=_needs_quoting(dataset.schema_name)),
             )
+        else:
+            raise ApiError(ErrorCode.DATASOURCE_UNSUPPORTED, f"no resolver for kind '{engine}'")
 
         # Catalog names come from database introspection and therefore carry
         # exact identifier semantics. Always quoting the rewritten physical

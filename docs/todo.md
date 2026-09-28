@@ -542,16 +542,70 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       `7c1d5a9e4b02`). The Permissions screen gained per-request
       approve/reject with an explicit role+action choice, and the catalog shows
       "我的申请" with its status.
+- [x] Business memory (2026-09-28): every finished analysis contributes
+      number-free, evidence-linked statements; planning reads them back as
+      advisory context and an administrator confirms or rejects each one
+      (`business_memory`, `app/agent/memory.py`, `GET /memory`,
+      `GET /analyses/{id}/memory`). Live two-round check and the two findings it
+      produced are recorded in `docs/acceptance.md`.
+- [ ] Memory retrieval is metric-scoped text ranked by reuse, not embeddings: a
+      large store would want a similarity search before the top-8 cut, and
+      statements are still platform-wide rather than per-team. Extraction is
+      also inline in the agent worker, so a second worker would need a
+      claim/lease before it scales beyond one loop.
+- [x] Curation audit detail (fixed 2026-09-29): `memory.confirm` / `memory.reject`
+      rows used to log `previous` as the *new* status, because `_curate` read
+      `row.status` after `set_status` had mutated it in place; the route now
+      captures the previous status first and a unit test pins it
+      (`test_curation_audit_records_the_previous_status`). Decided there too:
+      statements that name the analysis window are refused as
+      `unverifiable_figure` because the date is not in `evidence_identifiers` -
+      the window is deliberately not quotable.
 - [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
       panel rather than its own page. Real-model A09 is no longer outstanding - it
       passed on 2026-09-27 (see the M5 section).
 
 ---
 
-## Future phases (specification sections 31-32) - not started
+## Future phases (specification sections 31-32)
 
-Not implemented and never represented as delivered: a Kyuubi/Spark batch provider,
-Flink streaming jobs, MCP egress, and the enterprise semantics layer (identity
-mapping, HA, object storage, SLOs). The preconditions each phase will need were
-recorded while the delivered milestones were built; this section exists so the
-front page does not have to carry a roadmap table.
+Spark Thrift Server now has a preview provider and HMS recipe; its connector
+path, cancellation and the 120-second timeout paths were accepted live on
+2026-09-28/29 (`docs/acceptance.md`). What remains open is the Spark listener's
+job lineage, read-only source authorization and browser E2E (checklist below).
+Not implemented and never represented as delivered: a Kyuubi provider or
+separate HiveServer2 query provider, Flink streaming jobs, MCP egress, and the
+enterprise semantics layer (identity mapping, HA, object storage, SLOs). The
+preconditions each phase will need were recorded while the delivered milestones
+were built; this section exists so the front page does not have to carry a
+roadmap table.
+
+### Spark/Hive shared Metastore preview (2026-09-28)
+
+- [x] Add Spark source registration, dialect/resolution, worker-only Thrift
+      execution, HMS ingestion recipe, single Hive URN mapping and UI fields.
+- [x] Reject Spark parameters until safe server-side binding exists; apply
+      existing dataset grants and SQL denylist to Spark statements.
+- [x] Real Spark Thrift Server + Hive Metastore + pinned DataHub ingestion cycle
+      (2026-09-28, fixture in `infra/spark-preview/`): connection, catalog
+      refresh of a table created through the Hive CLI, grants, SELECT, the
+      stateless rejections, `mapped 3/3` Hive URN mapping, DataHub search and
+      the platform's lineage endpoint. Recorded in `docs/acceptance.md`.
+- [x] Cancellation and the 120-second ceiling (fixed and re-verified 2026-09-29):
+      cancel now ends `CANCELLED`/`QUERY_CANCELLED` (terminal 2.2 s after the
+      cancel) and the ceiling ends `TIMED_OUT`/`QUERY_TIMEOUT` at 120.6 s. The
+      provider translates the two operation states Impyla cannot name
+      (`SparkOperationCancelled`, and `SparkOperationTimedOut` for the server's
+      `TIMEDOUT_STATE` 8), the executor lets a monitor cancel decide the outcome
+      after a generic engine error, and a terminal publish from
+      `CANCEL_REQUESTED` resolves to `CANCELLED` instead of stranding the job to
+      `LOST`. Regression tests in the unit and integration suites; evidence in
+      `docs/acceptance.md`.
+- [x] Server-enforced query timeout, measured without the platform
+      (`runtime/accept_spark_server_timeout.py`): the Thrift Server aborted an
+      8M-row self-join at 120.0 s. Note for operators: the 2M-row fixture query
+      finishes in ~118 s, so only `demo.slow_events_big` proves anything.
+- [ ] Read-only source authorization: the fixture is NOSASL with no authorizer,
+      so it was not exercised. Deploy a read-only source identity before use.
+- [ ] Verify the DataHub Spark listener produces visible table lineage with the
+      exact HMS platform instance and environment, then add browser E2E coverage.

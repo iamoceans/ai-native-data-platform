@@ -95,7 +95,7 @@ class Datasource(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     __table_args__ = (
-        CheckConstraint("kind IN ('postgres','mysql','doris')", name="datasources_kind_check"),
+        CheckConstraint("kind IN ('postgres','mysql','doris','spark')", name="datasources_kind_check"),
     )
 
 
@@ -453,6 +453,74 @@ class AnalysisArtifact(Base):
     __table_args__ = (
         CheckConstraint("kind IN ('calculation','chart','evidence')", name="analysis_artifacts_kind_check"),
         Index("ix_artifacts_analysis", "analysis_id"),
+    )
+
+
+class BusinessMemory(Base):
+    """Learned business knowledge, written after a governed analysis completes.
+
+    This table is an explicit extension beyond the specification's frozen DDL
+    list: the spec has no long-term knowledge store, and "the more you ask the
+    more it knows" needs one. Two properties keep it inside the platform's
+    invariants rather than beside them. First, a row is never a number: the
+    statement is validated to be number-free, so every figure stays owned by the
+    deterministic kernel, and ``analysis_id``/``calculation_id`` point at the
+    governed evidence the statement was derived from. Second, a row is a claim
+    with a status - ``proposed`` rows are advisory hints in the planner prompt,
+    ``confirmed`` rows are curator-approved business knowledge, ``rejected``
+    rows are never used again.
+    """
+
+    __tablename__ = "business_memory"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    metric_key: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    scope_datasets: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    scope_dimensions: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, default="proposed", server_default="proposed"
+    )
+    source: Mapped[str] = mapped_column(
+        Text, nullable=False, default="model", server_default="model"
+    )
+    model_id: Mapped[str | None] = mapped_column(Text)
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_tasks.id")
+    )
+    calculation_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_artifacts.id")
+    )
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False)
+    seen_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    reuse_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('segment','caveat','definition','follow_up')",
+            name="ck_business_memory_kind",
+        ),
+        CheckConstraint(
+            "status IN ('proposed','confirmed','rejected')",
+            name="ck_business_memory_status",
+        ),
+        CheckConstraint("source IN ('model','curator')", name="ck_business_memory_source"),
+        UniqueConstraint("dedupe_key", name="business_memory_dedupe_key_key"),
+        Index("ix_business_memory_metric", "metric_key", "status"),
     )
 
 

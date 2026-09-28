@@ -259,3 +259,63 @@ Permissions screen prints "Mock 标记，未授权" next to it.
 Approving needs the role and the action (`discover`/`query`); granting `query`
 implies `discover` (spec 12.1). The requester sees their own requests through
 `GET /permission-requests`, never anybody else's and never the admin queue.
+
+## Spark / Hive shared Metastore preview
+
+This path expects two **existing** services: a Spark Thrift Server on port
+10000 and the Hive Metastore Thrift API on port 9083. Configure Spark with
+`hive-site.xml` pointing to that exact Metastore; verify a table created by
+Hive is visible through Spark before registering it. Spark without this file
+can create its own local metastore and would produce a different catalog.
+
+1. Add both service hosts to `AIND_SOURCE_HOST_ALLOWLIST`. Supply a source
+   identity restricted to read-only table access in
+   `infra/local-secrets/<ref>.json` as `username` and `password`. The first
+   adapter release supports `NOSASL` only; secure authentication/TLS modes are
+   pending. Keep Thrift endpoints on a private network.
+2. Configure Spark Thrift Server with
+   `spark.sql.thriftServer.queryTimeout=120s` and
+   `spark.sql.thriftServer.interruptOnCancel=true`, and verify the runtime
+   recognizes those settings. This is the server backstop for the platform's
+   120-second maximum. Platform-side cancellation is asynchronous, but the
+   outcome is not: the adapter translates the states Impyla cannot name, so a
+   cancelled query ends `CANCELLED` and one the server stops at its own timeout
+   ends `TIMED_OUT` (verified live 2026-09-29, see `docs/acceptance.md`). Keep
+   the server value at or above the platform ceiling - at exactly 120s either
+   timer may win, and both outcomes are now correct.
+3. In `/admin/datasources`, register kind `spark` with `host`/`port` for Spark
+   Thrift Server, `database` as the initial Hive database, and
+   `metastore_host`/`metastore_port` for the *same* shared Metastore. Example
+   non-secret config:
+
+   ```json
+   {"host":"spark-thrift","port":10000,"database":"demo","metastore_host":"hive-metastore","metastore_port":9083,"connect_timeout_seconds":5}
+   ```
+
+4. Test the connection, refresh the intended Hive database, explicitly grant
+   `discover` and `query` for each table, then sync metadata. The DataHub
+   recipe uses `hive-metastore` in Thrift mode and maps the resulting `hive`
+   URN back to the single registered table. Confirm the ingestion task reports
+   `mapped == expected`, then check catalog search and a bounded SELECT in the
+   SQL workspace. Named SQL parameters are rejected for Spark in this phase.
+5. For Spark **job** lineage, install DataHub's Spark listener on the job's
+   Spark runtime. Set `spark.datahub.metadata.dataset.platformInstance` to
+   the datasource's `ainative-<first eight UUID characters>`, set
+   `spark.datahub.metadata.dataset.env` to the platform environment (`PROD`
+   unless configured otherwise), and keep the Hive platform alias as `hive`.
+   Configure the GMS URL and token through Spark's secret injection. The
+   [DataHub Spark listener guide](https://docs.datahub.com/docs/metadata-integration/java/acryl-spark-lineage)
+   lists the listener artifact and configuration. Verify emitted dataset URNs
+   match the ingested HMS URNs exactly before relying on the lineage panel.
+
+The pinned ingestion image exposed the `hive-metastore` plugin and accepted
+the recipe configuration in an isolated dry-run. The connection has since been
+verified against a real stack: `infra/spark-preview/` (Hive 3.1.3 + Spark
+3.5.3) was registered, catalog-refreshed, granted and queried, and a DataHub
+sync mapped every table to one `hive` URN (`mapped 3/3`) - see
+`docs/acceptance.md` (2026-09-28/29). Still outstanding before treating the
+integration as accepted: a view edge and a Spark job edge (the listener above),
+read-only source authorization, and browser E2E. A separate HiveServer2
+execution connector is not part of this preview: Hive and Spark tables in the
+shared Metastore appear once as assets, and SQL currently runs through Spark
+Thrift Server.

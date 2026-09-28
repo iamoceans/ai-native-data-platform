@@ -21,8 +21,10 @@ from app.api.dto import (
     AnalysisCreate,
     AnalysisDetail,
     AnalysisListResponse,
+    AnalysisMemoryResponse,
     AnalysisStepResponse,
     AnalysisSubmitResponse,
+    MemoryItem,
 )
 from app.auth.sessions import AuthContext
 from app.config import Settings
@@ -36,6 +38,7 @@ from app.repositories import audit as audit_repo
 from app.repositories import datasets as datasets_repo
 from app.repositories import events as events_repo
 from app.repositories import idempotency as idempotency_repo
+from app.repositories import memory as memory_repo
 from app.repositories import policy as policy_repo
 from app.repositories import queries as queries_repo
 from app.repositories import queue as queue_repo
@@ -307,6 +310,40 @@ def get_evidence(
         ],
         "calculations": [artifact.content for artifact in artifacts if artifact.kind == "calculation"],
     }
+
+
+@router.get("/analyses/{analysis_id}/memory", response_model=AnalysisMemoryResponse)
+def get_analysis_memory(
+    analysis_id: uuid.UUID,
+    auth: AuthContext = Depends(current_auth),
+    session: Session = Depends(get_db),
+) -> AnalysisMemoryResponse:
+    """Which learned statements this analysis read, and which ones it produced.
+
+    This is the visible half of the learning loop: the same rows the planner was
+    handed, so a reader can see what the platform believed going in and what it
+    took away from the run.
+    """
+    task = _own_analysis(session, auth, analysis_id)
+    state = dict(task.state or {})
+    used_ids = [uuid.UUID(str(item)) for item in state.get("memory_used_ids") or []]
+    learned_ids = [uuid.UUID(str(item)) for item in state.get("memory_learned_ids") or []]
+    reinforced_ids = [uuid.UUID(str(item)) for item in state.get("memory_reinforced_ids") or []]
+    resolved = memory_repo.list_by_ids(session, [*used_ids, *learned_ids, *reinforced_ids])
+
+    def _items(ids: list[uuid.UUID]) -> list[MemoryItem]:
+        return [
+            MemoryItem(**{**memory_repo.as_dict(resolved[item]), "id": item})
+            for item in ids
+            if item in resolved
+        ]
+
+    return AnalysisMemoryResponse(
+        used=_items(used_ids),
+        learned=_items(learned_ids),
+        reinforced=_items(reinforced_ids),
+        extraction=state.get("memory_extraction"),
+    )
 
 
 @router.post("/analyses/{analysis_id}/cancel", response_model=AnalysisDetail)

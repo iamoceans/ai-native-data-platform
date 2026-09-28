@@ -6,6 +6,7 @@
 
 ## 状态
 
+- **Spark/Hive 预览**：已接入共用 Hive Metastore 的 Spark Thrift 查询适配器和 DataHub HMS 元数据配方；连接器路径、取消与 120 秒超时路径已于 2026-09-28/29 在真实的 Spark/Hive 服务上验收（注册、目录刷新、授权、查询、单一 Hive URN 映射、取消记为 `CANCELLED`、超时记为 `TIMED_OUT`）；Spark 作业血缘、只读源授权与浏览器 E2E 尚待验收。见 [操作手册](docs/runbook.md#spark--hive-shared-metastore-preview)。
 - **已交付**：M0–M6。真实模型评测（A09）于 2026-09-27 通过 —— DeepSeek 上十个固定用例，目标格进入 Top-3 贡献者 **7/7**，无目标用例 **3/3** 未被强行归因，证据一致 **10/10**。
 - **仍然开放**：规格里的 `/datasets/:id` 深链由目录详情面板承担，没有独立路由；分析步骤目前由规则扩展，尚未实现让模型自己选择步骤与工具。
 - 逐阶段清单与执行过的证据在 [docs/todo.md](docs/todo.md) 与 [docs/acceptance.md](docs/acceptance.md)；未执行的项一律标注 `not executed`，从不计入通过。

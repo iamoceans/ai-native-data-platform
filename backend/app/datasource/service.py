@@ -94,6 +94,8 @@ def create_datasource(
     except Exception as exc:  # pydantic validation error already carries detail
         raise ApiError(ErrorCode.VALIDATION_ERROR, f"invalid connection_config: {exc}")
     validate_host(validated_config["host"], settings)
+    if "metastore_host" in validated_config:
+        validate_host(validated_config["metastore_host"], settings)
     resolver = SecretResolver(settings.secrets_dir)
     if not resolver.exists(secret_ref):
         raise ApiError(
@@ -153,6 +155,8 @@ def update_datasource(
         except Exception as exc:
             raise ApiError(ErrorCode.VALIDATION_ERROR, f"invalid connection_config: {exc}")
         validate_host(validated["host"], settings)
+        if "metastore_host" in validated:
+            validate_host(validated["metastore_host"], settings)
         applied["connection_config"] = validated
     if patch.get("secret_ref") is not None and patch["secret_ref"] != datasource.secret_ref:
         resolver = SecretResolver(settings.secrets_dir)

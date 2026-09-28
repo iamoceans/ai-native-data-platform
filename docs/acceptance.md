@@ -144,6 +144,27 @@ A17 resource report (medium scale, reference host):
 
 ## Skipped or unverified (explicit)
 
+- Spark/Hive preview (2026-09-28): `uv run --project backend --frozen pytest
+  backend/tests/unit backend/tests/security backend/tests/contract -q -p
+  no:cacheprovider` reported **275 passed** after the connector tests, before
+  the lineage visibility regression test was added; that focused test reported
+  **1 passed**. `npm.cmd run build` passed. These are static results only. The
+  normal `docker` shim was denied by the host, but the installed Docker CLI was
+  able to reach daemon 28.3.2 with elevated sandbox permission. The existing
+  `ainative-ingestion:0.1.0` image reports DataHub CLI `1.7.0.1+docker` and
+  `datahub check plugins --source hive-metastore` reported **enabled**. An
+  isolated `datahub ingest --dry-run` with a file sink accepted the Spark/HMS
+  recipe fields and reported **Source configured successfully**; it then failed
+  as expected when connecting to the deliberately absent HMS endpoint
+  `127.0.0.1:9`. Stateful ingestion with the real REST sink, real Spark/HMS
+  service, URN mapping, query, cancellation, Spark listener lineage, migration
+  and E2E are not counted as passing. Final rerun after the lineage
+  visibility guard and provider protocol test: **277 passed, 2 dependency
+  deprecation warnings** with the same command. `uv run --project backend
+  --frozen alembic heads` reported `e9c5b2310d42 (head)`; the migration was
+  not applied to a live control database. OpenAPI export from `backend` and
+  `npm.cmd run build` completed successfully.
+
 - DataHub authentication-enabled mode: the pinned quickstart runs with GMS auth
   disabled, so `scripts/datahub_token.py --token` is documented as best-effort
   and was not executed against an auth-enabled GMS.
@@ -252,3 +273,268 @@ evidence-consistent **10/10**, 2,169 input / 140 output tokens, 34 gateway
 queries, 2.19-5.98 s per case (`runtime/eval/a09-20260927-224114.json`). The
 PostgreSQL integration profile and the full-profile *test matrix* have not been
 rerun after the adapter change and are not represented as current.
+
+## Business memory - the learning loop (executed 2026-09-28)
+
+Added after the 2026-09-27 record: `business_memory` (migration
+`a3f8c1d27b90`), the extraction/retrieval module `app/agent/memory.py`, the
+worker hook, `GET /memory` + `POST /memory/{id}/confirm|reject`, and
+`GET /analyses/{id}/memory`, plus the 业务记忆 panels on the Ask and analysis
+screens.
+
+```powershell
+# static suites after the change
+uv run --project backend --frozen pytest backend/tests/unit -m "not integration" -q
+# -> 214 passed
+uv run --project backend --frozen pytest backend/tests/security -m "not integration" -q
+# -> 26 passed                       (240 static tests in total)
+cd frontend; npx tsc -b --noEmit; npx vite build        # -> clean, dist built
+# schema contract, against the migrated control DB
+docker exec ainative-backend-1 python /app/scripts/verify_schema.py
+# -> schema verification OK: 28 tables, 7 named state checks, 18 indexes
+```
+
+Live run on the deployed stack (control PostgreSQL + Doris, `deepseek-flash` via
+`AIND_LLM_*`), two analyses of `ads_revenue` on 2026-09-11..12 vs 2026-09-12..13:
+
+| Round | dimensions chosen by the model | memory recalled | statements learned | refused |
+|---|---|---|---|---|
+| 1 (cold) `c78da443` | country, platform, ad_network | 0 | 3 | 0 |
+| 2 (warm) `49068d91` | country, platform, ad_network | 3 | 2 | 1 (`near_duplicate`) |
+
+Round 1 learned, for example: "US android traffic on AppLovin is a notable down
+segment for ads_revenue." Round 2's planner prompt carried that row (the API
+reports it under `used`, `reuse_count` rose to 1) and produced
+"US android traffic on AppLovin is a notable mover for ads revenue, alongside US
+android on Mintegral and IronSource." Learning costs one model call per finished
+analysis: 1,181/127 and 1,258/143 input/output tokens for the two runs above.
+
+Curating from the UI was exercised on the same rows: `确认` moved a statement to
+`已确认`, `否决` hid it from the working list (toggle `显示已否决`) and the store
+reported `已确认 1 · 待确认 0 · 已否决 60` afterwards.
+
+Two findings from the live run, both fixed before this record:
+
+1. The first extraction pass wrote 60 paraphrases of the platform's own method
+   ("decomposition describes correlation, not causation", "movement concentrates
+   in a few segments"). The prompt now refuses method restatements, requires every
+   statement to name a value from the analysis, and near-duplicates are rejected by
+   a bigram-similarity check against the metric's whole history - those 60 rows
+   were rejected through the curation path rather than deleted.
+2. An extraction crash (a `logging` reserved key in the counter's `extra`) rolled
+   back the write and the catch-up pass retried it every five seconds, calling the
+   model each time. The worker now records a non-retryable attempt marker for
+   unexpected failures and only retries provider errors, at most 3 times. The
+   regression test pins the logging path at INFO level, which is the container's
+   level and not pytest's default.
+
+---
+
+## Restart, Spark/Hive preview live run and a memory rerun (executed 2026-09-28)
+
+The stack was rebuilt from the working tree (the backend image gained `impyla`
+and `app/providers/spark.py`, the frontend bundle the Spark fields) and the new
+migration was applied:
+
+```powershell
+docker compose -f compose.yaml --profile core up -d --build
+docker compose -f compose.yaml run --rm --no-deps backend alembic upgrade head
+# -> Running upgrade a3f8c1d27b90 -> e9c5b2310d42, Allow Spark Thrift Server datasource registrations
+docker exec ainative-backend-1 python /app/scripts/verify_schema.py
+# -> schema verification OK: 28 tables, 7 named state checks, 18 indexes
+```
+
+Two restart details cost time and are worth remembering: `up --build` left
+`agent-worker` and `frontend` on their old images (they were recreated with
+`--force-recreate --no-deps`), and the base compose file publishes no database
+port, so host-side runs need `-f compose.dev.yaml` or `127.0.0.1:55430/55433`
+refuse the connection.
+
+### Static and integration suites
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 277 passed, 2 warnings
+# (without --basetemp pytest cannot create its tmpdir on this host:
+#  PermissionError on %TEMP%\pytest-of-<user>)
+
+# full matrix, compose workers stopped, MySQL + Doris + DataHub live:
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 72 passed, 25 deselected, 2 warnings in 180.50s
+```
+
+Three environment preconditions each showed up as a failure before they were
+fixed, so they are recorded rather than hidden: the database ports come from
+`compose.dev.yaml`; `test_datahub_metadata` asserts the Doris datasource is
+HEALTHY (a stopped Doris fails it, it does not skip); and
+`test_a07_driver_decomposition_on_loaded_demo` assumes the loaded demo data is
+the `ecpm_drop` scenario - with the `mixed_offset` run loaded it reported
+`impression_effect=-231.256500`, which is mixed_offset's ground truth exactly,
+against the test's 5%-of-delta band for an eCPM-only drop. Loading
+`runtime/demo/ecpm_drop-small-seed42-asof2026-09-13` with
+`scripts/demo_load.py --run-dir ... --reset-demo` restored the documented
+scenario and the matrix went green.
+
+### Business memory, rerun end to end (`runtime/accept_business_memory.py`)
+
+Metric `ecpm` (no learned statements at the start), window 2026-09-10..11 vs
+2026-09-11..12, `deepseek-flash`:
+
+| Round | status | dimensions | recalled | learned | refused |
+|---|---|---|---|---|---|
+| 1 (cold) | COMPLETED | country, platform | 0 | 3 | 0 |
+| 2 (warm) | COMPLETED | country, platform | 3 (reuse 1) | 3 | 0 |
+| 3 (after curation) | COMPLETED | country, platform | 5 | 0 | 3 (`unverifiable_figure`) |
+
+Round 1 learned statements such as "US android is a notable up segment for eCPM
+in the demo.ads_revenue_daily dataset." Round 2's planner prompt carried all
+three back (`memory_used_ids` in `state`, `reuse_count` 1). Curation through the
+API moved one row to `confirmed` and one to `rejected`
+(`POST /memory/{id}/confirm|reject`, audited); round 3 then recalled the
+confirmed row and the three proposed rows with `reuse_count` 1/2/2/2 and did
+**not** recall the rejected one - the store's counts after round 3 were
+`{confirmed: 1, proposed: 4, rejected: 1}`.
+
+Two findings from this rerun:
+
+1. `memory.confirmed` / `memory.rejected` audit rows recorded `previous` as the
+   *new* status (`{"previous": "rejected"}` on a reject), because `_curate` read
+   `row.status` after `memory_repo.set_status` had mutated it in place.
+   **Fixed 2026-09-29**: the route captures the previous status before the write,
+   pinned by `test_curation_audit_records_the_previous_status`.
+2. Round 3's extraction produced three otherwise-useful statements that were all
+   refused because they named the analysis window ("...in the 2026-09-11
+   country-by-platform breakdown") and the date is not an allowed identifier in
+   the digest. The numeric guard is doing its job; whether the window belongs in
+   `evidence_identifiers` is a design decision, not a bug.
+
+### Spark/Hive preview live acceptance
+
+Fixture: `infra/spark-preview/` (`apache/hive:3.1.3` metastore + `apache/spark:3.5.3`
+Thrift Server, `NOSASL`, one shared warehouse volume, both services as root
+because they share that volume). Spark 3.5.3's bundled Hive 2.3.9 client talks
+to the Hive 3.1.3 metastore without extra jars. Data for the run: a table
+created through the Hive CLI against the shared metastore (`demo.hive_orders`,
+4 rows), a Spark-created table (`demo.spark_revenue`, 4 rows) and
+`demo.slow_events` (2,000,000 rows) for the cancellation paths.
+
+Verified against the running stack (`runtime/accept_spark.py`,
+`runtime/acceptance/spark-live-*.json`):
+
+- registration of kind `spark` with `metastore_host`/`metastore_port`; connection
+  test `HEALTHY` (127 ms, `dialect=spark`, `cancel=True`);
+- catalog refresh for schema `demo` registered 3 tables, including the one the
+  Hive CLI created - the shared-metastore claim;
+- default-deny holds: a `viewer` identity got `403 PERMISSION_DENIED` on
+  `demo.hive_orders` until the administrator role was granted `query`;
+- `SELECT` through the worker returned the expected aggregates from the
+  Hive-created table and from the Spark-created table;
+- rejections: `DROP TABLE` -> 403 `SQL_FORBIDDEN`/`AST_SELECT_ONLY`; two
+  statements -> 403 `SINGLE_STATEMENT_ONLY`; unregistered table -> 404
+  `DATASET_NOT_REGISTERED`; parameterized SQL -> 422 `SQL_SYNTAX_ERROR`
+  (`%(name)s` does not parse for the spark dialect, and the provider refuses
+  bound parameters as well);
+- the Thrift Server recognizes `spark.sql.thriftServer.queryTimeout=120s` and
+  `spark.sql.thriftServer.interruptOnCancel=true` (`SET` through Impyla);
+- DataHub cycle against the pinned `v1.7.0.1` stack (GMS + opensearch + kafka +
+  mysql): the `hive-metastore` recipe ingested the shared metastore, the task
+  reported `mapped 3 / expected 3 / missing []`, every table mapped to one `hive`
+  URN under the datasource's platform instance
+  (`urn:li:dataset:(urn:li:dataPlatform:hive,ainative-abb6eefa.demo.hive_orders,DEV)`),
+  and `searchAcrossEntities` finds them. With `AIND_DATAHUB_ENABLED=1` the
+  platform's lineage endpoint answers for the Spark dataset
+  (`status=no_upstream`, as expected: no views, no Spark listener).
+
+**Two defects, both in the cancellation path, both reproduced twice:**
+
+1. Cancelling a long Spark query does not end as `CANCELLED`. The user cancel
+   reaches the provider (`impala.hiveserver2: Canceling active operation`), but
+   the executing thread then calls `cursor.is_executing()`, which raises
+   `KeyError: None` inside impyla 0.24.0 (`TOperationState._VALUES_TO_NAMES[None]`
+   once the operation state is unknown). `SparkProvider.execute`
+   (`app/providers/spark.py:157`) lets that escape;
+   `classify_execution_error` sees the message `"None"`, matches no rule and
+   returns `"error"`; the executor publishes `FAILED`, which
+   `queue_repo.publish_terminal` refuses from `CANCEL_REQUESTED`
+   (`InvalidTransition`), so no terminal status is ever written and the job
+   sits until the claim lease expires - the reconciler then records
+   `LOST`/`QUERY_LOST` about 3.5 minutes later.
+2. The platform's 120-second ceiling ends the job `FAILED`
+   (`EXECUTION_ERROR`, "source execution failed (error): 8") after 120.8 s
+   instead of `TIMED_OUT`/`QUERY_TIMEOUT`: the deadline did fire and the
+   operation was interrupted, but the post-cancel state is again classified as a
+   generic error.
+
+Fix sketch (not applied): make the Spark polling loop cancel-aware (treat the
+impyla unknown-state `KeyError`, and any error raised after `cancel()`, as a
+cancellation outcome), and make the executor's failure publish tolerate a job
+already in `CANCEL_REQUESTED` (fall back to `CANCELLED`) so no provider error
+can strand a job to `LOST`.
+
+Still not verified, and not represented as passing: read-only source
+authorization (the fixture has no authorizer and NOSASL ignores the identity),
+Spark job lineage from the DataHub Spark listener, browser E2E for the Spark
+screens, and a Kyuubi/HiveServer2 execution connector.
+
+### Both defects fixed and re-verified (2026-09-29)
+
+Three changes, none of which touch SQL validation or grants:
+
+1. `app/providers/spark.py` - the polling and fetch loops now translate the two
+   Impyla failures the server causes: an unknown operation state after our own
+   cancel becomes `SparkOperationCancelled`, and the state the server reports
+   when `spark.sql.thriftServer.queryTimeout` fires becomes
+   `SparkOperationTimedOut`. The second one needed the state identified: Hive's
+   `TOperationState` stops at `PENDING_STATE` (7), Spark also reports
+   `TIMEDOUT_STATE` (8), and impyla 0.24.0's enum has no name for it - so
+   `get_status()` raises `KeyError(8)`. Verified by extracting the enum from
+   `hive-service-rpc-3.1.3.jar` in the pinned Spark image.
+2. `app/query/executor.py` - when the monitor has already sent a cancel, a
+   generic engine error resolves through `_cancel_outcome` instead of failing
+   the job (`FAILED` is not a legal transition out of `CANCEL_REQUESTED`).
+   Engine verdicts that name a cause (permission, schema, syntax, unavailable)
+   keep their own codes.
+3. `app/query/executor.py` - `_publish_terminal` resolves a job that is still in
+   `CANCEL_REQUESTED` to `CANCELLED` instead of letting the refused transition
+   leave it running until its lease expires, so no future provider quirk can
+   reproduce the `LOST`-after-3.5-minutes failure mode.
+
+Regression tests: `backend/tests/unit/test_spark_connector.py` (cancel
+translation, the same error without a cancel staying an error, and the
+server-timeout state), `backend/tests/unit/test_query_state_machine.py` (the
+terminal-publish fallback), and
+`backend/tests/integration/test_cancel_timeout.py::test_cancel_survives_a_provider_that_cannot_name_it`
+(a stub provider that fails with the fixture's own `RuntimeError("None")` after
+a cancel must still end `CANCELLED`).
+
+Re-run evidence:
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 281 passed, 2 warnings
+# full matrix, workers stopped, MySQL + Doris + DataHub live:
+# -> 73 passed, 25 deselected (includes the new cancel regression test)
+```
+
+Live, on the same fixture and datasource:
+
+| Step | Before | After |
+|---|---|---|
+| user cancel of a long query | `LOST`/`QUERY_LOST` ~3.5 min later | `CANCELLED`/`QUERY_CANCELLED`, terminal 2.2 s after the cancel |
+| platform 120 s ceiling | `FAILED`/`EXECUTION_ERROR` at 120.8 s | `TIMED_OUT`/`QUERY_TIMEOUT` at 120.6 s |
+| server backstop, no platform (`runtime/accept_spark_server_timeout.py`) | not measured | the Thrift Server aborted the join at **120.0 s** with `TIMEDOUT_STATE` (8) |
+
+The ceiling test needed data the 2M-row table could not provide: its self-join
+finishes in ~118 s, so it sometimes completed before the ceiling (one run ended
+`SUCCEEDED` at 116.4 s and proved nothing). `runtime/accept_spark.py` and the
+server probe now use `demo.slow_events_big` (8M rows), which reliably outlives
+both 120-second timers.
+
+### The DataHub step's cost
+
+Bringing the full DataHub quickstart up next to Doris, the core stack and the
+Spark fixture exceeded this host's 15.35 GiB VM ceiling: the Docker daemon
+dropped its pipe mid-startup and every container restarted. The acceptance then
+ran with Doris stopped and only `mysql`/`opensearch`/`kafka`/`system-update`/
+`gms` up (no frontend, no actions), which fits. That is compatibility finding 12
+observed from the outside.

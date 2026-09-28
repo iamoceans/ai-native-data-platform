@@ -11,6 +11,7 @@ class SourceKind(StrEnum):
     POSTGRES = "postgres"
     MYSQL = "mysql"
     DORIS = "doris"
+    SPARK = "spark"
 
 
 class RoleName(StrEnum):
@@ -175,5 +176,5 @@ ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
 }
 
 SUPPORTED_PROVIDER_KINDS_V1 = frozenset(
-    {SourceKind.POSTGRES, SourceKind.MYSQL, SourceKind.DORIS}
+    {SourceKind.POSTGRES, SourceKind.MYSQL, SourceKind.DORIS, SourceKind.SPARK}
 )

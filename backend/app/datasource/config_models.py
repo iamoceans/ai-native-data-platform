@@ -41,10 +41,22 @@ class DorisConnectionConfig(_Strict):
     connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
 
 
+class SparkConnectionConfig(_Strict):
+    """Spark Thrift Server and the shared Hive Metastore Thrift endpoint."""
+
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=10000, ge=1, le=65535)
+    database: str = Field(min_length=1, max_length=128)
+    metastore_host: str = Field(min_length=1, max_length=255)
+    metastore_port: int = Field(default=9083, ge=1, le=65535)
+    connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
+
+
 CONFIG_MODELS = {
     "postgres": PostgresConnectionConfig,
     "mysql": MySQLConnectionConfig,
     "doris": DorisConnectionConfig,
+    "spark": SparkConnectionConfig,
 }
 
 

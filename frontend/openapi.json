@@ -912,6 +912,167 @@
         }
       }
     },
+    "/api/v1/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "List Memory",
+        "operationId": "list_memory_api_v1_memory_get",
+        "parameters": [
+          {
+            "name": "metric_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Key"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memory/{memory_id}/confirm": {
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Confirm Memory",
+        "operationId": "confirm_memory_api_v1_memory__memory_id__confirm_post",
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memory/{memory_id}/reject": {
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Reject Memory",
+        "operationId": "reject_memory_api_v1_memory__memory_id__reject_post",
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/saved-queries": {
       "get": {
         "tags": [
@@ -1452,6 +1613,50 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Evidence Api V1 Analyses  Analysis Id  Evidence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/memory": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Get Analysis Memory",
+        "description": "Which learned statements this analysis read, and which ones it produced.\n\nThis is the visible half of the learning loop: the same rows the planner was\nhanded, so a reader can see what the platform believed going in and what it\ntook away from the run.",
+        "operationId": "get_analysis_memory_api_v1_analyses__analysis_id__memory_get",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisMemoryResponse"
                 }
               }
             }
@@ -2569,6 +2774,46 @@
         ],
         "title": "AnalysisListResponse"
       },
+      "AnalysisMemoryResponse": {
+        "properties": {
+          "used": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItem"
+            },
+            "type": "array",
+            "title": "Used"
+          },
+          "learned": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItem"
+            },
+            "type": "array",
+            "title": "Learned"
+          },
+          "reinforced": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItem"
+            },
+            "type": "array",
+            "title": "Reinforced"
+          },
+          "extraction": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction"
+          }
+        },
+        "type": "object",
+        "title": "AnalysisMemoryResponse",
+        "description": "The memories one analysis leaned on, and the ones it produced."
+      },
       "AnalysisStepResponse": {
         "properties": {
           "key": {
@@ -3298,7 +3543,8 @@
             "enum": [
               "postgres",
               "mysql",
-              "doris"
+              "doris",
+              "spark"
             ],
             "title": "Kind"
           },
@@ -3312,6 +3558,9 @@
               },
               {
                 "$ref": "#/components/schemas/DorisConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/SparkConnectionConfig"
               }
             ],
             "title": "Connection Config"
@@ -3397,6 +3646,9 @@
               },
               {
                 "$ref": "#/components/schemas/DorisConnectionConfig"
+              },
+              {
+                "$ref": "#/components/schemas/SparkConnectionConfig"
               },
               {
                 "type": "null"
@@ -4111,6 +4363,163 @@
           "csrf_token"
         ],
         "title": "LoginResponse"
+      },
+      "MemoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "metric_key": {
+            "type": "string",
+            "title": "Metric Key"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "scope_datasets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scope Datasets"
+          },
+          "scope_dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scope Dimensions"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Id"
+          },
+          "seen_count": {
+            "type": "integer",
+            "title": "Seen Count",
+            "default": 1
+          },
+          "reuse_count": {
+            "type": "integer",
+            "title": "Reuse Count",
+            "default": 0
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "metric_key",
+          "kind",
+          "statement",
+          "status",
+          "source"
+        ],
+        "title": "MemoryItem"
+      },
+      "MemoryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "MemoryListResponse"
       },
       "MetricListResponse": {
         "properties": {
@@ -5086,6 +5495,58 @@
           "created_at"
         ],
         "title": "SavedQueryResponse"
+      },
+      "SparkConnectionConfig": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "default": 10000
+          },
+          "database": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Database"
+          },
+          "metastore_host": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Metastore Host"
+          },
+          "metastore_port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Metastore Port",
+            "default": 9083
+          },
+          "connect_timeout_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Connect Timeout Seconds",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host",
+          "database",
+          "metastore_host"
+        ],
+        "title": "SparkConnectionConfig",
+        "description": "Spark Thrift Server and the shared Hive Metastore Thrift endpoint."
       },
       "UserCreate": {
         "properties": {

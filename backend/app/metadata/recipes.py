@@ -180,6 +180,22 @@ def build_recipe(
                 "stateful_ingestion": {"enabled": True, "remove_stale_metadata": True},
             },
         }
+    elif datasource.kind == SourceKind.SPARK:
+        namespaces = sorted({row.schema_name for row in datasets})
+        source = {
+            "type": "hive-metastore",
+            "config": {
+                "connection_type": "thrift",
+                "host_port": f"{config['metastore_host']}:{config['metastore_port']}",
+                "use_kerberos": False,
+                "database_pattern": _patterns(namespaces),
+                "table_pattern": _table_patterns(datasets),
+                "include_view_lineage": True,
+                "platform_instance": platform_instance,
+                "env": fabric,
+                "stateful_ingestion": {"enabled": True, "remove_stale_metadata": True},
+            },
+        }
     else:  # pragma: no cover - guarded at registration
         raise ApiError(ErrorCode.DATASOURCE_UNSUPPORTED, f"no ingestion recipe for kind '{datasource.kind}'")
 

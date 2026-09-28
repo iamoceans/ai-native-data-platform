@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { MemoryPanel } from "../components/MemoryPanel";
 import {
   createAgentSession,
   createAnalysis,
@@ -391,6 +392,8 @@ export function AskPage() {
             ) : null}
           </div>
         ) : null}
+
+        {metricKey ? <MemoryPanel metricKey={metricKey} /> : null}
 
         <div className="period-grid">
           <label>Baseline start<input data-testid="baseline-start" type="date" value={baselineStart} onChange={(e) => setBaselineStart(e.target.value)} /></label>

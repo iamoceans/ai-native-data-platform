@@ -67,3 +67,39 @@ def test_terminal_transition_sets_finished_at():
     assert job.finished_at is None
     queries_repo.transition(job, "FAILED")
     assert job.finished_at is not None
+
+
+def test_terminal_publish_resolves_a_pending_cancel(monkeypatch):
+    """A terminal publish from CANCEL_REQUESTED is recorded as CANCELLED.
+
+    FAILED is not a legal transition out of CANCEL_REQUESTED (spec 13), so an
+    engine error that arrives after the monitor sent a cancel must not be
+    refused: the job would look running until its lease expired and only then be
+    recorded LOST. A job that is not mid-cancel still gets the status it was
+    given.
+    """
+    from app.query import executor
+
+    published_statuses: list[str] = []
+
+    def fake_publish_terminal(session, claim, *, status, code, message, details=None):
+        published_statuses.append(str(status))
+        return True
+
+    monkeypatch.setattr(executor.queue_repo, "publish_terminal", fake_publish_terminal)
+    claim = type("Claim", (), {"query_id": uuid.uuid4()})()
+
+    monkeypatch.setattr(executor.queries_repo, "get_query",
+                        lambda session, query_id: make_job("CANCEL_REQUESTED"))
+    assert executor._publish_terminal_status(
+        None, claim, status="FAILED", code="EXECUTION_ERROR", message="boom", details=None,
+    ) == "CANCELLED"
+    assert published_statuses == ["CANCELLED"]
+
+    published_statuses.clear()
+    monkeypatch.setattr(executor.queries_repo, "get_query",
+                        lambda session, query_id: make_job("RUNNING"))
+    assert executor._publish_terminal_status(
+        None, claim, status="FAILED", code="EXECUTION_ERROR", message="boom", details=None,
+    ) == "FAILED"
+    assert published_statuses == ["FAILED"]

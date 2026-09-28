@@ -17,15 +17,16 @@ def test_parse_dialects_per_kind():
     assert parse_dialect_for("postgres") == "postgres"
     assert parse_dialect_for("mysql") == "mysql"
     assert parse_dialect_for("doris") == "doris"
+    assert parse_dialect_for("spark") == "spark"
 
 
 def test_unknown_kind_rejected():
     from app.errors import ApiError
 
     with pytest.raises(ApiError):
-        parse_dialect_for("spark")
+        parse_dialect_for("unknown")
     with pytest.raises(ApiError):
-        codegen_dialect_for("spark")
+        codegen_dialect_for("unknown")
 
 
 def test_postgres_named_parameters_stay_pyformat():
