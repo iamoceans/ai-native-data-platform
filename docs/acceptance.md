@@ -538,3 +538,46 @@ dropped its pipe mid-startup and every container restarted. The acceptance then
 ran with Doris stopped and only `mysql`/`opensearch`/`kafka`/`system-update`/
 `gms` up (no frontend, no actions), which fits. That is compatibility finding 12
 observed from the outside.
+
+### A09 harness re-run with the learning loop active (executed 2026-10-13)
+
+The stack was restarted from the committed tree (core + full profile with
+`compose.dev.yaml`, Spark fixture up, DataHub down) and the harness was run
+unchanged, with an empty memory store:
+
+```powershell
+uv run --project backend --frozen python scripts/eval_agent.py --cases 10 --scale small --password <admin>
+# -> [eval] a09_status=passed target_top3=7/7 unforced=3/3 scored=10/10
+#    runtime/eval/a09-20261013-012136.json
+```
+
+Every case reproduced the 2026-09-27 real-model run field for field: same
+statuses (9 COMPLETED + 1 PARTIAL for `incomplete_day`), same ranks (six 1st,
+`schema_drift` 3rd, no target claimed for the three no-target cases), same claim
+counts and gateway queries per case, `deepseek-flash`, prompt `m5-v1`; latencies
+2.75-6.64 s against 2.19-5.98 s before.
+
+Because business memory is now part of the loop, the same ten analyses also
+exercised it end to end - and this is the first time the harness and the learning
+loop ran together:
+
+| Case (in order) | memory recalled | statements learned |
+|---|---|---|
+| 1 `ecpm_drop`-42 | 0 (cold) | 3 |
+| 2 `traffic_drop`-42 | 3 | 3 |
+| 3 `mixed_offset`-42 | 6 | 1 |
+| 4 `no_change`-42 | 7 | 3 |
+| 5-10 | 8 (the retrieval cap) | 12 |
+
+All ten finished analyses recorded an extraction (`analysis.memory` events: 10),
+the store ended at 23 `proposed` statements, and **the scores are identical to
+the run without memory** - the advisory brief changed no outcome, which is what
+the design claims (memories only inform dimension choice; the allowlist and the
+deterministic kernel still decide everything).
+
+One property of running them together is worth knowing: the harness resets the
+demo data per case while the memory store persists across cases, so a statement
+learned from one scenario's data is handed to the next case, whose data differs.
+Nothing in the score depends on it, but a reader looking at the store after a
+harness run should not read those statements as facts about one coherent
+business - they are what each synthetic scenario taught.

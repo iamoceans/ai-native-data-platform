@@ -96,8 +96,14 @@ running (`test_datahub_metadata` asserts its health), the `ecpm_drop` demo
 scenario loaded (`test_a07_driver_decomposition_on_loaded_demo`), and the
 deployed containers started with `AIND_DATAHUB_ENABLED=1` for the
 deployed-stack DataHub test; on this host also pass
-`--basetemp=runtime/pytest-tmp` or pytest cannot create its tmpdir. The Spark
-preview's live acceptance - including the cancellation fix and the server-side
+`--basetemp=runtime/pytest-tmp` or pytest cannot create its tmpdir. Re-observed
+2026-10-13 on the committed tree (static **282 passed** after the curation-audit
+fix) with the A09 harness re-run end to end: `a09_status=passed`, target-in-top3
+**7/7**, no forced attribution **3/3**, evidence-consistent **10/10**, every case
+field-identical to the 2026-09-27 run - and, for the first time, with the
+business-memory loop active alongside it (the ten cases exercised cold -> warm ->
+capped recall without changing a single score; see `docs/acceptance.md`). The
+Spark preview's live acceptance - including the cancellation fix and the server-side
 timeout - is recorded in `docs/acceptance.md`; `infra/spark-preview/` is the
 throwaway Spark/HMS fixture that makes it reproducible.
 
