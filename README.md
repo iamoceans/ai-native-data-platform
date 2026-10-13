@@ -69,6 +69,13 @@ source authorization and browser E2E still open.
   turn in `off`/`manual`/`auto` mode, and are advisory text only: any structured
   proposal still passes the same gates as model output. The module sits behind
   `AIND_CONVERSATIONAL_ASK_ENABLED` (default off).
+  Enabled personal skills can be selected manually or saved as fixed versions
+  to a session for later automatic matching. Report-derived content is checked
+  against current dataset grants when read and before it enters model context.
+  The 2026-10-14 review fixes were re-verified against the live stack
+  (integration 26 passed, matrix 98/1/25, browser journeys 7 passed, A09
+  7/7 - 3/3 - 10/10, real-model multi-turn conversation; see
+  `docs/acceptance.md`).
 - **Business memory**: every finished analysis can teach the platform something -
   the model distils at most three statements per run, and they may not contain a
   figure the analysis did not produce, so prose never becomes a second source of

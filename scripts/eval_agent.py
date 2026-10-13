@@ -375,6 +375,16 @@ def _wait_for(client: httpx.Client, analysis_id: str, *, timeout_seconds: float)
     raise EvalError(f"analysis {analysis_id} did not settle within {timeout_seconds}s")
 
 
+def _is_target_cell(key: list, target: dict, dimensions: list[str]) -> bool:
+    """Is this group key the generator's target cell, whichever order it is in?"""
+    if len(key) != len(dimensions):
+        return False
+    return all(
+        str(value) == str(target.get(dimension))
+        for dimension, value in zip(dimensions, key)
+    )
+
+
 def _score(case: dict, *, ground_truth: dict, report: dict, evidence: dict) -> dict:
     """Score against the generator's ground truth, never against a fixture."""
     calculation = next(
@@ -433,12 +443,25 @@ def _score(case: dict, *, ground_truth: dict, report: dict, evidence: dict) -> d
         )
         return case
 
-    target_key = [target[name] for name in DIMENSIONS]
+    # The platform never pins the order of dimensions inside a group key: the
+    # planner's selection decides it, and a cell is the same cell whichever order
+    # describes it. Match by dimension name, but only against an analysis that
+    # used exactly this case's dimensions (a coarser or wider grouping cannot
+    # identify the target cell).
+    dimensions = list((calculation.get("contribution") or {}).get("dimension") or DIMENSIONS)
     top_three = [list(group["key"]) for group in groups[:3]]
     case["top_groups"] = top_three
-    case["target_in_top3"] = target_key in top_three
+    case["dimensions_used"] = dimensions
+    case["target_in_top3"] = set(dimensions) == set(DIMENSIONS) and any(
+        _is_target_cell(key, target, dimensions) for key in top_three
+    )
     case["target_rank"] = next(
-        (index + 1 for index, key in enumerate(top_three) if key == target_key), None
+        (
+            index + 1
+            for index, key in enumerate(top_three)
+            if set(dimensions) == set(DIMENSIONS) and _is_target_cell(key, target, dimensions)
+        ),
+        None,
     )
     case["expects_attribution"] = True
     case["driver_in_top_group"] = case["target_rank"] == 1

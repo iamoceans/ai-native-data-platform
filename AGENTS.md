@@ -78,6 +78,7 @@ Test suites (markers: `integration`, `security`, `contract`):
 | full matrix | `make test-full` | PG + MySQL + Doris (+ DataHub if up) |
 | schema contract | `scripts/verify_schema.py` | control DB |
 | browser | `cd frontend && npx playwright test` | running stack + admin password |
+| browser (mocked) | `cd frontend && npm run test:regression` | none - mocks the API, own Vite server on :3018 |
 | end-to-end | `scripts/smoke_core.py --demo [--kind mysql\|doris]` | running stack |
 
 `make test-integration` stops/starts nothing by itself: stop the compose
@@ -118,6 +119,16 @@ with the conversational layer deployed; and a real-model multi-turn conversation
 passed end to end (scoped analyze evidence-scored, follow-up inheritance,
 explain with no new query, honest clarification with a persisted draft). Records:
 `docs/acceptance.md` P5 section, `runtime/acceptance/conversation-20261013-220711.json`.
+Re-observed 2026-10-14 after the code-review fixes (session locking, read-time
+grant checks, UI-over-model scope precedence, filter typing, exact skill pins):
+static **400 passed**, the affected integration suites **26 passed** live, the
+matrix **98 passed / 1 skipped / 25 deselected**, the isolated browser
+regressions **15 passed**, the live journeys **7 passed**, A09 **7/7 - 3/3 -
+10/10** (with the harness now matching the target cell by dimension name), and
+the multi-turn conversation re-run. Two defects were found and fixed during that
+re-verification: drilldown validated its dimension after session state, and the
+harness compared group keys as ordered tuples. See `docs/acceptance.md`,
+"2026-10-14 review fixes — live re-verification".
 
 ## Invariants - do not break these
 

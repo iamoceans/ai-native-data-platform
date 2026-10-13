@@ -9,6 +9,41 @@ that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
+## 2026-10-14 code-review fixes
+
+- [x] Analysis failure handling imports the error enum and publishes failure plus
+      queue completion; both generic and model-unavailable paths have regressions.
+- [x] Analysis detail/list/cancel responses hide revoked report and calculation
+      data. Report/evidence/memory/chart reads share discover + query checks.
+- [x] Explanations check all quoted analyses and fail closed for missing or foreign
+      sources; revoked evidence is excluded from model history and context.
+      Both conversation and legacy-planner memory retrieval check current source
+      dataset grants and exclude missing provenance.
+- [x] Explicit UI values and clears override model scope proposals.
+- [x] Session row locking, identity refresh and a shared active-turn/analysis
+      check cover legacy submission, turns, patch and chart drilldown. Unit tests
+      cover both directions and stale versions; the live suites and the full
+      matrix pass with the locks in place. No concurrent load test was run -
+      the busy path is covered by tests, not by contention measurement.
+- [x] Invalid numeric/complex YAML mapping keys return `SKILL_INVALID`; attack
+      corpus cases cover top-level and nested mappings.
+- [x] Manual personal skill selection and exact session pins are available;
+      private/archived versions and unwanted implicit upgrades are covered.
+- [x] Scope draft synchronization, filter typing and personal skill binding have
+      isolated browser regression coverage (15 passed), and the live-stack browser
+      journeys (7 passed), the A09 harness (7/7 - 3/3 - 10/10) and the real-model
+      multi-turn conversation were re-run after these fixes.
+- [x] The affected integration suites were re-run against live services:
+      **26 passed**, and the full matrix is **98 passed / 1 skipped / 25
+      deselected**. Two defects found during that re-run were fixed: chart
+      drilldown now validates the dimension before session state (it answered 409
+      instead of 422 when the session was busy), and the A09 harness now matches
+      the target cell by dimension name instead of by key order (the platform
+      never pins that order; four cases scored as misses although the target cell
+      was ranked 1st). See `docs/acceptance.md`, live re-verification section.
+
+Executed commands and final results are recorded in `docs/acceptance.md`.
+
 ---
 
 ## M0 - version freeze, machine check, official compose, provider APIs

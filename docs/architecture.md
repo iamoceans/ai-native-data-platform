@@ -286,6 +286,9 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   receive time and writes the result back only when the turn completes. A patch
   whose required fields are still missing becomes a `clarify` reply instead of an
   analysis, and the missing fields persist as a draft for the next turn.
+  The UI stores only user field overrides over the latest confirmed scope;
+  untouched fields follow asynchronous updates. Filters retain their raw input
+  until validation rather than being parsed on every keystroke.
 - **One decision per turn, on the same terms as the analysis loop.** The intent
   call (`clarify` / `analyze` / `explain` / `help` / `unsupported`) runs outside
   any transaction, may only choose allowlisted dimensions and skill version ids,
@@ -298,6 +301,20 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   unique index; `WAITING_INPUT` is terminal for the turn. A crashed worker
   recovers by requeueing stale turn claims; budgets are persisted, so recovery
   neither resets nor doubles the allowance.
+  New turns, legacy analysis submissions, chart drilldowns and session
+  configuration/archive writes use the same session row lock and busy check.
+  A nonterminal legacy analysis also makes the session busy. Idempotent replays
+  are resolved before the busy check; a title-only rename remains allowed.
+- **Evidence is checked again when read.** Details, lists and cancellation
+  responses preserve lifecycle metadata but hide reports, state, plans, context
+  and step results after a dataset's discover or query grant is revoked. Reports,
+  evidence and chart reads use the same grant check. Transcript explanations
+  check every quoted analysis, including ownership and missing references;
+  model history and recent-analysis context use the same current grants.
+  Model memory retrieval checks the source analysis's registered dependency IDs
+  against the requesting user's current grants; a memory without traceable
+  dependencies is not injected. The shared knowledge list and curator workflow
+  keep their existing authenticated-reader contract.
 - **Skills are versioned advisory text.** `app/skills/` parses `SKILL.md` and ZIP
   packages under strict limits (closed front matter, safe YAML, path and size
   caps, deterministic content hash), stores immutable versions in `skills` /
@@ -307,6 +324,12 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   and records exactly what loaded or why it was skipped. The loaded text is
   injected as labelled untrusted data: any structured proposal it inspires still
   passes the same allowlist gates as model output.
+  The picker includes enabled personal uploads. Manual selections may use an
+  owned version for that turn without a prior session binding; an explicit empty
+  selection loads nothing. Saving the selection pins exact version IDs with an
+  expected context version. Auto mode considers explicitly bound personal
+  versions before builtin candidates; a new upload never replaces a pinned
+  version. Archived or foreign versions cannot load.
 - **Budgets**: a turn has a UTC `deadline_at`, token and model-call allowances;
   the analysis it creates runs on the *remaining* sub-budget, never a fresh one.
 - **Live updates**: `GET /sessions/{id}/events` streams persisted, monotonic
