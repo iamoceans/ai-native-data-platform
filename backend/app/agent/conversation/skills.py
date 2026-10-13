@@ -69,31 +69,20 @@ def _applicable(version, metric_key: str | None) -> bool:
 
 
 def candidate_pool(
-    session: Session,
-    *,
-    session_row,
-    owner_user_id: uuid.UUID,
-    metric_key: str | None,
-    limit: int = DEFAULT_POOL_LIMIT,
+    session: Session, *, session_row, owner_user_id: uuid.UUID,
+    metric_key: str | None, limit: int = DEFAULT_POOL_LIMIT,
+    pinned_version_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """What this session may load: maintained builtins plus explicitly added versions."""
+    """Exact pinned versions first, followed by maintained builtin candidates.
+
+    Uploads enter only through an explicit session binding or manual turn
+    selection. Pinning never silently upgrades a version when a new one arrives.
+    """
     config = _session_config(session_row)
     candidates: list[dict[str, Any]] = []
-    for skill in skills_repo.list_visible(session, user_id=owner_user_id):
-        if not skill.enabled:
-            continue
-        if skill.source == SkillSource.UPLOAD and str(skill.id) not in {
-            str(item).split(":")[0] for item in config["version_ids"]
-        }:
-            # Personal versions must be added to the session explicitly.
-            continue
-        version = skills_repo.latest_version(session, skill.id)
-        if version is None or not _applicable(version, metric_key):
-            continue
-        candidates.append(_candidate(skill, version))
-    # Explicitly pinned versions (manual mode) come first and may not be the latest.
-    for entry in config["version_ids"]:
-        version_id, _, _ = str(entry).partition(":")
+    entries = config["version_ids"] if pinned_version_ids is None else pinned_version_ids
+    for entry in entries:
+        version_id = str(entry).partition(":")[0]
         try:
             version = skills_repo.get_version(session, uuid.UUID(version_id))
         except ValueError:
@@ -101,11 +90,20 @@ def candidate_pool(
         if version is None:
             continue
         skill = skills_repo.get_visible_skill(session, version.skill_id, owner_user_id)
-        if skill is None or not skill.enabled or not _applicable(version, metric_key):
+        if (skill is None or not skill.enabled or skill.archived_at is not None
+                or not _applicable(version, metric_key)):
             continue
         candidate = _candidate(skill, version)
         if all(item["version_id"] != candidate["version_id"] for item in candidates):
             candidates.append(candidate)
+    pinned_skill_ids = {item["skill_id"] for item in candidates}
+    for skill in skills_repo.list_visible(session, user_id=owner_user_id):
+        if (skill.source != SkillSource.BUILTIN or not skill.enabled
+                or skill.archived_at is not None or str(skill.id) in pinned_skill_ids):
+            continue
+        version = skills_repo.latest_version(session, skill.id)
+        if version is not None and _applicable(version, metric_key):
+            candidates.append(_candidate(skill, version))
     return candidates[:limit]
 
 
@@ -164,14 +162,16 @@ def load_for_turn(
     if mode == MODE_OFF:
         return "", record
 
+    manual_versions = pinned if user_selection is not None else config["version_ids"]
     pool = candidate_pool(
-        session, session_row=session_row, owner_user_id=owner_user_id, metric_key=metric_key
+        session, session_row=session_row, owner_user_id=owner_user_id, metric_key=metric_key,
+        pinned_version_ids=manual_versions if mode == MODE_MANUAL else None,
     )
     record.candidates = pool
     by_id = {item["version_id"]: item for item in pool}
 
     if mode == MODE_MANUAL:
-        wanted = pinned or config["version_ids"]
+        wanted = manual_versions
         wanted = [str(item).split(":")[0] for item in wanted]
         if len(wanted) > MAX_SELECTED:
             raise SkillError(

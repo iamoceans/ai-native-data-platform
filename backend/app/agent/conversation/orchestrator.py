@@ -29,6 +29,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agent.evidence_access import redact_report_message
 from app.agent.budget import BudgetExceeded
 from app.agent.conversation import context as scope
 from app.agent.conversation import explain as evidence
@@ -174,14 +175,16 @@ def _history(session: Session, turn: ConversationTurn) -> list[dict[str, Any]]:
     rows, _ = analyses_repo.list_messages(
         session, session_id=turn.session_id, limit=HISTORY_LIMIT, offset=0
     )
-    return [
-        {
-            "role": row.role,
-            "kind": (row.content or {}).get("kind"),
-            "text": (row.content or {}).get("text") or (row.content or {}).get("question"),
-        }
-        for row in rows
-    ][-HISTORY_LIMIT:]
+    history = []
+    for row in rows:
+        content = redact_report_message(
+            session, user_id=turn.user_id, content=analyses_repo.message_content(row)
+        ) if row.role == "assistant" else analyses_repo.message_content(row)
+        history.append({
+            "role": row.role, "kind": content.get("kind"),
+            "text": content.get("text") or content.get("question"),
+        })
+    return history[-HISTORY_LIMIT:]
 
 
 def _metric_table(session: Session) -> dict[str, set[str]]:
@@ -208,6 +211,7 @@ def _recent_analyses(session: Session, turn: ConversationTurn) -> list[dict[str,
     rows, _ = analyses_repo.list_for_user(
         session, user_id=turn.user_id, status=None, limit=ANALYSIS_HISTORY_LIMIT, offset=0
     )
+    role_ids = users_repo.role_ids_for_user(session, turn.user_id)
     return [
         {
             "analysis_id": str(item.id),
@@ -221,6 +225,7 @@ def _recent_analyses(session: Session, turn: ConversationTurn) -> list[dict[str,
         }
         for item in rows
         if item.session_id == turn.session_id
+        and analyses_repo.analysis_dataset_actions_ok(session, role_ids=role_ids, analysis_id=item.id)
     ]
 
 
@@ -242,12 +247,15 @@ def _focus_analysis_id(
     return None
 
 
-def _memory_brief(session: Session, metric_key: str | None) -> list[dict[str, Any]]:
+def _memory_brief(
+    session: Session, metric_key: str | None, *, role_ids: list[uuid.UUID] | None = None
+) -> list[dict[str, Any]]:
     if not metric_key:
         return []
     rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=5)
     return [
         {"id": str(row.id), "status": row.status, "statement": row.statement} for row in rows
+        if memory_repo.memory_dataset_actions_ok(session, role_ids=role_ids or [], row=row)
     ]
 
 
@@ -261,7 +269,11 @@ def _evidence_identifiers(session: Session, turn: ConversationTurn, session_row)
     focus = _focus_analysis_id(session, turn, session_row)
     if focus is not None:
         analysis = analyses_repo.get_analysis(session, focus)
-        if analysis is not None:
+        if (analysis is not None and analysis.user_id == turn.user_id
+            and analysis.session_id == turn.session_id
+            and analyses_repo.analysis_dataset_actions_ok(
+                session, role_ids=users_repo.role_ids_for_user(session, turn.user_id), analysis_id=focus
+            )):
             observations = (analysis.state or {}).get("observations") or {}
             for segment in observations.get("segments") or []:
                 for value in segment.get("key") or []:
@@ -272,10 +284,9 @@ def _evidence_identifiers(session: Session, turn: ConversationTurn, session_row)
 def resolve_scope_patch(
     base: dict[str, Any], user_content: dict[str, Any], model_patch: dict[str, Any] | None
 ) -> tuple[dict[str, Any], list[str]]:
-    """Merge UI values, then the model's validated patch, over the confirmed scope."""
-    merged = scope.merge_scope_patch(base, user_content.get("scope_patch"), origin="ui")
-    if model_patch:
-        merged = scope.merge_scope_patch(merged, model_patch, origin="model")
+    """UI values and explicit clears take precedence over model proposals."""
+    merged = scope.merge_scope_patch(base, model_patch, origin="model")
+    merged = scope.merge_scope_patch(merged, user_content.get("scope_patch"), origin="ui")
     return merged, scope.missing_required_fields(merged)
 
 
@@ -470,7 +481,9 @@ def _prepare_turn(
             analyses=_recent_analyses(session, turn),
             now=utcnow().isoformat(),
             skill_candidates=skill_record.candidates,
-            memory=_memory_brief(session, metric_hint),
+            memory=_memory_brief(
+                session, metric_hint, role_ids=users_repo.role_ids_for_user(session, turn.user_id)
+            ),
         )
 
     turn.skill_snapshot = skill_record.as_snapshot()

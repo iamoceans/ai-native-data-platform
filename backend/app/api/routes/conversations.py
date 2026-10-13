@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.agent.evidence_access import redact_report_message
 from app.api.deps import current_auth, get_db, get_settings_dep, get_trace_id, require_csrf
 from app.api.dto import (
     AgentMessageListResponse,
@@ -32,6 +33,7 @@ from app.api.dto import (
     TurnCreate,
     TurnResponse,
 )
+from app.api.session_activity import ensure_session_idle
 from app.auth.sessions import AuthContext
 from app.config import Settings
 from app.constants import ErrorCode, ConversationTurnStatus
@@ -55,8 +57,11 @@ SSE_MAX_SECONDS = 30 * 60
 MESSAGES_ROUTE = "GET /sessions/messages"
 
 
-def _own_session(session: Session, auth: AuthContext, session_id: uuid.UUID):
-    row = analyses_repo.get_session(session, session_id)
+def _own_session(
+    session: Session, auth: AuthContext, session_id: uuid.UUID, *, for_update: bool = False
+):
+    row = (analyses_repo.get_session_for_update(session, session_id) if for_update
+           else analyses_repo.get_session(session, session_id))
     if row is None or row.user_id != auth.user.id:
         raise ApiError(ErrorCode.NOT_FOUND, "session not found or not visible")
     return row
@@ -181,15 +186,9 @@ def patch_session(
     """Rename, archive or re-bind skills. Scope changes only happen through turns."""
     if "analysis.create" not in auth.capabilities:
         raise ApiError(ErrorCode.FORBIDDEN, "analysis capability required")
-    row = _own_session(session, auth, session_id)
-    active = conversation_repo.active_turn(session, row.id)
-    if active is not None and (payload.archived is not None or payload.skill_config is not None):
-        # Design 9: while a turn is active only a rename is allowed.
-        raise ApiError(
-            ErrorCode.SESSION_BUSY,
-            "a turn is active; only renaming is allowed until it settles",
-            details={"turn_id": str(active.id)},
-        )
+    row = _own_session(session, auth, session_id, for_update=True)
+    if payload.archived is not None or payload.skill_config is not None:
+        ensure_session_idle(session, row.id)
     if (
         payload.expected_context_version is not None
         and payload.expected_context_version != int(row.context_version)
@@ -223,42 +222,8 @@ def patch_session(
     return _session_response(session, row)
 
 
-def _report_text_permitted(
-    session: Session, auth: AuthContext, content: dict[str, Any]
-) -> bool:
-    """May this message keep its report-derived text (design 11.2)?
-
-    Claims and evidence quotes come from an analysis, so reading them requires
-    the same current dataset grants as the report itself. A revoked grant leaves
-    the message in place - the transcript is the user's own record - but strips
-    what the user may no longer see.
-    """
-    analysis_id = content.get("analysis_id")
-    if not analysis_id:
-        return True
-    try:
-        parsed = uuid.UUID(str(analysis_id))
-    except ValueError:
-        return False
-    role_ids = users_repo.role_ids_for_user(session, auth.user.id)
-    return analyses_repo.analysis_dataset_actions_ok(
-        session, role_ids=role_ids, analysis_id=parsed
-    )
-
-
-def _redact_if_revoked(
-    session: Session, auth: AuthContext, content: dict[str, Any]
-) -> dict[str, Any]:
-    if not content or not _report_text_permitted(session, auth, content):
-        if not content:
-            return content
-        redacted = dict(content)
-        redacted["claims"] = []
-        redacted["limitations"] = []
-        redacted["quotes"] = []
-        redacted["permission_revoked"] = True
-        return redacted
-    return content
+def _redact_if_revoked(session: Session, auth: AuthContext, content: dict[str, Any]) -> dict[str, Any]:
+    return redact_report_message(session, user_id=auth.user.id, content=content)
 
 
 @router.get("/sessions/{session_id}/messages", response_model=AgentMessageListResponse)
@@ -339,13 +304,7 @@ def create_turn(
             )
         return _turn_response(session, existing)
 
-    active = conversation_repo.active_turn(session, session_id)
-    if active is not None:
-        raise ApiError(
-            ErrorCode.SESSION_BUSY,
-            "a turn is already active in this session",
-            details={"turn_id": str(active.id), "status": str(active.status)},
-        )
+    ensure_session_idle(session, session_id)
     if (
         payload.expected_context_version is not None
         and payload.expected_context_version != int(row.context_version)

@@ -289,10 +289,14 @@ def planner_brief(
     *,
     metric_key: str,
     allowed_dimensions: Sequence[str],
+    role_ids: list[uuid.UUID] | None = None,
     limit: int = DEFAULT_RETRIEVAL_LIMIT,
 ) -> tuple[list[dict[str, Any]], list[uuid.UUID]]:
     """The advisory block for the planner prompt, plus the ids it came from."""
     rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=limit)
+    rows = [row for row in rows if memory_repo.memory_dataset_actions_ok(
+        session, role_ids=role_ids or [], row=row
+    )]
     allow = {str(item) for item in allowed_dimensions}
     brief: list[dict[str, Any]] = []
     for row in rows:

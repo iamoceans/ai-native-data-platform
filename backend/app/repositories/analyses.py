@@ -35,7 +35,10 @@ def get_session(session: Session, session_id: uuid.UUID) -> AgentSession | None:
 def get_session_for_update(session: Session, session_id: uuid.UUID) -> AgentSession | None:
     """Lock the session row: message sequence and busy checks allocate under it."""
     return session.execute(
-        select(AgentSession).where(AgentSession.id == session_id).with_for_update()
+        select(AgentSession)
+        .where(AgentSession.id == session_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
 
 
@@ -260,6 +263,17 @@ def list_for_user(
     return list(rows), int(total)
 
 
+
+def active_analysis(session: Session, session_id: uuid.UUID) -> AnalysisTask | None:
+    """Read while holding the session lock, including tasks from legacy entry points."""
+    return session.execute(
+        select(AnalysisTask)
+        .where(AnalysisTask.session_id == session_id,
+               AnalysisTask.status.not_in(tuple(TERMINAL_ANALYSIS_STATUSES)))
+        .order_by(AnalysisTask.created_at, AnalysisTask.id)
+        .limit(1)
+    ).scalar_one_or_none()
+
 def list_recent_terminal(session: Session, *, limit: int) -> list[AnalysisTask]:
     """Freshest finished analyses first; the learning loop's catch-up source."""
     rows = session.execute(
@@ -407,7 +421,7 @@ def list_session_analysis_ids(session: Session, session_id: uuid.UUID) -> list[u
 def analysis_dataset_actions_ok(
     session: Session, *, role_ids: list[uuid.UUID], analysis_id: uuid.UUID
 ) -> bool:
-    """Do the roles still hold `query` on every dataset this analysis read?
+    """Do the roles still hold discover/query on every dataset this analysis read?
 
     Shared by the evidence endpoints, the explanation layer and the conversation
     transcript: report-derived text must never be served after a revocation
@@ -422,6 +436,8 @@ def analysis_dataset_actions_ok(
     for dependency in list_dependencies(session, query_ids):
         if not datasets_repo.has_dataset_action(
             session, role_ids, dependency.dataset_id, DatasetAction.QUERY
+        ) or not datasets_repo.has_dataset_action(
+            session, role_ids, dependency.dataset_id, DatasetAction.DISCOVER
         ):
             return False
     return True

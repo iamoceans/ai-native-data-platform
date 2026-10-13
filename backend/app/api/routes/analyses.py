@@ -22,22 +22,19 @@ from app.api.dto import (
     AnalysisSubmitResponse,
     MemoryItem,
 )
+from app.api.session_activity import ensure_session_idle
 from app.auth.sessions import AuthContext
 from app.config import Settings
-from app.constants import DatasetAction, ErrorCode
+from app.constants import ErrorCode
 from app.db import get_session_factory
 from app.errors import ApiError
 from app.ids import sha256_hex
-from app.models.orm import QueryDependency
 from app.repositories import analyses as analyses_repo
 from app.repositories import audit as audit_repo
-from app.repositories import conversation as conversation_repo
-from app.repositories import datasets as datasets_repo
 from app.repositories import events as events_repo
 from app.repositories import idempotency as idempotency_repo
 from app.repositories import memory as memory_repo
 from app.repositories import policy as policy_repo
-from app.repositories import queries as queries_repo
 from app.repositories import queue as queue_repo
 from app.results.cursor import decode_list_cursor, encode_list_cursor
 
@@ -50,7 +47,7 @@ SSE_MAX_SECONDS = 30 * 60
 
 
 def _own_session(session: Session, auth: AuthContext, session_id: uuid.UUID):
-    row = analyses_repo.get_session(session, session_id)
+    row = analyses_repo.get_session_for_update(session, session_id)
     if row is None or row.user_id != auth.user.id:
         raise ApiError(ErrorCode.NOT_FOUND, "session not found or not visible")
     return row
@@ -63,21 +60,24 @@ def _own_analysis(session: Session, auth: AuthContext, analysis_id: uuid.UUID):
     return row
 
 
-def _detail(session: Session, task) -> AnalysisDetail:
-    steps = analyses_repo.list_steps(session, task.id)
+def _detail(session: Session, task, auth: AuthContext) -> AnalysisDetail:
+    permitted = analyses_repo.analysis_dataset_actions_ok(
+        session, role_ids=auth.role_ids, analysis_id=task.id
+    )
+    steps = analyses_repo.list_steps(session, task.id) if permitted else []
     return AnalysisDetail(
         id=task.id,
         session_id=task.session_id,
         parent_id=task.parent_id,
         status=task.status,
         question=task.question,
-        context=task.context or {},
-        plan=task.plan or {},
+        context=(task.context or {}) if permitted else {},
+        plan=(task.plan or {}) if permitted else {},
         budget=task.budget or {},
-        state=task.state or {},
+        state=(task.state or {}) if permitted else {"permission_revoked": True},
         checkpoint_version=int(task.checkpoint_version),
         policy_revision=int(task.policy_revision),
-        final_report=task.final_report,
+        final_report=task.final_report if permitted else None,
         steps=[
             AnalysisStepResponse(
                 key=step.step_key,
@@ -105,16 +105,9 @@ def create_analysis(
 ) -> AnalysisSubmitResponse:
     if "analysis.create" not in auth.capabilities:
         raise ApiError(ErrorCode.FORBIDDEN, "analysis capability required")
-    _own_session(session, auth, payload.session_id)
-    # Design 9: the legacy entry point takes part in the same busy protection as
-    # a conversation turn, so it cannot bypass a session's active turn.
-    active_turn = conversation_repo.active_turn(session, payload.session_id)
-    if active_turn is not None:
-        raise ApiError(
-            ErrorCode.SESSION_BUSY,
-            "a conversation turn is active in this session",
-            details={"turn_id": str(active_turn.id), "status": str(active_turn.status)},
-        )
+    owner_session = _own_session(session, auth, payload.session_id)
+    if owner_session.archived_at is not None:
+        raise ApiError(ErrorCode.CONFLICT, "session is archived; restore it before submitting")
     if payload.parent_id is not None:
         _own_analysis(session, auth, payload.parent_id)
     request_hash = sha256_hex(
@@ -136,6 +129,7 @@ def create_analysis(
                 raise ApiError(ErrorCode.CONFLICT, "idempotency record points to a missing analysis")
             response.headers["Idempotency-Replayed"] = "true"
             return AnalysisSubmitResponse(analysis_id=task.id, status=task.status)
+    ensure_session_idle(session, payload.session_id)
     budget = AnalysisBudget.start().as_dict()
     task = analyses_repo.create_analysis(
         session,
@@ -205,7 +199,7 @@ def list_analyses(
         if offset + len(rows) < total
         else None
     )
-    return AnalysisListResponse(items=[_detail(session, row) for row in rows], next_cursor=next_cursor)
+    return AnalysisListResponse(items=[_detail(session, row, auth) for row in rows], next_cursor=next_cursor)
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisDetail)
@@ -214,21 +208,14 @@ def get_analysis(
     auth: AuthContext = Depends(current_auth),
     session: Session = Depends(get_db),
 ) -> AnalysisDetail:
-    return _detail(session, _own_analysis(session, auth, analysis_id))
+    return _detail(session, _own_analysis(session, auth, analysis_id), auth)
 
 
 def _ensure_evidence_permission(session: Session, auth: AuthContext, analysis_id: uuid.UUID) -> None:
-    query_ids = [row.id for row in analyses_repo.list_queries(session, analysis_id)]
-    dependencies = (
-        session.query(QueryDependency).filter(QueryDependency.query_id.in_(query_ids)).all()
-        if query_ids
-        else []
-    )
-    for dependency in dependencies:
-        if not datasets_repo.has_dataset_action(
-            session, auth.role_ids, dependency.dataset_id, DatasetAction.QUERY
-        ):
-            raise ApiError(ErrorCode.PERMISSION_DENIED, "data permission for this evidence was revoked")
+    if not analyses_repo.analysis_dataset_actions_ok(
+        session, role_ids=auth.role_ids, analysis_id=analysis_id
+    ):
+        raise ApiError(ErrorCode.PERMISSION_DENIED, "data permission for this evidence was revoked")
 
 
 @router.get("/analyses/{analysis_id}/report")
@@ -291,6 +278,7 @@ def get_analysis_memory(
     took away from the run.
     """
     task = _own_analysis(session, auth, analysis_id)
+    _ensure_evidence_permission(session, auth, analysis_id)
     state = dict(task.state or {})
     used_ids = [uuid.UUID(str(item)) for item in state.get("memory_used_ids") or []]
     learned_ids = [uuid.UUID(str(item)) for item in state.get("memory_learned_ids") or []]
@@ -327,7 +315,7 @@ def cancel_analysis(
             event_type="analysis.cancelled",
             payload={"analysis_id": str(task.id), "status": str(task.status)},
         )
-    return _detail(session, task)
+    return _detail(session, task, auth)
 
 
 @router.get("/analyses/{analysis_id}/events")

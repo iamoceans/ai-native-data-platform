@@ -338,4 +338,5 @@ def test_legacy_messages_read_through_the_compatibility_layer(conversation_env):
     assert messages[0]["content"]["text"] == "老问题"
     assert messages[0]["content"]["schema_version"] == 0
     assert messages[1]["content"]["kind"] == "analysis"
-    assert messages[1]["content"]["report_available"] is True
+    assert messages[1]["content"]["report_available"] is False
+    assert messages[1]["content"]["permission_revoked"] is True  # missing analysis fails closed

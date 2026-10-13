@@ -96,6 +96,27 @@ def list_for_metric(
     return list(rows)
 
 
+def memory_dataset_actions_ok(
+    session: Session, *, role_ids: list[uuid.UUID], row: BusinessMemory
+) -> bool:
+    """Only inject a memory whose source datasets are still granted.
+
+    Use the source analysis's registered dependency IDs rather than resolving
+    display qualifiers, which can be ambiguous across datasources. Shared memory
+    need not have the same author, but it must have traceable source evidence.
+    """
+    from app.repositories import analyses as analyses_repo
+
+    if row.analysis_id is None or analyses_repo.get_analysis(session, row.analysis_id) is None:
+        return False
+    query_ids = [item.id for item in analyses_repo.list_queries(session, row.analysis_id)]
+    if not analyses_repo.list_dependencies(session, query_ids):
+        return False
+    return analyses_repo.analysis_dataset_actions_ok(
+        session, role_ids=role_ids, analysis_id=row.analysis_id
+    )
+
+
 def list_recent(
     session: Session,
     *,

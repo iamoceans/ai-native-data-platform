@@ -85,6 +85,8 @@ def _construct_mapping(loader: _DuplicateKeyLoader, node, deep: bool = False) ->
     mapping: dict[Any, Any] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
+        if not isinstance(key, str):
+            raise SkillError(ErrorCode.SKILL_INVALID, "front matter mapping keys must be strings")
         if key in mapping:
             raise SkillError(
                 ErrorCode.SKILL_INVALID, f"duplicate key in front matter: {key!r}"

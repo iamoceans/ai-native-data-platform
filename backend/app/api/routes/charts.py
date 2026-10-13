@@ -17,15 +17,14 @@ from sqlalchemy.orm import Session
 from app.agent.budget import AnalysisBudget
 from app.api.deps import current_auth, get_db, get_settings_dep, get_trace_id, require_csrf
 from app.api.dto import ChartDrilldownRequest, ChartDrilldownResponse
+from app.api.session_activity import ensure_session_idle
 from app.auth.sessions import AuthContext
 from app.charts.spec import build_bounded_view
 from app.config import Settings
-from app.constants import DatasetAction, ErrorCode
+from app.constants import ErrorCode
 from app.errors import ApiError
-from app.models.orm import QueryDependency
 from app.repositories import analyses as analyses_repo
 from app.repositories import audit as audit_repo
-from app.repositories import datasets as datasets_repo
 from app.repositories import events as events_repo
 from app.repositories import policy as policy_repo
 from app.repositories import queue as queue_repo
@@ -40,17 +39,8 @@ def _chart_for(session: Session, auth: AuthContext, chart_id: uuid.UUID) -> tupl
     task = analyses_repo.get_analysis(session, artifact.analysis_id)
     if task is None or task.user_id != auth.user.id:
         raise ApiError(ErrorCode.NOT_FOUND, "chart not found or not visible")
-    query_ids = [row.id for row in analyses_repo.list_queries(session, task.id)]
-    dependencies = (
-        session.query(QueryDependency).filter(QueryDependency.query_id.in_(query_ids)).all()
-        if query_ids
-        else []
-    )
-    for dependency in dependencies:
-        if not datasets_repo.has_dataset_action(
-            session, auth.role_ids, dependency.dataset_id, DatasetAction.QUERY
-        ):
-            raise ApiError(ErrorCode.PERMISSION_DENIED, "data permission for this chart was revoked")
+    if not analyses_repo.analysis_dataset_actions_ok(session, role_ids=auth.role_ids, analysis_id=task.id):
+        raise ApiError(ErrorCode.PERMISSION_DENIED, "data permission for this chart was revoked")
     return artifact.content, task
 
 
@@ -87,6 +77,15 @@ def drilldown(
             f"dimension '{payload.dimension}' cannot be used to drill down this chart",
             details={"allowed": allowed},
         )
+    # Input is validated before session state: an invalid dimension is refused the
+    # same way whether or not the session is busy. The lock is held from here to
+    # the write, so the busy check cannot race another writer.
+    row = analyses_repo.get_session_for_update(session, parent.session_id)
+    if row is None or row.user_id != auth.user.id:
+        raise ApiError(ErrorCode.NOT_FOUND, "session not found or not visible")
+    if row.archived_at is not None:
+        raise ApiError(ErrorCode.CONFLICT, "session is archived; restore it before submitting")
+    ensure_session_idle(session, parent.session_id)
     context = dict(parent.context or {})
     dimensions = [
         dimension

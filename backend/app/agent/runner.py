@@ -41,7 +41,7 @@ from app.analysis.drivers import decompose_revenue
 from app.charts.spec import contribution_chart
 from app.api.dto import QueryLimits, QuerySubmitRequest
 from app.config import Settings
-from app.constants import DatasetAction, QueryStatus, TERMINAL_QUERY_STATUSES
+from app.constants import DatasetAction, ErrorCode, QueryStatus, TERMINAL_QUERY_STATUSES
 from app.errors import ApiError
 from app.ids import utcnow
 from app.metrics.compiler import CompiledMetric, CompiledQuery, compile_metric
@@ -275,6 +275,7 @@ def _prepare(session, *, task, settings: Settings) -> None:
             session,
             metric_key=metric_key,
             allowed_dimensions=definition.allowed_dimensions,
+            role_ids=users_repo.role_ids_for_user(session, task.user_id),
         )
         selection_payload: dict[str, object] = {
             "question": task.question,

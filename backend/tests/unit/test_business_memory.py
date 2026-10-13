@@ -119,6 +119,7 @@ def test_planner_brief_scopes_dimensions_to_the_allowlist(monkeypatch):
     monkeypatch.setattr(
         memory.memory_repo, "list_for_metric", lambda *args, **kwargs: [row]
     )
+    monkeypatch.setattr(memory.memory_repo, "memory_dataset_actions_ok", lambda *args, **kw: True)
     brief, ids = planner_brief(
         None, metric_key="ads_revenue", allowed_dimensions=["country", "ad_network"]
     )
