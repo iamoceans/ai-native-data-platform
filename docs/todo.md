@@ -609,3 +609,192 @@ roadmap table.
       so it was not exercised. Deploy a read-only source identity before use.
 - [ ] Verify the DataHub Spark listener produces visible table lineage with the
       exact HMS platform instance and environment, then add browser E2E coverage.
+
+---
+
+## Conversational Ask and skills (design 2026-10-13)
+
+Source: `docs/superpowers/specs/2026-10-13-askdata-conversation-skills-design.md`.
+P1-P5 are ordered; P3/P4/P5 unfinished means the requirement is **not delivered**,
+however complete an earlier phase looks.
+
+### P1 - persistent conversation foundation
+
+- [x] Migration `c4d9a17e6f20`: `agent_sessions` scope/draft/skill binding/
+      `context_version`/archival; `conversation_turns` with the partial unique
+      index that enforces one active turn per session; `agent_messages`
+      `sequence`/`turn_id`/`content_schema_version` with a `(created_at, id)`
+      backfill; `analysis_tasks.conversation_turn_id`; `task_queue.kind` accepts
+      `conversation`. `verify_schema.py` updated (29 tables, 8 checks, 22 indexes).
+- [x] Turn state machine (`ConversationTurnStatus` + explicit transition table,
+      `WAITING_INPUT` terminal for the turn) and the repository that owns it.
+- [x] Session API: list (archived filter + cursor), create, detail, PATCH
+      (rename/archive/skill config, `expected_context_version`), messages with
+      stable `sequence` order and the legacy content reader.
+- [x] Turn API: `POST /sessions/{id}/turns` (required `Idempotency-Key`, request
+      hash, 409 `IDEMPOTENCY_CONFLICT`, 409 `SESSION_BUSY`, 409
+      `CONTEXT_VERSION_CONFLICT`, parent must be same user *and* same session),
+      turn detail, idempotent cancel that also cancels the linked analysis.
+- [x] Legacy entries take part in the same busy protection (`POST /analyses`).
+- [x] Rule-only orchestrator + worker wiring: claim -> RESOLVING -> ANALYZING
+      (one analysis, linked) -> reconciler closes the turn when the analysis is
+      terminal; clarify/help replies end `WAITING_INPUT`/`COMPLETED`; the runner
+      no longer writes its own assistant pointer for a turn-owned analysis.
+- [x] Feature flag `AIND_CONVERSATIONAL_ASK_ENABLED` (default off) gates the
+      turn write API.
+- [x] P2-P5 delivered in their own sections below (P2 skill packages and
+      versions; P3 model-backed intent parsing, scope resolution, explanations,
+      shared budget, session SSE; P4 the `/ask/:sessionId` + `/skills` UI; P5 the
+      acceptance matrix and the real-model multi-turn run). The P1 slice itself
+      covered C01/C02/C06/C08-turn and the legacy-reader half of R01.
+
+### P2 - skill packages and versions
+
+- [x] `backend/app/skills/`: `SKILL.md` and ZIP parsing with every limit from
+      design 7.3 enforced while reading (2 MiB upload, 4 MiB expanded, 32 files,
+      256 KiB per file, 64 KiB SKILL.md, path length/depth, 100:1 compression
+      ratio); path guards (absolute/drive/UNC/`..`/NUL/ADS/reserved names/
+      trailing dot/symlink/case-folded duplicates/nested archives); only
+      `SKILL.md` plus `references/*.md|.txt` accepted, anything else rejects the
+      whole package; deterministic content hash (BOM stripped, LF normalized,
+      sorted paths).
+- [x] Strict front matter: closed top-level fields, safe YAML (duplicate keys,
+      aliases, custom tags and deep nesting rejected), `metadata.askdata` closed
+      schema with a version check, `required_inputs` checked against what the
+      platform resolves, references must exist in the package, non-empty body,
+      no scriptable markup or unsafe URLs.
+- [x] Tables `skills` / `skill_versions` (migration `b7e2f40c91a8`): immutable
+      versions, `(skill_id, version)` and `(skill_id, content_hash)` unique,
+      owner/source consistency CHECK, builtin slug partial unique index;
+      `verify_schema.py` now expects 31 tables.
+- [x] API: `GET /skills`, `POST /skills/import-preview`, `POST /skills`,
+      `POST /skills/{id}/versions`, `GET /skills/{id}`,
+      `GET /skills/{id}/versions/{id}`, `PATCH /skills/{id}` - capability
+      `analysis.create`, owner-scoped, invisible ids answer 404, every action
+      audited. Preview never persists; the raw archive is never written.
+- [x] Applicability recorded per version: unknown metrics and non-allowlisted
+      dimensions mark the version "not applicable in this environment" without
+      extending the metric registry, and never block saving. The API returns
+      the *current* verdict against the live registry (`compatibility`) next
+      to the import-time one (`compatibility_at_import`), so a skill imported
+      before its metric existed becomes applicable once the metric loads.
+- [x] Builtins: `metadata/skills/*.md` (revenue-change-reading,
+      channel-contribution, data-completeness-check) plus
+      `python -m app.cli load-skills` and a bootstrap hook; a builtin slug cannot
+      be shadowed by an upload.
+- [x] UI: `/skills` page (file picker -> preview -> save, version list, enable /
+      disable / archive, builtin read-only) behind `PermissionGate`, with the
+      nav entry, regenerated `openapi.json`/types and `data-testid`s.
+- [ ] Not done in P2: the session-side skill pool and loading (off/manual/auto,
+      candidate -> body -> references layering, 24 KiB per turn) is P3; the
+      per-user (50) and per-skill (20) quotas are enforced in code but not
+      covered by a test.
+
+### P3 - conversation orchestration
+
+- [x] Model-backed intent (`app/agent/conversation/intent.py`): a closed decision
+      (`clarify / analyze / explain / help / unsupported`) plus a *patch*; the
+      server validates every field (unknown intent/extra fields rejected, metric
+      must be registered, dimensions filtered by the metric allowlist, dates ISO
+      and in range) and merges it (`set`/`clear`, missing = inherit).
+- [x] Relative periods frozen server-side: `comparison=previous_period` with only
+      a current period derives the baseline at receive time and records the
+      interpretation; explicit dates are never overwritten.
+- [x] Free prose guard: explanation text and reference notes may not carry a
+      figure the evidence does not already contain (the business-memory numeric
+      guard, reused).
+- [x] Explanations from stored evidence (`explain.py`): references resolved by
+      analysis/claim id with ownership *and* current discover/query checks, quotes
+      copied verbatim from the report, a clear degraded state when a reference is
+      revoked - and no new query.
+- [x] Skill loading (`skills.py`): session pool (builtins + explicitly added
+      versions, cap 10), modes off/manual/auto (manual <= 3, auto selects from the
+      candidate ids the platform offered), layered loading (candidates first, then
+      body + declared references), 24 KiB per turn, and an honest record of
+      candidate/selected/loaded/skipped.
+- [x] Turn budget (`budget.py`): persisted counters plus an absolute UTC
+      `deadline_at`; a worst-case reservation is written before the model call and
+      released with the actuals, so a crash cannot grant a free retry; the
+      analysis receives the *remainder* as its sub-budget (the runner now honours
+      persisted limits).
+- [x] Lifecycle split into three phases: prepare (short transaction) -> decide
+      (**no transaction** - a model call must never hold the turn row lock, or the
+      cancel route would block behind it) -> apply (short transaction, late-reply
+      guard re-reads the turn and a cancelled turn publishes nothing).
+- [x] Session SSE (`GET /sessions/{id}/events`) over persisted events with
+      `Last-Event-ID` resume; the client merges by event id.
+- [x] Worker wiring: `run_turn` claims a turn, and `reconcile_turn` closes it once
+      its analysis settles; `requeue_stale_turns` recovers a lost lease.
+- [ ] Not done in P3: the model's *skill choice* is honoured, but auto-mode
+      description ranking is "the pool in maintained order" (no similarity
+      ranking); conflict handling between two skills' required inputs is not
+      implemented; `explain` does not yet interpolate numbers into a template (the
+      quotes carry them verbatim); session SSE has no dedicated contract test
+      beyond the integration case.
+
+### P4 - the conversational UI
+
+- [x] Routes `/ask` (new conversation) and `/ask/:sessionId` (persistent); a
+      conversation is created on demand and the URL carries the session, so a
+      refresh restores the same transcript and the active turn.
+- [x] Three-column workspace: session rail (newest first, active marker), the
+      message thread with the composer, and a collapsible scope + skill panel;
+      narrow screens collapse to one column.
+- [x] Message rendering by `content.kind`: user, clarify (with the missing
+      fields), explanation (verbatim evidence quotes + an explicit unavailable
+      state), analysis result (claims, limitations, chart, deep link, skills
+      used), help/unsupported, failure; legacy `content_schema_version = 0`
+      messages are labelled as history.
+- [x] Live progress comes from the active turn and its analysis (status + steps),
+      never as extra chat messages; one active turn per session disables the
+      composer and offers "停止本轮".
+- [x] Scope panel prefilled from `resolved_context` with per-field origin tags;
+      only changed fields are submitted as a patch, an emptied filter sends
+      `clear`, and the completeness selector states the three-state value.
+- [x] Skill picker: session mode (auto/manual/off) plus a manual selection of at
+      most three versions; per-message "技能：…" usage line.
+- [x] SSE (`/sessions/{id}/events`) drives refetches; the session and transcript
+      also poll (fast while a turn is active) so a dropped stream degrades to
+      polling instead of a frozen composer.
+- [x] Flag-off fallback: when the turn API answers 503 CONVERSATIONAL_DISABLED
+      the same question goes through the legacy one-shot analysis path.
+- [x] Playwright journey (`frontend/tests/e2e/conversation.spec.ts`) plus a
+      rewritten analysis journey: the full suite is **7 passed** against the
+      deployed stack.
+- [ ] Not done in P4: the analysis range panel is a fixed side column rather than
+      a drawer on narrow screens; there is no "retry this turn" button (the user
+      re-sends); message pagination beyond 100 items is not wired; the
+      per-analysis diagnostics (tokens, budget) live on the analysis page only.
+
+### P5 - regression and acceptance
+
+- [x] C07 recovery: crash after prepare -> `requeue_stale_turns` -> drain ends
+      COMPLETED with exactly one analysis, one assistant message, one model call
+      and no reset budget; re-running the same turn is a no-op
+      (`backend/tests/integration/test_conversation_recovery.py`).
+- [x] C10 revocation: revoking every query grant the analysis read redacts the
+      transcript message (`permission_revoked`, blanked claims/quotes) and the
+      report/evidence endpoints answer 403; the SSE stream emits
+      `analysis.permission.revoked` (the assertion caught a real defect: the
+      revocation branch referenced an unbound name, so every session stream died
+      with `NameError` on its first poll - fixed and re-verified). S03-S05 were
+      already covered by
+      `test_skills_api.py` (cross-user) and `tests/security/test_skill_attack_corpus.py`.
+- [x] A09 regression with the conversational layer deployed: `a09_status=passed`,
+      target-in-top3 7/7, no forced attribution 3/3, fully scored 10/10, model
+      `deepseek-flash`, prompt `m5-v1` (`runtime/eval/a09-20261013-215859.json`).
+- [x] Real-model multi-turn conversation (`runtime/accept_conversation.py`,
+      record `runtime/acceptance/conversation-20261013-220711.json`): scoped
+      analyze (target rank 1, evidence-scored), follow-up inheriting the windows,
+      explain without a new query, honest two-step clarification whose draft
+      persists in `pending_clarification`, and a draft-completion turn that merges
+      the draft into a completed analysis. Skill hashes recorded per turn; four
+      consecutive runs replayed the same uploaded skill id/version (S02).
+- [x] Static suite **364 passed**; full matrix **98 passed, 1 skipped, 25
+      deselected** (DataHub stack not started; that subset is not counted as
+      verified here). Details in `docs/acceptance.md`, P5 section.
+- [ ] Not done in P5: the DataHub-dependent integration subset was not re-run
+      (no code in this change set touches `app/metadata`); a real-model run of the
+      *auto* skill mode's model choice under a large candidate pool is not
+      recorded (the pool is at most three builtins today); no load/soak run of
+      concurrent sessions beyond the single-active-turn constraint.

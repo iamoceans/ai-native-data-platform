@@ -19,7 +19,11 @@ source authorization and browser E2E still open.
 
 - **Delivered**: M0-M6. The real-model evaluation (A09) passed on 2026-09-27 -
   ten fixed cases against DeepSeek with the target cell in the top three
-  contributors **7/7**, no forced attribution **3/3**, evidence-consistent **10/10**.
+  contributors **7/7**, no forced attribution **3/3**, evidence-consistent **10/10** -
+  and was re-run field-identical on 2026-10-13 with the conversational layer
+  deployed. The conversational Ask workspace and skill packages were accepted on
+  2026-10-13 (a real-model multi-turn conversation plus the full regression; see
+  `docs/acceptance.md`).
 - **Open**: the specification's `/datasets/:id` deep link is served by the catalog
   detail panel instead of its own route, and analysis steps are extended by rule
   rather than by the model choosing steps and tools.
@@ -55,6 +59,16 @@ source authorization and browser E2E still open.
 - **Catalog and lineage**: DataHub (off by default) provides search, context and
   lineage; real `extracted` edges and declared demo-pipeline edges are labelled
   apart.
+- **Conversations and skills**: Ask is a persistent conversation workspace. A
+  session keeps its confirmed scope (metric, windows, dimensions, completeness),
+  so a follow-up inherits it; the model may ask for exactly the fields that are
+  missing instead of guessing defaults, and an explanation reads an existing
+  analysis's evidence without running new queries. Skill packages - a `SKILL.md`
+  plus reference files, uploaded as text or a ZIP, alongside the builtin library
+  under `metadata/skills/` - are versioned, immutable and hash-recorded, load per
+  turn in `off`/`manual`/`auto` mode, and are advisory text only: any structured
+  proposal still passes the same gates as model output. The module sits behind
+  `AIND_CONVERSATIONAL_ASK_ENABLED` (default off).
 - **Business memory**: every finished analysis can teach the platform something -
   the model distils at most three statements per run, and they may not contain a
   figure the analysis did not produce, so prose never becomes a second source of
@@ -82,7 +96,7 @@ make bootstrap       # roles, capacities and the first administrator (password p
 
 Then open <http://127.0.0.1:3000>; the OpenAPI documentation is at
 <http://127.0.0.1:8000/api/v1/docs>. Registering a datasource by hand and granting
-access to a role is written out in [docs/runbook.md](docs/runbook.md) (section 2.2).
+access to a role is written out in [docs/runbook.md](docs/runbook.md) (section 2.3).
 
 ## Full profile: MySQL / Doris / DataHub / the demo dataset
 

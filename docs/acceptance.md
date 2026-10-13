@@ -581,3 +581,377 @@ learned from one scenario's data is handed to the next case, whose data differs.
 Nothing in the score depends on it, but a reader looking at the store after a
 harness run should not read those statements as facts about one coherent
 business - they are what each synthetic scenario taught.
+
+---
+
+## Conversational Ask, P1 slice (executed 2026-10-13)
+
+Implements the P1 slice of
+`docs/superpowers/specs/2026-10-13-askdata-conversation-skills-design.md`:
+persistent sessions, conversation turns, idempotency, busy protection, stable
+message order and the legacy-message reader. **P2-P5 are not implemented**, so
+the requirement as a whole is not delivered - this section records only what
+ran.
+
+What changed: migration `c4d9a17e6f20` (session scope + `conversation_turns` +
+message `sequence`/`turn_id` + `analysis_tasks.conversation_turn_id` +
+`task_queue.kind='conversation'`); `app/agent/conversation/` (scope merge,
+orchestrator); `app/api/routes/conversations.py`; the worker claims turns and a
+reconciler closes them when their analysis settles; the analysis runner no
+longer writes its own assistant pointer for a turn-owned analysis; the turn API
+is gated by `AIND_CONVERSATIONAL_ASK_ENABLED` (default off).
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 311 passed, 2 warnings
+# full matrix (PostgreSQL + MySQL + Doris; workers stopped; ecpm_drop loaded):
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 79 passed, 1 skipped, 25 deselected in 163.59s
+uv run --project backend --frozen python backend/scripts/verify_schema.py
+# -> schema verification OK: 29 tables, 8 named state checks, 22 indexes
+```
+
+The one skip is the deployed-stack DataHub test: the running API container was
+started with `AIND_DATAHUB_ENABLED=0` and still runs the pre-P1 image, so it
+cannot exercise this slice. Not verified, and not represented as passing:
+anything in P2-P5 (skill packages and versions, model-backed intent parsing,
+scope resolution from natural language, explanations, shared budget, session
+SSE, the `/ask/:sessionId` and `/skills` UI, and the C03-C05/C07/C09-C11,
+S01-S09, R01-R02 cases).
+
+Behavior verified live by the integration tests (host-side worker passes, real
+control DB):
+
+| Case | Evidence |
+|---|---|
+| C01 | three turns on one session; transcript `user/assistant` x3 with `sequence` 1-6; one analysis per turn, none rebuilt; after settling the session reports `active_turn_id=None`, `context_version >= 1` and the confirmed scope with `field_origins.metric_key = "ui"` |
+| C02 | a turn with only a metric ends `WAITING_INPUT` with a `clarify` reply naming the missing periods, creates no analysis, and leaves `resolved_context` empty; the next turn completes the scope and runs |
+| C06 | same `Idempotency-Key` + same body replays the same turn; same key + different body is 409 `IDEMPOTENCY_CONFLICT`; a second key while a turn is active is 409 `SESSION_BUSY` (with the active turn id); the legacy `POST /analyses` path is refused the same way |
+| C08 (turn scope) | cancelling a turn marks it `CANCELLED`/`QUERY_CANCELLED`, cancels the linked analysis, and repeats idempotently |
+| 8.1 legacy read | rows with `content_schema_version = 0` are returned converted (`text`, `kind=analysis`) and never rewritten |
+
+Context merging is pinned by unit tests: absent fields inherit, `clear` beats a
+value in the same patch, origins are recorded, and only a `complete` state
+bridges to the analysis API's `data_complete = true`.
+
+## Conversational Ask, P2 slice: skill packages and versions (executed 2026-10-13)
+
+Implements the P2 slice of the design: skill packages, immutable versions, the
+ownership and capability rules, the three builtin skills and the `/skills` UI.
+P3-P5 remain unimplemented, so the requirement as a whole is still not
+delivered.
+
+What changed: `backend/app/skills/` (package parsing with every design-7.3 limit,
+strict front matter, applicability); migration `b7e2f40c91a8` (`skills`,
+`skill_versions`); `app/api/routes/skills.py` (7 endpoints); the `/skills` page
+plus `apiUpload` and regenerated `openapi.json`/types; `metadata/skills/*.md`
+with `python -m app.cli load-skills` and a bootstrap hook; `python-multipart`
+pinned at 0.0.32.
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 350 passed, 2 warnings
+# full matrix (PostgreSQL + MySQL + Doris; workers stopped; ecpm_drop loaded):
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 86 passed, 1 skipped, 25 deselected in 193.61s
+uv run --project backend --frozen python backend/scripts/verify_schema.py
+# -> schema verification OK: 31 tables, 11 named state checks, 25 indexes
+cd frontend && npm run build     # -> tsc + vite clean
+```
+
+The skip is the deployed-stack DataHub test (the API container runs the pre-P2
+image with DataHub disabled), so the live UI has **not** been exercised - the
+`/skills` page was verified by typecheck and build only, not in a browser.
+
+Verified by tests (design 13.2 cases):
+
+| Case | Evidence |
+|---|---|
+| S01 | preview validates a ZIP bundle (name, files, hash, applicability) then import stores version 1; the version detail returns both files; the skill appears in `GET /skills` |
+| S02 | the same content re-uploaded returns the existing version (count stays 1); changed content creates version 2 and version 1's stored body is unchanged |
+| S03 | a second analyst gets 404 for read, list, patch and version upload of another user's skill |
+| S04 | zip slip, absolute/drive/UNC paths, symlinks, case-folded duplicates, reserved names, ADS streams, trailing dots, deep nesting, nested archives and a zip bomb are all rejected |
+| S05 | `<script>`/`<iframe>`/`javascript:` rejected; YAML aliases, custom tags and duplicate keys rejected; injection prose is stored as data and the manifest carries only strings/lists |
+| S06 | script packages, binary/HTML references and oversized bodies are rejected as unsupported or too large |
+| S07 | disable and archive are identity-level (content untouched); archived skills leave the default list and return with `include_archived` |
+| design 7.2 | unknown metrics and non-allowlisted dimensions are recorded, never block saving, and never extend the registry; a builtin slug cannot be shadowed (409) and builtins are read-only (403) |
+
+Two things the live run taught:
+
+1. `sync_builtins` silently reported success when `metadata/skills` did not
+   exist (the directory is relative to the working directory). It now raises,
+   the CLI exits non-zero with the resolved path, and bootstrap reports the
+   problem without failing.
+2. Applicability was frozen at import time, so the builtins imported before
+   their metrics were loaded stayed "unknown metric" forever. The declaration
+   now travels in the version manifest and the API returns the *current* verdict
+   (`compatibility`) beside the import-time one (`compatibility_at_import`);
+   live check: `channel-contribution` was `at_import=false` and is `now=true`
+   after bootstrap loaded the metrics. One builtin also declared `ad_network`
+   for `total_revenue`, which does not allow it - the check caught it, the
+   content was fixed, and the re-sync created version 2 while keeping version 1.
+
+## Conversational Ask, P3 slice: model-backed orchestration (executed 2026-10-13)
+
+Implements the P3 slice of the design: intent parsing, scope resolution and
+merging, explanations from stored evidence, skill loading, the turn budget, the
+session event stream and the worker lifecycle. P4 (the conversational UI) and P5
+(the full acceptance matrix) remain, so the requirement as a whole is still not
+delivered.
+
+What changed: `app/agent/conversation/{intent,skills,budget,explain}.py`; the
+orchestrator split into `prepare -> decide -> apply` with `run_turn` as the worker
+entry point; the analysis runner honours a persisted sub-budget and receives the
+skill block as advisory context; `GET /sessions/{id}/events`; `ErrorCode`
+gains `LLM_UNAVAILABLE`/`ANALYSIS_EXECUTION_ERROR` (the strings the runner already
+emitted).
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 364 passed, 2 warnings
+# full matrix (PostgreSQL + MySQL + Doris; workers stopped):
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 95 passed, 1 skipped, 25 deselected in 203.71s
+```
+
+The skip is the deployed-stack DataHub test (container image predates P1-P3, flag
+off). Not verified and not represented as passing: the P4 UI, the browser E2E
+cases, and the parts of the design's matrix that need them (C03-C05/C09 are
+covered at the API level below, C07 only as `requeue_stale_turns`).
+
+Verified against the real control database with a scripted model (fake provider
+injected at the orchestrator's `resolve_provider`), host-side workers stopped:
+
+| Case | Evidence |
+|---|---|
+| C03 | turn 1 sets the full scope; turn 2 ("只看安卓") sets only `filters` and the analysis inherits metric/window/dimensions; turn 3 (`clear: [filters]`) removes it - the stored analysis context shows each outcome |
+| C04 | `comparison=previous_period` with only a current period is frozen server-side into `2026-09-01..2026-09-08`, recorded with `field_origins.baseline_start = "model"`; explicit dates are never overwritten |
+| C05 | an explain turn creates no analysis and no query, returns `kind=explanation` with `evidence_state=ok`, and its quote text equals the stored claim text verbatim; an unresolvable reference yields `evidence_state=unavailable` with the drop reasons |
+| C11 | with no provider the rule path runs the structured scope through the deterministic template (`model_id=deterministic-template-v1`) and records the degradation |
+| skills | a manual selection is loaded, snapshotted (mode, version id, files, bytes) and injected into the analysis state inside a block labelled as untrusted data |
+| late reply | a turn cancelled *inside* the model call publishes nothing: no analysis, no assistant message, status stays CANCELLED |
+| C09-lite | session SSE emits persisted events with monotonic ids and a `Last-Event-ID` resume that repeats nothing |
+| budget | the turn row carries `deadline_at`, model calls, tokens and the prompt-version history |
+
+Four defects were found and fixed while making this pass - all in the new code:
+
+1. **A model call inside the transaction that held the turn row lock.** The
+   cancel route does `SELECT ... FOR UPDATE` on the same row, so a cancel would
+   block for as long as the model took (and the test surfaced it as
+   `idle_in_transaction_session_timeout`). The lifecycle is now
+   prepare/decide/apply with the model call outside every transaction.
+2. **`execute_turn` re-ran on an ANALYZING turn.** A worker retry (or a second
+   drain pass) called the model again and tried to create a second analysis for
+   the same turn; only the unique index would have stopped it, and the retry
+   failed the turn instead. The function now returns early for states the
+   reconciler owns.
+3. **The skill snapshot was clobbered.** `_apply_turn` built an empty record and
+   wrote it over the preparation's snapshot when the model made no skill choice,
+   so a loaded skill vanished from the record while the analysis still received
+   its text.
+4. **`TurnBudget` did not match the provider protocol** (`reserve_model_call`),
+   so every intent call failed with `LLM_UNAVAILABLE`; the reservation is now
+   taken by the provider itself and the actual usage is recorded afterwards.
+
+Two operational notes for the next run: the compose `query-worker`/`agent-worker`
+must be **stopped** before host-side integration tests - leaving them up produced
+`DATASOURCE_UNAVAILABLE` failures and Postgres deadlocks against the test
+truncate, and the container image predates P1-P3 so its workers run the old
+orchestrator; and an SSE stream abandoned mid-read keeps a database session open,
+so the test reads each stream to its own `stream.end`.
+
+## Conversational Ask, P4 slice: the conversational UI (executed 2026-10-13)
+
+Implements the P4 slice: the Askdata workspace (sessions, thread, scope and skill
+panels), live updates, the flag-off fallback and the browser journeys. P5 (the
+remaining acceptance matrix, the A09 regression and a real-model multi-turn run)
+is still open, so the requirement as a whole is not delivered.
+
+What changed: `frontend/src/pages/AskPage.tsx` rewritten as a conversation
+workspace; `components/ConversationPanels.tsx` (session rail, scope panel, skill
+picker); `hooks/useSessionEvents.ts`; conversation API wrappers and regenerated
+`openapi.json`/types; routes `/ask` and `/ask/:sessionId`; conversation styles.
+Two backend fixes came out of the browser run: the intent call now sees the
+*effective* scope (this turn's panel values merged over the confirmed scope)
+instead of only the confirmed one, and a `clarify` intent that asks for nothing
+missing is downgraded to `analyze`.
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 364 passed, 2 warnings
+# full matrix (PostgreSQL + MySQL + Doris; workers stopped):
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 95 passed, 1 skipped, 25 deselected in 233.29s
+# browser journeys against the deployed stack (containers rebuilt with P1-P4,
+# AIND_CONVERSATIONAL_ASK_ENABLED=1, dev overlay for the raised login limit):
+cd frontend; npx playwright test
+# -> 7 passed (24.0s)
+```
+
+The browser journeys (the first real UI evidence for this feature):
+
+| Journey | What it exercised |
+|---|---|
+| conversational Ask | new conversation created and addressable by URL; an explicit scope submitted from the panel; the turn settles into a transcript entry with claims, a deep link and the skills line; a refresh restores the same session; a follow-up ("只看安卓") inherits the scope and produces a second result |
+| skills page | the builtin list renders and builtins expose no enable/disable controls (read-only) |
+| analysis and charts (rewritten) | the same analysis started *from the conversation*, its chart and table view, and a drilldown that creates a child analysis ("下钻：") - the R01 regression path now runs through the new surface |
+| SQL workspace, administration, capability gate | unchanged journeys, all still passing |
+
+Three harness defects surfaced while making the browser suite pass - none of them
+product bugs, all worth knowing:
+
+1. **The suite's capability-gate journey signs out the shared session**, so any
+   spec that ran after it got a 401 and a redirect to `/login`. That journey now
+   runs in its own browser context (`storageState` cleared) and signs in itself.
+2. **Navigating away mid-login aborts the request** (the trace showed the login
+   POST with status -1), leaving the context unauthenticated; the journey waits
+   for the URL to leave `/login` before continuing.
+3. **Two turns with a real model exceed the 60 s default timeout**, so the
+   conversation spec sets its own (240 s) - the assertions inside still fail fast.
+
+Two product-level lessons recorded while running the journeys: the send button is
+disabled while the composer is empty (an idle state, not a stuck state), and an
+analysis window that includes a day with no data ends PARTIAL unless the user
+declares the period complete - the journey now uses a covered window and sets the
+completeness selector, which is what a user who knows the data would do.
+
+## Conversational Ask, P5 slice: regression and acceptance (executed 2026-10-13)
+
+Closes the design's P1-P5 checklist: the recovery and security items C07/C10 and
+S03-S05, the A09 regression with the conversational layer deployed, and a
+real-model multi-turn conversation. Commands below were executed on the working
+tree (no commits were made - the design does not authorize them); the containers
+were rebuilt from it and the control database was
+repaired (`align_sources` + `bootstrap` + `load-metrics` + `load-skills`) after
+the host-side integration run rotated it.
+
+### C07 recovery and C10 revocation
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/integration/test_conversation_recovery.py -m integration -q --basetemp=runtime/pytest-tmp
+# -> 3 passed in 10.76s
+```
+
+- C07: a crash after `_prepare_turn` (turn row written, nothing else) is recovered
+  by `requeue_stale_turns` + the orchestrator drain: the turn ends COMPLETED with
+  exactly one analysis, one assistant message, `budget["model_calls"] == 1` and
+  `reserved_input == 0` - the recovery neither duplicates work nor resets the
+  budget. Re-running the same turn is a no-op.
+- C10: after `DELETE /admin/grants/{id}` removes every query grant the analysis
+  read, the transcript's assistant message is redacted
+  (`content["permission_revoked"] is True`, claims and quotes blanked), the
+  report and evidence endpoints answer 403, and the session event stream emits
+  `analysis.permission.revoked` with the analysis id instead of leaving a
+  watching client believing the result is still live. Two defects were found and
+  fixed while making this pass: the test's first version revoked only the *first*
+  query grant in the list (the source registers more than one table, so the
+  analysis kept a live grant - it now revokes all query grants), and the SSE
+  revocation branch referenced an unbound `revoked` name, so any session stream
+  raised `NameError` on its first poll. The stream now recomputes the revocation
+  set per poll against the current grants and announces each flip once. Both are
+  covered by the test; the browser journeys were re-run against the rebuilt
+  image (7 passed, below).
+
+### Static suite and the full matrix
+
+```powershell
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# -> 364 passed, 2 warnings in 5.40s
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --basetemp=runtime/pytest-tmp
+# -> 98 passed, 1 skipped, 25 deselected in 210.02s
+```
+
+The matrix ran with PostgreSQL + MySQL + Doris live, the `ecpm_drop` demo loaded,
+workers stopped and `--basetemp=runtime/pytest-tmp`; the skip is the
+deployed-stack DataHub test (DataHub not started), and the 25 deselected are the
+DataHub integration tests that need `AIND_DATAHUB_ENABLED=1` with the stack up.
+(The first attempt at this re-run left the compose `query-worker`/`agent-worker`
+up from the A09 run; they stole host-side test claims and produced three failures
+and three errors. Stopping them restored the 98/1/25 result - the same
+precondition the earlier records call out.)
+No code in this change set touches `app/metadata` or the DataHub adapter, so that
+subset was not re-run in this pass and is **not** counted as verified here.
+
+### A09 regression with the conversational layer deployed
+
+```powershell
+uv run --project backend --frozen python scripts/eval_agent.py --cases 10 --scale small --password <admin pw>
+# -> [eval] a09_status=passed target_top3=7/7 unforced=3/3 scored=10/10
+#    runtime/eval/a09-20261013-215859.json
+```
+
+The deployed containers were rebuilt from the working tree (conversation + skills
+code present, `AIND_CONVERSATIONAL_ASK_ENABLED=1` in the stack's `.env`), so the
+analysis pipeline and the conversational layer ran side by side. The score is
+field-identical to the 2026-09-27 and earlier 2026-10-13 records: 7/7 target
+cases in the top three, 3/3 no-target cases without forced attribution, 10/10
+fully scored, `incomplete_day` PARTIAL as designed. R02 (no_change /
+incomplete_day / driver decomposition) is inside this run; R01 (the original
+analysis and drilldown path, now reachable from the conversation) is the
+rewritten Playwright journey recorded in the P4 section.
+
+### Real-model multi-turn conversation
+
+`runtime/accept_conversation.py` (host-side driver, gitignored like the other
+acceptance scripts) loads the `ecpm_drop` scenario (seed 42, as_of 2026-09-13, small), imports a
+skill package over the API, and drives two sessions against the deployed stack
+over HTTP only. Ground truth stays in the script and is compared at the end; it
+is never sent to the platform. Record:
+`runtime/acceptance/conversation-20261013-220711.json`.
+
+Windows baseline 2026-09-11..09-12 / current 09-12..09-13; generator delta
+-2515.294902 on a baseline of 48919.256121.
+
+| Turn | Status / intent | Latency | Tokens in/out | Skills loaded (hash prefix) | Analysis |
+|---|---|---|---|---|---|
+| analyze-scoped (manual skill, scope panel) | COMPLETED / analyze | 8.38 s | 2563 / 158 | revenue-watch `3836b918` | COMPLETED, target rank 1, `scored=true` |
+| follow-up-inherit ("那各渠道的贡献") | COMPLETED / analyze | 8.39 s | 2728 / 270 | revenue-watch `3836b918` | COMPLETED, windows inherited |
+| explain (parent analysis, no new query) | COMPLETED / explain | 4.22 s | 2991 / 425 | revenue-watch `3836b918` | none (`analysis_id` null) |
+| auto-skill-vague ("收入怎么样？") | WAITING_INPUT / clarify | 3.19 s | 1930 / 138 | 3 builtins loaded, none used yet | none - asks for metric and periods |
+| auto-skill-scoped (prose windows) | WAITING_INPUT / clarify | 2.16 s | 2050 / 224 | channel-contribution | none - only `metric_key` still missing |
+| draft-completion ("广告收入，ads_revenue。") | COMPLETED / analyze | 6.30 s | 2074 / 200 | 2 builtins | COMPLETED, context merged from the draft |
+
+What this records, per the design's P5 evidence list:
+
+- **Model and prompt version**: the analysis reports `model_id=deepseek-flash`,
+  `prompt_version=m5-v1` (the runner's); the conversational intent layer records
+  `intent:conversation-intent-v1` in each turn's budget history.
+- **Evidence consistency**: turn 1's analysis scored against the generator's
+  ground truth - `delta_matches`, `target_in_top3` (rank 1),
+  `driver_matches`, `claims_all_bound`, all three claims carry query ids - the
+  same scorer the A09 harness uses.
+- **Skill hashes**: every loaded skill is recorded per turn with its content
+  hash; the imported package's preview hash equals its create hash
+  (`3836b9182a6970dc1660c9ea42cf7b2e6f5d8ad0e42edfb4c8e9e53084dcc867`), and
+  four consecutive runs of the script replayed the same `skill_id` and
+  `version_id` - same content is idempotent (S02).
+- **Clarification is honest**: with no scope the model asks for everything; after
+  a prose answer supplying windows and dimensions it narrows to the one field
+  still missing (`metric_key`) and does not guess; the windows persist in
+  `pending_clarification` (design 8.3) and the next turn merges draft + new input
+  into a completed analysis. A failed first attempt of the driver also proved the
+  negative path: a manual selection of an uploaded skill that was not bound to
+  the session fails the turn with `SKILL_INVALID` instead of silently loading
+  something else.
+- **Budgets**: every turn used one model call; the analysis ran on the turn's
+  remaining sub-budget (`max_input_tokens 57437` of the 60000 turn allowance) and
+  4 of its 12 allowed queries.
+
+The driver lives under `runtime/` (gitignored, like the other acceptance
+scripts) and is re-runnable with `--skip-load` when the demo data is already in
+place.
+
+### Browser journeys, re-run after the SSE fix
+
+The P4 record's journeys were re-run against the image rebuilt from the tree
+(the SSE fix included), on the repaired stack:
+
+```powershell
+cd frontend
+$env:E2E_BASE_URL="http://127.0.0.1:3000"; $env:E2E_ADMIN_PASSWORD="<admin pw>"; npx playwright test
+# -> 7 passed (28.1s)
+```
+
+The same seven journeys as the P4 record: the conversational Ask flow (26.5 s),
+the rewritten analysis + drilldown journey (12.3 s), the skills page, the SQL
+workspace, administration, and the capability gate.

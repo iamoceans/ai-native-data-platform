@@ -78,10 +78,11 @@ Key rules enforced by the code:
 backend/
   app/
     api/routes/        auth, datasources, datasets, queries (incl. SSE), saved
-                       queries, admin, health - DTOs in api/dto.py
+                       queries, sessions/conversations (incl. session SSE), skills,
+                       admin, health - DTOs in api/dto.py
     auth/              Argon2id, sessions/CSRF, RBAC capabilities, rate limit
     datasource/        registry service, secret resolver, host policy
-    providers/         base protocol, registry, postgres/mysql/doris providers
+    providers/         base protocol, registry, postgres/mysql/doris/spark providers
     metadata/          DataHub adapter + GraphQL documents, ingestion tasks,
                        recipes, semantic registry, context/lineage service
     metrics/           versioned metric contracts (registry) + compiler
@@ -90,15 +91,22 @@ backend/
     results/           value serialization, signed cursors, atomic file store
     events/, audit/    task_events and audit_logs helpers
     repositories/      SQLAlchemy persistence per aggregate
-    workers/           query_worker, agent_worker (reconciler + analyses), shared runtime
-    models/orm.py      control schema (27 tables, spec section 8)
-  migrations/          Alembic (single baseline revision)
+    workers/           query_worker, agent_worker (reconciler + analyses +
+                       conversation turns + learning), shared runtime
+    agent/conversation/  session scope merge, intent decision, skill loading,
+                       turn budget, explanation, turn orchestrator
+    skills/            SKILL.md/ZIP parsing, strict front matter, versions
+    models/orm.py      control schema (31 tables: the spec 8 list + business_memory
+                       + conversation_turns + skills/skill_versions)
+  migrations/          Alembic (baseline 4f36847b8351 + permission state + business
+                       memory + conversation turns + skills)
   tests/               unit, security, contract, integration, fixtures/datahub
 frontend/              React SPA + generated OpenAPI types + Playwright journeys
 demo/                  M4 generator, scenarios, schemas, loaders
 ingestion/             runner.py (ingestion worker) + publish_lineage.py (SDK)
 metadata/
   recipes/, semantic/, metrics/, relations/   versioned metadata contracts
+  skills/              builtin skill packages (SKILL.md + references)
 infra/                 versions.env, secrets example, DataHub pinned compose
 scripts/               doctor, setup_secrets, smoke_core, verify_schema,
                        seed_sources, metadata_sync, verify_metadata,
@@ -264,6 +272,50 @@ Deliberate limits: retrieval is metric-scoped text, not embeddings; statements
 are number-free by construction, so figures still live only in the evidence
 chain; and a second worker would need a claim/lease for extraction before the
 loop could run at that scale.
+
+## Conversational Ask and skills
+
+Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
+`conversation_turns` table implement the design dated 2026-10-13.
+
+- **Sessions keep a confirmed scope.** A session stores `resolved_context`
+  (metric, baseline/current windows, dimensions, filters and a three-state
+  completeness value) with a `context_version`. Each turn's model call may
+  propose a scope patch (`set` and `clear`); the server merges it (explicit UI
+  values beat model values, which beat inheritance), freezes relative dates at
+  receive time and writes the result back only when the turn completes. A patch
+  whose required fields are still missing becomes a `clarify` reply instead of an
+  analysis, and the missing fields persist as a draft for the next turn.
+- **One decision per turn, on the same terms as the analysis loop.** The intent
+  call (`clarify` / `analyze` / `explain` / `help` / `unsupported`) runs outside
+  any transaction, may only choose allowlisted dimensions and skill version ids,
+  and never supplies SQL, tools or URLs. `explain` resolves references against
+  the session's own analyses and their current grants and quotes stored evidence
+  - it starts no query.
+- **Turn lifecycle**: prepare (short transaction: message + turn row + queue
+  entry) -> decide (model call, no locks held) -> apply (short transaction with a
+  late-reply guard). At most one active turn per session is enforced by a partial
+  unique index; `WAITING_INPUT` is terminal for the turn. A crashed worker
+  recovers by requeueing stale turn claims; budgets are persisted, so recovery
+  neither resets nor doubles the allowance.
+- **Skills are versioned advisory text.** `app/skills/` parses `SKILL.md` and ZIP
+  packages under strict limits (closed front matter, safe YAML, path and size
+  caps, deterministic content hash), stores immutable versions in `skills` /
+  `skill_versions`, and never executes or imports anything from a package. A
+  turn loads at most three versions in `off`/`manual`/`auto` mode, layered as
+  candidate -> body -> declared references with a 24 KiB per-turn content cap,
+  and records exactly what loaded or why it was skipped. The loaded text is
+  injected as labelled untrusted data: any structured proposal it inspires still
+  passes the same allowlist gates as model output.
+- **Budgets**: a turn has a UTC `deadline_at`, token and model-call allowances;
+  the analysis it creates runs on the *remaining* sub-budget, never a fresh one.
+- **Live updates**: `GET /sessions/{id}/events` streams persisted, monotonic
+  events (message/turn/analysis state, skill loads, revocations) with
+  `Last-Event-ID` resume; the UI also polls, so a dropped stream degrades to
+  polling instead of a stuck composer.
+- The whole module sits behind `AIND_CONVERSATIONAL_ASK_ENABLED` (default off);
+  with it off the turn write API answers 503 `CONVERSATIONAL_DISABLED` and the
+  UI falls back to the one-shot analysis path.
 
 ## Not built
 

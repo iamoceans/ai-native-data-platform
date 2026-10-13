@@ -43,3 +43,6 @@ frontend/playwright-report/
 frontend/tests/e2e/.auth/
 frontend/test-results/
 frontend/playwright-report/
+
+# Local agent-tool state (plans, turn diffs); never repo content.
+.zcode/

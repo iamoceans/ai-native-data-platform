@@ -55,6 +55,7 @@ Then register the three sources and ingest metadata (see section 2.1).
 | Health | `curl http://127.0.0.1:8000/health/live`, `curl http://127.0.0.1:8000/api/v1/health/ready` |
 | Regenerate the demo dataset | `make demo-generate` then `make demo-load --reset-demo` (or `make reset-demo CONFIRM=demo`) |
 | Publish declared demo lineage | `make demo-lineage` (runs the DataHub SDK inside the ingestion image) |
+| Publish the builtin skills | `docker compose run --rm --no-deps backend python -m app.cli load-skills` (idempotent; `bootstrap` also reports them) |
 
 Data is kept in named volumes (`control_pgdata`, `source_pgdata`, `results`,
 `ingestion_work`, `source_mysqldata`, `doris_*`, `datahub_*`). `make down` never
@@ -91,7 +92,35 @@ Facts to remember:
   return `available` for `demo.ads_revenue_by_country` (view -> table, label
   `extracted`) and for `demo.revenue_daily_total` (declared demo pipeline).
 
-### 2.2 Registering a datasource and granting access by hand
+### 2.2 The conversational Ask module
+
+The conversation workspace (sessions, turns, skills) is gated by
+`AIND_CONVERSATIONAL_ASK_ENABLED` (default **off**; the local `.env` sets it to
+1 for acceptance). With it off, `POST /sessions/{id}/turns` answers 503
+`CONVERSATIONAL_DISABLED` and the Ask screen falls back to the one-shot
+analysis form - no data is written, so flipping the flag is the whole rollback
+for this module (its migrations are additive; there is no lossless down
+migration).
+
+Operating notes:
+
+- Builtin skills live in `metadata/skills/` and are published by
+  `python -m app.cli load-skills` (also reported by `bootstrap`). Builtins are
+  read-only: they cannot be disabled, archived or shadowed by an upload with the
+  same slug. The `/skills` screen lists builtins and your own uploads.
+- An uploaded skill is private to its owner and must be **bound to a session**
+  (skill config `version_ids`) before a turn can select it; selecting an unbound
+  version fails that turn with `SKILL_INVALID` instead of silently loading
+  something else. Session mode is `off` / `manual` / `auto`; auto mode's
+  candidate pool is the maintained builtins (plus bound uploads) filtered by the
+  skill's declared metrics.
+- A turn's budget (UTC deadline, tokens, model calls) is persisted; the analysis
+  it creates runs on the remainder. If a worker dies mid-turn, the reconciler
+  requeues the stale claim and the turn resumes without re-running the analysis.
+- Session events stream at `GET /sessions/{id}/events` with `Last-Event-ID`
+  resume; the UI also polls, so a dead stream is not a stuck screen.
+
+### 2.3 Registering a datasource and granting access by hand
 
 `scripts/metadata_sync.py` does this idempotently for the demo sources; the
 manual path (spec sections 11 and 12) is, as an administrator:

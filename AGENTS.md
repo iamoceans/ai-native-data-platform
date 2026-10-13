@@ -27,14 +27,18 @@ backend/      FastAPI API + query/agent workers (one image), Alembic, tests
   app/api/routes/     HTTP surface; DTOs in app/api/dto.py
   app/query/          gateway, validator, resolver, limits, scheduler, executor
   app/providers/      base protocol + postgres/mysql/doris/spark implementations
-  app/agent/          M5 planner, adapters, budget, runner, report, business memory
+  app/agent/          M5 planner, adapters, budget, runner, report, business memory,
+                      conversation/ (session scope, turn orchestration)
+  app/skills/         SKILL.md/ZIP parsing, strict front matter, versions
   app/analysis/       deterministic kernel (compare/contribution/drivers/join)
   app/metrics/        versioned metric registry + closed-grammar SQL compiler
   app/metadata/       DataHub GraphQL adapter, ingestion tasks, recipes, context
   app/results/        Arrow IPC + JSON store, signed cursors
   app/workers/        query_worker, agent_worker (reconciler + analyses + learning)
-  app/models/orm.py   control schema (28 tables: the spec 8 list + business_memory)
-  migrations/         Alembic (baseline 4f36847b8351 + permission state + business memory)
+  app/models/orm.py   control schema (31 tables: the spec 8 list + business_memory
+                      + conversation_turns + skills/skill_versions)
+  migrations/         Alembic (baseline 4f36847b8351 + permission state + business
+                      memory + conversation turns + skills)
   tests/              unit / security / contract / integration
 frontend/     React 19 + Vite 8 SPA, OpenAPI-generated types, Playwright journeys
 demo/         M4 deterministic generator, scenarios, schemas, loaders
@@ -105,7 +109,15 @@ business-memory loop active alongside it (the ten cases exercised cold -> warm -
 capped recall without changing a single score; see `docs/acceptance.md`). The
 Spark preview's live acceptance - including the cancellation fix and the server-side
 timeout - is recorded in `docs/acceptance.md`; `infra/spark-preview/` is the
-throwaway Spark/HMS fixture that makes it reproducible.
+throwaway Spark/HMS fixture that makes it reproducible. Re-observed 2026-10-13
+after the conversational Ask + skills work (P1-P5 of the 2026-10-13 design,
+committed to the working tree only): static **364 passed**; the full matrix
+**98 passed, 1 skipped, 25 deselected** (DataHub stack not started - that subset
+is not re-verified); the A09 harness again `a09_status=passed` 7/7 / 3/3 / 10/10
+with the conversational layer deployed; and a real-model multi-turn conversation
+passed end to end (scoped analyze evidence-scored, follow-up inheritance,
+explain with no new query, honest clarification with a persisted draft). Records:
+`docs/acceptance.md` P5 section, `runtime/acceptance/conversation-20261013-220711.json`.
 
 ## Invariants - do not break these
 
