@@ -1,6 +1,6 @@
 /** Thin typed wrappers around the generated OpenAPI schema. */
 
-import { apiFetch, setCsrfToken } from "./client";
+import { apiFetch, apiUpload, setCsrfToken } from "./client";
 import type { components } from "./schema";
 
 export type Profile = components["schemas"]["ProfileResponse"];
@@ -449,4 +449,234 @@ export async function getDatasetLineage(
   depth = 2,
 ): Promise<LineageResponse> {
   return apiFetch(`/api/v1/datasets/${datasetId}/lineage?direction=${direction}&depth=${depth}`);
+}
+
+// ---------------------------------------------------------------------------
+// Skills (design 2026-10-13, section 9)
+// ---------------------------------------------------------------------------
+export interface SkillVersionSummary {
+  id: string;
+  version: number;
+  content_hash: string;
+  manifest: Record<string, unknown>;
+  compatibility: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SkillSummary {
+  id: string;
+  slug: string;
+  source: "builtin" | "upload";
+  enabled: boolean;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  latest_version: SkillVersionSummary | null;
+  version_count: number;
+  versions: SkillVersionSummary[];
+}
+
+export interface SkillDetail extends SkillSummary {
+  body: string | null;
+}
+
+export interface SkillPreview {
+  name: string;
+  description: string;
+  content_hash: string;
+  compatibility: {
+    applicable?: boolean;
+    generic?: boolean;
+    unknown_metric_keys?: string[];
+    invalid_dimensions?: Record<string, string[]>;
+  };
+  metric_keys: string[];
+  preferred_dimensions: string[];
+  required_inputs: string[];
+  references: string[];
+  body_preview: string;
+  body_truncated: boolean;
+  files: { path: string; size: number; sha256: string }[];
+}
+
+export async function listSkills(includeArchived = false): Promise<SkillSummary[]> {
+  const params = new URLSearchParams();
+  if (includeArchived) params.set("include_archived", "true");
+  const query = params.toString();
+  const response = await apiFetch<{ items: SkillSummary[] }>(
+    `/api/v1/skills${query ? `?${query}` : ""}`,
+  );
+  return response.items;
+}
+
+export async function previewSkill(file: File): Promise<SkillPreview> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiUpload<SkillPreview>("/api/v1/skills/import-preview", form);
+}
+
+export async function createSkill(file: File, expectedHash: string): Promise<SkillDetail> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("expected_hash", expectedHash);
+  return apiUpload<SkillDetail>("/api/v1/skills", form);
+}
+
+export async function createSkillVersion(
+  skillId: string,
+  file: File,
+  expectedHash: string,
+): Promise<{ id: string; version: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("expected_hash", expectedHash);
+  return apiUpload<{ id: string; version: number }>(
+    `/api/v1/skills/${skillId}/versions`,
+    form,
+  );
+}
+
+export async function getSkill(skillId: string): Promise<SkillDetail> {
+  return apiFetch<SkillDetail>(`/api/v1/skills/${skillId}`);
+}
+
+export async function patchSkill(
+  skillId: string,
+  patch: { enabled?: boolean; archived?: boolean },
+): Promise<SkillDetail> {
+  return apiFetch<SkillDetail>(`/api/v1/skills/${skillId}`, { method: "PATCH", body: patch });
+}
+
+// ---------------------------------------------------------------------------
+// Conversations: sessions, turns, messages (design 2026-10-13)
+// ---------------------------------------------------------------------------
+export interface SessionSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  context_version: number;
+  active_turn_id: string | null;
+}
+
+export interface SessionDetail extends SessionSummary {
+  resolved_context: Record<string, unknown>;
+  skill_config: Record<string, unknown>;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: Record<string, unknown>;
+  created_at: string;
+  sequence: number;
+  turn_id: string | null;
+  content_schema_version: number;
+}
+
+export interface TurnScopePatch {
+  metric_key?: string;
+  baseline_start?: string;
+  baseline_end?: string;
+  current_start?: string;
+  current_end?: string;
+  comparison?: string;
+  dimensions?: string[];
+  filters?: Record<string, string>;
+  data_complete_state?: string;
+  clear?: string[];
+}
+
+export interface TurnSkillSelection {
+  mode: "off" | "manual" | "auto";
+  version_ids?: string[];
+}
+
+export interface TurnDetail {
+  id: string;
+  session_id: string;
+  status: string;
+  intent: string | null;
+  user_message_id: string;
+  assistant_message_id: string | null;
+  analysis_id: string | null;
+  base_context_version: number;
+  context_after: Record<string, unknown> | null;
+  skill_snapshot: Record<string, unknown>;
+  error: { code?: string; message?: string } | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export async function listSessions(includeArchived = false): Promise<SessionSummary[]> {
+  const params = new URLSearchParams();
+  if (includeArchived) params.set("include_archived", "true");
+  const query = params.toString();
+  const response = await apiFetch<{ items: SessionSummary[] }>(
+    `/api/v1/sessions${query ? `?${query}` : ""}`,
+  );
+  return response.items;
+}
+
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+  return apiFetch<SessionDetail>(`/api/v1/sessions/${sessionId}`);
+}
+
+export async function patchSession(
+  sessionId: string,
+  patch: { title?: string; archived?: boolean; skill_config?: Record<string, unknown> },
+): Promise<SessionDetail> {
+  return apiFetch<SessionDetail>(`/api/v1/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function listSessionMessages(
+  sessionId: string,
+  limit = 100,
+): Promise<ConversationMessage[]> {
+  const response = await apiFetch<{ items: ConversationMessage[] }>(
+    `/api/v1/sessions/${sessionId}/messages?limit=${limit}`,
+  );
+  return response.items;
+}
+
+export async function createTurn(
+  sessionId: string,
+  input: {
+    text: string;
+    idempotencyKey: string;
+    expectedContextVersion?: number;
+    parentAnalysisId?: string | null;
+    scopePatch?: TurnScopePatch | null;
+    skillSelection?: TurnSkillSelection | null;
+  },
+): Promise<TurnDetail> {
+  return apiFetch<TurnDetail>(`/api/v1/sessions/${sessionId}/turns`, {
+    method: "POST",
+    headers: { "Idempotency-Key": input.idempotencyKey },
+    body: {
+      text: input.text,
+      expected_context_version: input.expectedContextVersion ?? null,
+      parent_analysis_id: input.parentAnalysisId ?? null,
+      scope_patch: input.scopePatch ?? null,
+      skill_selection: input.skillSelection ?? null,
+    },
+  });
+}
+
+export async function getTurn(sessionId: string, turnId: string): Promise<TurnDetail> {
+  return apiFetch<TurnDetail>(`/api/v1/sessions/${sessionId}/turns/${turnId}`);
+}
+
+export async function cancelTurn(sessionId: string, turnId: string): Promise<TurnDetail> {
+  return apiFetch<TurnDetail>(`/api/v1/sessions/${sessionId}/turns/${turnId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function sessionEventsUrl(sessionId: string): string {
+  return `/api/v1/sessions/${sessionId}/events`;
 }

@@ -63,6 +63,31 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal,
   });
+  return parseResponse<T>(response);
+}
+
+/**
+ * Multipart upload: the browser must set the boundary itself, so no
+ * Content-Type header is sent. Errors keep the same envelope as apiFetch.
+ */
+export async function apiUpload<T>(
+  path: string,
+  form: FormData,
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  const response = await fetch(path, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: form,
+    signal: options.signal,
+  });
+  return parseResponse<T>(response);
+}
+
+async function parseResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

@@ -1,459 +1,482 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { MemoryPanel } from "../components/MemoryPanel";
 import {
+  cancelTurn,
   createAgentSession,
   createAnalysis,
-  getDatasetContext,
-  getDatasetSchema,
-  listDatasets,
+  createTurn,
+  getAnalysis,
+  getChart,
+  getSession,
+  getTurn,
   listMetrics,
-  type ColumnInfo,
-  type MetricSummary,
+  listSessionMessages,
+  listSessions,
+  listSkills,
+  type ConversationMessage,
+  type SkillSummary,
+  type TurnDetail,
 } from "../api/endpoints";
+import { ChartPanel } from "../components/ChartPanel";
+import {
+  draftFromContext,
+  ScopePanel,
+  scopePatchFromDraft,
+  SessionList,
+  SkillPicker,
+  type ScopeDraft,
+} from "../components/ConversationPanels";
+import { MemoryPanel } from "../components/MemoryPanel";
+import { StatusBadge } from "../components/StatusBadge";
+import { useSessionEvents } from "../hooks/useSessionEvents";
+
+const ACTIVE_TURN_STATES = ["QUEUED", "RESOLVING", "ANALYZING", "RESPONDING"];
 
 /**
- * Two things drive this page. The dataset picker answers "what is in this table
- * and can I analyse it": it reads the platform catalog (grain, description,
- * currency) plus the live schema, so a table without a declared metric says so
- * instead of just being absent. The metric picker then pins the governed
- * contract: dimensions are the metric's declared `allowed_dimensions`, which the
- * compiler enforces (app/metrics/compiler.py rejects anything else with
- * METRIC_DIMENSION_NOT_ALLOWED), so the declared grain is shown as it is -
- * checkable dimensions, plus the time column that the period picker owns.
+ * Askdata: a conversation over the governed analysis pipeline.
+ *
+ * The transcript is the record; live progress is rendered from the active turn
+ * and its analysis, never inserted as extra chat messages (design 5.2). A new
+ * conversation is created on demand and the URL carries the session, so a
+ * refresh resumes exactly where the user was. When the conversational flag is
+ * off the same question falls back to the one-shot analysis path.
  */
-
-const MAX_DIMENSIONS = 3;
-
-/** Plain-language reading of the aggregation constraint a metric carries. */
-const AGGREGATION_KINDS: Record<string, string> = {
-  sum: "互斥分区内可直接相加",
-  sum_of_aggregates: "先按数据源分别聚合到相同日期与维度再加总，不能直接 JOIN 明细表",
-  ratio_of_sums: "比率一律按「分子总和 ÷ 分母总和」计算，不能先算每日或每组比率再平均",
-  distinct_per_day: "单日去重口径，跨日只能取日均，多天不能相加",
-};
-
-function aggregationLabel(kind: string, notes: string | null | undefined): string {
-  const reading = AGGREGATION_KINDS[kind];
-  if (reading) return `${kind} — ${reading}`;
-  return notes ?? kind;
-}
-
-function isTimeColumn(name: string): boolean {
-  return name === "dt" || name === "date" || name.endsWith("_date") || name.endsWith("_at");
-}
-
-function isNumericType(columnType: string): boolean {
-  return /int|decimal|double|float|numeric|long/i.test(columnType);
-}
-
-function datasetLabel(metric: MetricSummary): string {
-  const datasets = metric.datasets ?? [];
-  if (datasets.length === 0) return "未标注数据集";
-  if (datasets.length === 1) return datasets[0];
-  return `跨数据集 · ${datasets.join(" + ")}`;
-}
-
-function qualifier(schemaName: string, objectName: string): string {
-  return `${schemaName}.${objectName}`;
-}
-
 export function AskPage() {
+  const { sessionId: routeSessionId } = useParams();
   const navigate = useNavigate();
-  const metricsQuery = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
-  const metrics = useMemo(() => metricsQuery.data ?? [], [metricsQuery.data]);
+  const queryClient = useQueryClient();
+  const [text, setText] = useState("");
+  const [error, setError] = useState<ApiError | null>(null);
+  const [draft, setDraft] = useState<ScopeDraft | null>(null);
+  const [skillMode, setSkillMode] = useState<"off" | "manual" | "auto">("auto");
+  const [pickedSkills, setPickedSkills] = useState<string[]>([]);
+  const [scopeCollapsed, setScopeCollapsed] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const [question, setQuestion] = useState("为什么当前期间的收入发生变化？");
-  const [datasetFilter, setDatasetFilter] = useState("");
-  const [requestedMetric, setRequestedMetric] = useState("total_revenue");
-  const [requestedDimensions, setRequestedDimensions] = useState<string[]>([]);
-  const [baselineStart, setBaselineStart] = useState("2026-09-11");
-  const [baselineEnd, setBaselineEnd] = useState("2026-09-12");
-  const [currentStart, setCurrentStart] = useState("2026-09-12");
-  const [currentEnd, setCurrentEnd] = useState("2026-09-13");
+  const sessionId = routeSessionId ?? null;
 
-  const catalogQuery = useQuery({ queryKey: ["datasets"], queryFn: () => listDatasets() });
+  const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
+  const skills = useQuery({ queryKey: ["skills"], queryFn: () => listSkills(false) });
+  const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => listSessions(false) });
 
-  // Dataset options come from the catalog, so a table without a declared metric
-  // is still visible and can say why it cannot be analysed, plus any dataset a
-  // metric names that the catalog did not return to this user. Datasets that
-  // have metrics sort first.
-  const datasetOptions = useMemo(() => {
-    const metricCounts = new Map<string, number>();
-    metrics.forEach((metric) =>
-      (metric.datasets ?? []).forEach((name) =>
-        metricCounts.set(name, (metricCounts.get(name) ?? 0) + 1),
-      ),
-    );
-    (catalogQuery.data ?? []).forEach((dataset) => {
-      const key = qualifier(dataset.schema_name, dataset.object_name);
-      if (!metricCounts.has(key)) metricCounts.set(key, 0);
-    });
-    return [...metricCounts.entries()]
-      .map(([name, metricCount]) => ({ name, metricCount }))
-      .sort((left, right) =>
-        left.metricCount === right.metricCount
-          ? left.name.localeCompare(right.name)
-          : right.metricCount - left.metricCount,
-      );
-  }, [metrics, catalogQuery.data]);
-
-  // The selected dataset is looked up in the catalog for its semantic context
-  // and live schema; both lookups degrade to "not readable" instead of blocking
-  // the metric path.
-  const datasetId = useMemo(
-    () =>
-      (catalogQuery.data ?? []).find(
-        (dataset) => qualifier(dataset.schema_name, dataset.object_name) === datasetFilter,
-      )?.id,
-    [catalogQuery.data, datasetFilter],
-  );
-  const contextQuery = useQuery({
-    queryKey: ["dataset", datasetId],
-    queryFn: () => getDatasetContext(datasetId as string),
-    enabled: Boolean(datasetId),
-  });
-  const schemaQuery = useQuery({
-    queryKey: ["dataset-schema", datasetId],
-    queryFn: () => getDatasetSchema(datasetId as string),
-    enabled: Boolean(datasetId),
+  // The session query polls while a turn is active: without it a missed SSE
+  // event would leave the composer disabled forever, because `active_turn_id`
+  // is what decides whether the user may send.
+  const session = useQuery({
+    queryKey: ["session", sessionId],
+    queryFn: () => getSession(sessionId as string),
+    enabled: Boolean(sessionId),
+    refetchInterval: (query) => (query.state.data?.active_turn_id ? 2000 : false),
   });
 
-  const datasetMetrics = useMemo(
-    () => metrics.filter((metric) => (metric.datasets ?? []).includes(datasetFilter)),
-    [metrics, datasetFilter],
-  );
-  const datasetGrain = useMemo(
-    () => contextQuery.data?.grain ?? datasetMetrics[0]?.grain ?? [],
-    [contextQuery.data, datasetMetrics],
-  );
-  // Measure candidates: numeric columns that are not part of the declared grain.
-  const datasetMeasures = useMemo(
+  const messages = useQuery({
+    queryKey: ["session-messages", sessionId],
+    queryFn: () => listSessionMessages(sessionId as string),
+    enabled: Boolean(sessionId),
+    // Fast while a turn runs, slow otherwise (another tab may still be active).
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.turn_id === session.data?.active_turn_id) ? 4000 : 15000,
+  });
+
+  const activeTurnId = session.data?.active_turn_id ?? null;
+  const activeTurn = useQuery({
+    queryKey: ["turn", sessionId, activeTurnId],
+    queryFn: () => getTurn(sessionId as string, activeTurnId as string),
+    enabled: Boolean(sessionId && activeTurnId),
+    refetchInterval: 1500,
+  });
+
+  // Live updates: an event only triggers a refetch, so a dropped stream degrades
+  // to the polling above instead of showing a stale conversation.
+  const { connected } = useSessionEvents(
+    sessionId,
     () => {
-      const grain = new Set(datasetGrain);
-      return (schemaQuery.data?.columns ?? []).filter(
-        (column: ColumnInfo) => isNumericType(column.type) && !grain.has(column.name),
-      );
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["session-messages", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["turn", sessionId] });
     },
-    [schemaQuery.data, datasetGrain],
+    Boolean(sessionId),
   );
 
-  const visibleMetrics = useMemo(
+  const confirmed = useMemo(
+    () => draftFromContext(session.data?.resolved_context ?? {}),
+    [session.data?.resolved_context],
+  );
+  // A fresh draft follows the confirmed scope until the user edits it.
+  useEffect(() => {
+    if (draft === null && session.data) setDraft(confirmed);
+  }, [draft, confirmed, session.data]);
+
+  const metricOptions = useMemo(
     () =>
-      datasetFilter
-        ? metrics.filter((metric) => (metric.datasets ?? []).includes(datasetFilter))
-        : metrics,
-    [metrics, datasetFilter],
+      (metrics.data ?? []).map((metric) => ({
+        key: metric.metric_key,
+        name: metric.name,
+        dimensions: metric.allowed_dimensions ?? [],
+      })),
+    [metrics.data],
   );
 
-  // Filtering by dataset narrows the list; if it hides the current metric, fall
-  // back to the first one still on screen rather than submitting a hidden key.
-  const metricKey = visibleMetrics.some((metric) => metric.metric_key === requestedMetric)
-    ? requestedMetric
-    : visibleMetrics[0]?.metric_key ?? "";
+  const newConversation = useMutation({
+    mutationFn: () => createAgentSession("新对话"),
+    onSuccess: (created) => {
+      setDraft(null);
+      setText("");
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      navigate(`/ask/${created.id}`);
+    },
+    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
+  });
 
-  const selected = useMemo(
-    () => metrics.find((metric) => metric.metric_key === metricKey),
-    [metrics, metricKey],
-  );
-
-  const allowed = useMemo(() => selected?.allowed_dimensions ?? [], [selected]);
-  const closedDimensions = useMemo(
-    () => (selected?.grain ?? []).filter((name) => !allowed.includes(name)),
-    [selected, allowed],
-  );
-  // Re-validated against the selected metric on every render, so changing the
-  // metric or the dataset filter can never submit a stale dimension.
-  const dimensions = useMemo(
-    () => requestedDimensions.filter((name) => allowed.includes(name)).slice(0, MAX_DIMENSIONS),
-    [requestedDimensions, allowed],
-  );
-
-  const metricGroups = useMemo(() => {
-    const groups = new Map<string, MetricSummary[]>();
-    visibleMetrics.forEach((metric) => {
-      const label = datasetLabel(metric);
-      groups.set(label, [...(groups.get(label) ?? []), metric]);
-    });
-    return [...groups.entries()].sort((left, right) => left[0].localeCompare(right[0]));
-  }, [visibleMetrics]);
-
-  const siblings = useMemo(
-    () =>
-      selected
-        ? metrics.filter(
-            (metric) =>
-              metric.metric_key !== selected.metric_key &&
-              (metric.datasets ?? []).some((dataset) =>
-                (selected.datasets ?? []).includes(dataset),
-              ),
-          )
-        : [],
-    [metrics, selected],
-  );
-
-  const submit = useMutation({
-    mutationFn: async () => {
-      const session = await createAgentSession(question.slice(0, 80));
-      return createAnalysis({
-        sessionId: session.id,
-        question,
-        metricKey,
-        baselineStart,
-        baselineEnd,
-        currentStart,
-        currentEnd,
-        dimensions,
-        dataComplete: true,
+  const send = useMutation({
+    mutationFn: () => {
+      const patch = draft ? scopePatchFromDraft(draft, confirmed) : null;
+      return createTurn(sessionId as string, {
+        text: text.trim(),
+        idempotencyKey: crypto.randomUUID(),
+        expectedContextVersion: session.data?.context_version,
+        scopePatch: patch,
+        skillSelection: { mode: skillMode, version_ids: pickedSkills },
       });
     },
-    onSuccess: (result) => navigate(`/analyses/${result.analysis_id}`),
+    onSuccess: () => {
+      setText("");
+      setError(null);
+      setDraft(null);
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["session-messages", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
   });
 
-  const error = submit.error instanceof ApiError ? submit.error : null;
+  const stop = useMutation({
+    mutationFn: () => cancelTurn(sessionId as string, activeTurnId as string),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["session-messages", sessionId] });
+    },
+    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
+  });
+
+  // Legacy fallback: with the conversational flag off the turn API answers 503,
+  // so the same question goes through the one-shot analysis path instead.
+  const legacySubmit = useMutation({
+    mutationFn: () => {
+      const scope = draft ?? confirmed;
+      return createAnalysis({
+        sessionId: sessionId as string,
+        question: text.trim(),
+        metricKey: scope.metricKey,
+        baselineStart: scope.baselineStart,
+        baselineEnd: scope.baselineEnd,
+        currentStart: scope.currentStart,
+        currentEnd: scope.currentEnd,
+        dimensions: scope.dimensions,
+        dataComplete: scope.dataCompleteState === "complete",
+      });
+    },
+    onSuccess: (created) => navigate(`/analyses/${created.analysis_id}`),
+    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
+  });
+
+  const disabledFallback = send.error instanceof ApiError && send.error.code === "CONVERSATIONAL_DISABLED";
+  useEffect(() => {
+    if (disabledFallback && !legacySubmit.isPending && !legacySubmit.isSuccess) {
+      legacySubmit.mutate();
+    }
+  }, [disabledFallback, legacySubmit]);
+
+  const onSend = () => {
+    if (!text.trim() || !sessionId) return;
+    send.mutate();
+  };
+
+  const busy = Boolean(activeTurnId) || send.isPending;
+  const turn = activeTurn.data ?? null;
 
   return (
-    <div className="workspace">
-      <section className="card ask-hero">
-        <span className="eyebrow">Governed analysis</span>
-        <h1>Ask your data</h1>
-        <p className="muted">
-          Every number is produced by the Query Gateway and remains linked to its SQL, metric version, and result hash.
-        </p>
-        <textarea
-          className="sql-editor ask-input"
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          data-testid="analysis-question"
-        />
-      </section>
+    <div className="conversation">
+      <SessionList
+        sessions={sessions.data ?? []}
+        currentId={sessionId}
+        onCreate={() => newConversation.mutate()}
+        onSelect={(id) => {
+          setDraft(null);
+          setError(null);
+          navigate(`/ask/${id}`);
+        }}
+        busy={newConversation.isPending}
+      />
 
-      <section className="card">
-        <div className="card-head">
-          <h2>Analysis scope</h2>
-          <span className="muted small">Periods are half-open: start included, end excluded.</span>
-        </div>
+      <main className="conversation-main" aria-label="对话">
+        <header className="conversation-head">
+          <div>
+            <h1 data-testid="conversation-title">{session.data?.title ?? "新对话"}</h1>
+            <p className="muted small">
+              {connected ? "实时更新已连接" : "实时更新不可用，按轮询刷新"}
+              {turn ? ` · 本轮：${turn.intent ?? "解析中"}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ghost small"
+            data-testid="scope-panel-toggle"
+            onClick={() => setScopeCollapsed((value) => !value)}
+          >
+            {scopeCollapsed ? "显示范围面板" : "隐藏范围面板"}
+          </button>
+        </header>
 
-        <div className="form-row">
-          <label className="scope-dataset">
-            数据集
-            <select
-              data-testid="dataset-filter"
-              value={datasetFilter}
-              onChange={(event) => setDatasetFilter(event.target.value)}
-            >
-              <option value="">全部数据集（{metrics.length} 个指标）</option>
-              {datasetOptions.map((option) => (
-                <option key={option.name} value={option.name}>
-                  {option.name}
-                  {option.metricCount > 0 ? ` · ${option.metricCount} 个指标` : " · 未声明指标"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grow">
-            指标
-            <select
-              data-testid="analysis-metric"
-              value={metricKey}
-              onChange={(event) => {
-                setRequestedMetric(event.target.value);
-                setRequestedDimensions([]);
+        <div className="conversation-body">
+          <section className="thread" aria-label="消息" data-testid="conversation-thread">
+            {(messages.data ?? []).map((message) => (
+              <MessageRow key={message.id} message={message} />
+            ))}
+            {turn ? <TurnProgress turn={turn} /> : null}
+            {(messages.data ?? []).length === 0 && !turn ? (
+              <p className="muted">
+                用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。
+              </p>
+            ) : null}
+          </section>
+
+          <div className="composer">
+            <textarea
+              data-testid="conversation-input"
+              rows={3}
+              placeholder="例如：上周收入为什么下降？"
+              value={text}
+              disabled={busy}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) onSend();
               }}
-            >
-              {metricGroups.map(([label, items]) => (
-                <optgroup key={label} label={label}>
-                  {items.map((metric) => (
-                    <option key={metric.metric_key} value={metric.metric_key}>
-                      {metric.name} · {metric.metric_key}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {datasetFilter ? (
-          <div className="dataset-profile" data-testid="dataset-profile">
-            <div className="card-head">
-              <h3 className="mono-id">{datasetFilter}</h3>
-              <span className="muted small">
-                {contextQuery.isLoading
-                  ? "读取目录上下文…"
-                  : contextQuery.data
-                    ? "来自平台目录 + 语义登记"
-                    : "该数据集不在你的目录可见范围内"}
-              </span>
-            </div>
-            {contextQuery.data?.description ? (
-              <p className="muted small">{contextQuery.data.description}</p>
-            ) : null}
-            <div className="chips">
-              {(datasetGrain ?? []).map((dimension) => (
-                <span className="chip mono-id" key={dimension} data-testid={`profile-dimension-${dimension}`}>
-                  {dimension}
-                  {isTimeColumn(dimension) ? " · 时间列" : ""}
-                </span>
-              ))}
-              {contextQuery.data?.business_timezone ? (
-                <span className="chip">业务时区 {contextQuery.data.business_timezone}</span>
-              ) : null}
-              {contextQuery.data?.currency ? <span className="chip">币种 {contextQuery.data.currency}</span> : null}
-            </div>
-            <p className="muted small" data-testid="profile-measures">
-              度量列：
-              {datasetMeasures.length > 0
-                ? datasetMeasures.map((column) => column.name).join(" · ")
-                : "无可加总的数值列（配置类表）"}
-            </p>
-            {datasetMetrics.length > 0 ? (
-              <p className="muted small">
-                这张表已声明的指标（点选即切换分析口径）：
-                {datasetMetrics.map((metric) => (
-                  <button
-                    className="link-button"
-                    key={metric.metric_key}
-                    data-testid={`profile-metric-${metric.metric_key}`}
-                    onClick={() => {
-                      setRequestedMetric(metric.metric_key);
-                      setRequestedDimensions([]);
-                    }}
-                  >
-                    {metric.name}
-                  </button>
-                ))}
-              </p>
-            ) : (
-              <p className="notice warn" data-testid="profile-not-analysable">
-                这张表在 Ask data 里还不能分析：它没有声明任何指标，因此没有可用的聚合口径与版本。
-                {datasetMeasures.length > 0
-                  ? "它确实有度量列，需要先在治理侧为该表声明指标（口径、聚合方式、可用维度）才能进入分析。"
-                  : "它也没有可加总的度量列，属于配置/清单类表，只能作为分析中的关联背景。"}
-              </p>
-            )}
-          </div>
-        ) : null}
-
-        {selected ? (
-          <div className="metric-provenance" data-testid="metric-provenance">
-            <div className="chips">
-              {(selected.datasets ?? []).map((dataset) => (
-                <span className="chip mono-id" key={dataset}>
-                  {dataset}
-                </span>
-              ))}
-              <span className="chip">口径版本 v{selected.version}</span>
-              <span className="chip">{selected.aggregation_kind}</span>
-            </div>
-            <dl className="metric-facts">
-              <div>
-                <dt>单位</dt>
-                <dd>{selected.currency && selected.currency !== selected.unit ? `${selected.unit} · ${selected.currency}` : selected.unit}</dd>
-              </div>
-              <div>
-                <dt>业务时区</dt>
-                <dd>{selected.timezone}</dd>
-              </div>
-              <div>
-                <dt>日期列</dt>
-                <dd className="mono-id">{(selected.grain ?? []).find(isTimeColumn) ?? "—"}</dd>
-              </div>
-              <div>
-                <dt>公式</dt>
-                <dd>
-                  <code>{selected.formula}</code>
-                </dd>
-              </div>
-            </dl>
-            <p className="muted small">
-              聚合约束：{aggregationLabel(selected.aggregation_kind, selected.notes)}
-            </p>
-            {selected.notes ? <p className="muted small">口径说明：{selected.notes}</p> : null}
-            {siblings.length > 0 ? (
-              <p className="muted small">
-                同一数据集的其它指标：
-                {siblings.map((metric) => (
-                  <button
-                    className="link-button"
-                    key={metric.metric_key}
-                    data-testid={`metric-sibling-${metric.metric_key}`}
-                    onClick={() => {
-                      setRequestedMetric(metric.metric_key);
-                      setRequestedDimensions([]);
-                    }}
-                  >
-                    {metric.name}
-                  </button>
-                ))}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {metricKey ? <MemoryPanel metricKey={metricKey} /> : null}
-
-        <div className="period-grid">
-          <label>Baseline start<input data-testid="baseline-start" type="date" value={baselineStart} onChange={(e) => setBaselineStart(e.target.value)} /></label>
-          <label>Baseline end<input data-testid="baseline-end" type="date" value={baselineEnd} onChange={(e) => setBaselineEnd(e.target.value)} /></label>
-          <label>Current start<input data-testid="current-start" type="date" value={currentStart} onChange={(e) => setCurrentStart(e.target.value)} /></label>
-          <label>Current end<input data-testid="current-end" type="date" value={currentEnd} onChange={(e) => setCurrentEnd(e.target.value)} /></label>
-        </div>
-
-        {selected && (allowed.length > 0 || closedDimensions.length > 0) ? (
-          <fieldset className="dimension-picker" data-testid="dimension-source">
-            <legend>Break down by up to three dimensions</legend>
-            <div className="dimension-options">
-              {allowed.map((dimension) => (
-                <label className="check" key={dimension} data-testid={`dimension-${dimension}`}>
-                  <input
-                    type="checkbox"
-                    checked={dimensions.includes(dimension)}
-                    disabled={!dimensions.includes(dimension) && dimensions.length >= MAX_DIMENSIONS}
-                    onChange={(event) =>
-                      setRequestedDimensions((current) =>
-                        event.target.checked
-                          ? [...current.filter((item) => allowed.includes(item)), dimension]
-                          : current.filter((item) => item !== dimension),
-                      )
-                    }
-                  />
-                  {dimension}
-                </label>
-              ))}
-              {closedDimensions.map((dimension) => (
-                <label
-                  className="check closed"
-                  key={dimension}
-                  data-testid={`dimension-closed-${dimension}`}
-                  title={`${dimension} 是该指标粒度里的时间列，由上面的期间选择控制，不作为下钻维度`}
+              ref={composerRef}
+            />
+            <div className="composer-actions">
+              {busy ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  data-testid="conversation-stop"
+                  disabled={!activeTurnId || stop.isPending}
+                  onClick={() => stop.mutate()}
                 >
-                  <input type="checkbox" disabled />
-                  {dimension}
-                  <span className="muted small">{isTimeColumn(dimension) ? "时间列 · 由期间控制" : "未开放为维度"}</span>
-                </label>
-              ))}
+                  停止本轮
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="primary"
+                data-testid="conversation-send"
+                disabled={busy || !text.trim() || !sessionId}
+                onClick={onSend}
+              >
+                {busy ? "等待当前分析完成" : "发送"}
+              </button>
             </div>
-            <p className="muted small">
-              可勾选的维度 = 该指标口径声明的 allowed_dimensions（
-              <code>metadata/metrics/{selected.metric_key}.yaml</code>），也就是它所在数据集里可加总的非度量列。
-              数据集还有哪些列、哪些被登记为维度，见 <Link to="/catalog">Catalog</Link>；要开放新维度需要先在治理侧声明该指标的口径。
-            </p>
-          </fieldset>
-        ) : null}
+            {error ? (
+              <p className="notice error" data-testid="conversation-error">
+                <strong>{error.code}</strong> — {error.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </main>
 
-        {error ? <p className="notice error"><strong>{error.code}</strong> — {error.message}</p> : null}
-        <button
-          className="primary"
-          disabled={!question.trim() || !metricKey || submit.isPending}
-          onClick={() => submit.mutate()}
-          data-testid="start-analysis"
-        >
-          {submit.isPending ? "Starting…" : "Start analysis"}
-        </button>
-      </section>
+      <div className="conversation-side">
+        {draft ? (
+          <ScopePanel
+            draft={draft}
+            origins={
+              (session.data?.resolved_context?.field_origins as Record<string, string>) ?? {}
+            }
+            metrics={metricOptions}
+            onChange={setDraft}
+            onReset={() => setDraft(confirmed)}
+            collapsed={scopeCollapsed}
+            onToggle={() => setScopeCollapsed((value) => !value)}
+          />
+        ) : null}
+        <SkillPicker
+          skills={(skills.data ?? []) as SkillSummary[]}
+          mode={skillMode}
+          selected={pickedSkills}
+          onModeChange={(mode) => {
+            setSkillMode(mode);
+            if (mode !== "manual") setPickedSkills([]);
+          }}
+          onSelectedChange={setPickedSkills}
+        />
+        {draft?.metricKey ? <MemoryPanel metricKey={draft.metricKey} /> : null}
+      </div>
     </div>
+  );
+}
+
+/** One committed message; the shape follows `content.kind`. */
+function MessageRow({ message }: { message: ConversationMessage }) {
+  const content = message.content;
+  const kind = String(content.kind ?? (message.role === "user" ? "user" : "unknown"));
+  const text = String(content.text ?? "");
+  const analysisId = content.analysis_id ? String(content.analysis_id) : null;
+  const isResult = kind === "analysis_result";
+  const analysis = useQuery({
+    queryKey: ["analysis", analysisId],
+    queryFn: () => getAnalysis(analysisId as string),
+    enabled: Boolean(analysisId) && isResult,
+    refetchInterval: 3000,
+  });
+  const chartId =
+    (analysis.data?.final_report as { chart_ids?: string[] } | undefined)?.chart_ids?.[0] ?? null;
+  const chart = useQuery({
+    queryKey: ["chart", chartId],
+    queryFn: () => getChart(chartId as string),
+    enabled: Boolean(chartId),
+  });
+
+  return (
+    <article className={`message ${message.role}`} data-testid={`message-${kind}`}>
+      <header className="message-head">
+        <span className="tag">{message.role === "user" ? "你" : "平台"}</span>
+        <span className="muted small">{new Date(message.created_at).toLocaleTimeString()}</span>
+      </header>
+
+      {kind === "user" ? <p className="message-text">{text}</p> : null}
+      {kind === "clarify" ? (
+        <div className="message-body">
+          <p>{text}</p>
+          {Array.isArray(content.missing) && (content.missing as string[]).length ? (
+            <p className="muted small">缺少：{(content.missing as string[]).join("、")}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {kind === "explanation" ? <ExplanationBody content={content} /> : null}
+      {kind === "help" || kind === "unsupported" ? <p className="message-text">{text}</p> : null}
+      {kind === "failure" ? (
+        <p className="notice error">
+          <strong>{String(content.code ?? "FAILED")}</strong> — {String(content.message ?? "")}
+        </p>
+      ) : null}
+      {isResult ? (
+        <div className="message-body">
+          <div className="message-head">
+            <StatusBadge status={String(content.status ?? "UNKNOWN")} />
+            {content.partial ? <span className="badge warn">部分结果</span> : null}
+            {analysisId ? (
+              <a href={`/analyses/${analysisId}`} data-testid="analysis-deeplink">
+                查看完整报告
+              </a>
+            ) : null}
+          </div>
+          <ul className="claims">
+            {(content.claims as { id: string; text: string }[] | undefined)?.map((claim) => (
+              <li key={claim.id}>{claim.text}</li>
+            ))}
+          </ul>
+          {Array.isArray(content.limitations) && (content.limitations as string[]).length ? (
+            <details>
+              <summary>限制与口径</summary>
+              <ul>
+                {(content.limitations as string[]).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          {chart.data ? <ChartPanel chart={chart.data} /> : null}
+          <SkillUsage snapshot={content.skills as Record<string, unknown> | undefined} />
+        </div>
+      ) : null}
+      {message.content_schema_version === 0 ? (
+        <p className="muted small">（历史消息，按兼容格式显示）</p>
+      ) : null}
+    </article>
+  );
+}
+
+/** Explanations quote stored claims verbatim; the prose carries no figure. */
+function ExplanationBody({ content }: { content: Record<string, unknown> }) {
+  const quotes =
+    (content.quotes as { claim_id: string; text: string; analysis_id: string }[]) ?? [];
+  const dropped = (content.dropped_references as string[]) ?? [];
+  return (
+    <div className="message-body">
+      {String(content.text ?? "") ? <p className="message-text">{String(content.text)}</p> : null}
+      {quotes.length ? (
+        <ul className="quotes" data-testid="explanation-quotes">
+          {quotes.map((quote) => (
+            <li key={`${quote.analysis_id}-${quote.claim_id}`}>
+              <span className="tag">{quote.claim_id}</span>
+              <span>{quote.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {content.evidence_state === "unavailable" ? (
+        <p className="notice warn">引用的证据当前不可用，无法展示具体数字。</p>
+      ) : null}
+      {dropped.length ? (
+        <p className="muted small">已跳过 {dropped.length} 条不可用引用。</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Live progress of the active turn: a status line, not a chat message. */
+function TurnProgress({ turn }: { turn: TurnDetail }) {
+  const analysis = useQuery({
+    queryKey: ["analysis", turn.analysis_id],
+    queryFn: () => getAnalysis(turn.analysis_id as string),
+    enabled: Boolean(turn.analysis_id),
+    refetchInterval: 1500,
+  });
+  const steps = analysis.data?.steps ?? [];
+  return (
+    <article className="message assistant progress" data-testid="turn-progress">
+      <header className="message-head">
+        <span className="tag">平台</span>
+        <StatusBadge status={turn.status} />
+        <span className="muted small">{turn.intent ? `意图：${turn.intent}` : "解析中…"}</span>
+      </header>
+      {steps.length ? (
+        <ul className="steps">
+          {steps.map((step) => (
+            <li key={step.key}>
+              <span className="muted small">{step.key}</span> <StatusBadge status={step.status} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {turn.error ? (
+        <p className="notice error">
+          <strong>{turn.error.code}</strong> — {turn.error.message}
+        </p>
+      ) : null}
+      {ACTIVE_TURN_STATES.includes(turn.status) ? (
+        <p className="muted small">可以停止本轮；完成后结果会作为一条消息出现。</p>
+      ) : null}
+    </article>
+  );
+}
+
+function SkillUsage({ snapshot }: { snapshot?: Record<string, unknown> }) {
+  const loaded = (snapshot?.loaded as { slug: string; version: number }[]) ?? [];
+  const mode = snapshot?.mode ? String(snapshot.mode) : null;
+  if (!mode) return null;
+  const label =
+    mode === "off"
+      ? "未使用"
+      : loaded.length
+        ? loaded.map((item) => `${item.slug} v${item.version}`).join("、")
+        : "无匹配";
+  return (
+    <p className="muted small" data-testid="skill-usage">
+      技能：{label}
+    </p>
   );
 }

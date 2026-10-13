@@ -41,6 +41,13 @@ export function AppShell() {
           <NavLink to="/history" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             History
           </NavLink>
+          <NavLink
+            to="/skills"
+            data-testid="nav-skills"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Skills
+          </NavLink>
           {profile.data?.capabilities.includes("admin.manage") ? (
             <>
               <NavLink

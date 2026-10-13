@@ -10,6 +10,7 @@ import { AskPage } from "./pages/AskPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { AdminDatasourcesPage } from "./pages/AdminDatasourcesPage";
 import { AdminPermissionsPage } from "./pages/AdminPermissionsPage";
+import { SkillsPage } from "./pages/SkillsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,10 +34,12 @@ export function App() {
           <Route element={<AppShell />}>
             <Route path="/" element={<Navigate to="/ask" replace />} />
             <Route path="/ask" element={<AskPage />} />
+            <Route path="/ask/:sessionId" element={<AskPage />} />
             <Route path="/analyses/:id" element={<AnalysisPage />} />
             <Route path="/sql" element={<SqlWorkspacePage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
             <Route path="/admin/datasources" element={<AdminDatasourcesPage />} />
             <Route path="/admin/permissions" element={<AdminPermissionsPage />} />
           </Route>

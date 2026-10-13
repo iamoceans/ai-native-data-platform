@@ -78,27 +78,31 @@ test.describe("SQL workspace", () => {
 test.describe("Analysis and charts", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
-  test("start an analysis, read its chart and drill into a group", async ({ page }) => {
+  test("start an analysis from the conversation, read its chart and drill into a group", async ({ page }) => {
     const metric = process.env.E2E_ANALYSIS_METRIC ?? "ads_revenue";
 
-    await page.goto("/sql");
-    await expect(page.getByTestId("datasource-select")).toBeVisible();
-    await page.getByRole("link", { name: "Ask" }).click();
-    await expect(page.getByTestId("analysis-metric")).toBeVisible();
-    await page.getByTestId("analysis-metric").selectOption(metric);
-    // The picker belongs to the selected metric: wait for it, and verify the
-    // checkbox is really checked before submitting. Switching metrics resets the
-    // selection, so a click that races that reset would otherwise submit an
-    // analysis with no breakdown (and therefore no chart).
-    await expect(page.getByTestId("dimension-country")).toBeVisible();
-    await page.getByTestId("baseline-start").fill("2026-09-11");
-    await page.getByTestId("baseline-end").fill("2026-09-12");
-    await page.getByTestId("current-start").fill("2026-09-12");
-    await page.getByTestId("current-end").fill("2026-09-13");
-    const countryBox = page.getByTestId("dimension-country").locator("input");
-    await page.getByTestId("dimension-country").click();
+    // The Ask surface is conversational now: a turn with an explicit scope
+    // creates the analysis, and its result message links to the full report.
+    await page.goto("/ask");
+    await page.getByTestId("new-conversation").click();
+    await expect(page).toHaveURL(/\/ask\/[0-9a-f-]{36}/, { timeout: 15_000 });
+    await page.getByTestId("scope-metric").selectOption(metric);
+    await expect(page.getByTestId("scope-dimension-country")).toBeVisible();
+    // A window fully inside the demo data's complete range, and the user's own
+    // completeness statement - the platform treats it as a claim, not a check.
+    await page.getByTestId("scope-baseline-start").fill("2026-09-10");
+    await page.getByTestId("scope-baseline-end").fill("2026-09-11");
+    await page.getByTestId("scope-current-start").fill("2026-09-11");
+    await page.getByTestId("scope-current-end").fill("2026-09-12");
+    await page.getByTestId("scope-completeness").selectOption("complete");
+    const countryBox = page.getByTestId("scope-dimension-country").locator("input");
+    await page.getByTestId("scope-dimension-country").click();
     await expect(countryBox).toBeChecked();
-    await page.getByTestId("start-analysis").click();
+    await page.getByTestId("conversation-input").fill("这段时间收入变化主要来自哪里？");
+    await page.getByTestId("conversation-send").click();
+
+    await expect(page.getByTestId("message-analysis_result")).toBeVisible({ timeout: 90_000 });
+    await page.getByTestId("analysis-deeplink").click();
 
     // The analysis page polls until a terminal state.
     await expect(page.locator(".badge", { hasText: "Completed" })).toBeVisible({ timeout: 90_000 });
@@ -211,15 +215,29 @@ test.describe("Administration", () => {
 });
 
 
-test.describe("Administration" + " capability gate", () => {
+test.describe("Administration capability gate", () => {
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
+
+  // This journey deliberately signs out, so it runs in its own context: a shared
+  // storage state would revoke the session every other spec depends on (the
+  // failure looks like a random redirect to /login).
+  test.use({ storageState: { cookies: [], origins: [] } });
 
   test("a viewer sees no administration entry point and no admin data", async ({ page }) => {
     const viewerName = process.env.E2E_VIEWER_USER ?? "e2e-viewer";
     const viewerPassword = process.env.E2E_VIEWER_PASSWORD ?? "e2e-viewer-password-123";
+    const adminUser = process.env.E2E_ADMIN_USER ?? "admin";
+    const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "dev-admin-password-123";
 
-    // Starts signed in as the administrator (global setup); this journey is the
-    // one that deliberately signs out and back in as somebody else.
+    // Sign in as the administrator in this context (to create the viewer), then
+    // switch identities below.
+    await page.goto("/login");
+    await page.getByTestId("login-username").fill(adminUser);
+    await page.getByTestId("login-password").fill(adminPassword);
+    await page.getByTestId("login-submit").click();
+    // Wait for the session to exist before navigating: leaving the page while the
+    // login request is in flight aborts it and every later call answers 401.
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
     await page.goto("/sql");
     await expect(page.getByTestId("datasource-select")).toBeVisible();
 
