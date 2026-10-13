@@ -20,6 +20,7 @@ from app.db import get_session_factory, session_scope
 from app.ids import utcnow
 from app.logging_setup import configure_logging
 from app.query import executor, scheduler
+from app.repositories import conversation as conversation_repo
 from app.repositories import queue as queue_repo
 from app.runtime import get_result_store
 
@@ -109,6 +110,7 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
     store = get_result_store()
     from app.agent import memory as business_memory
     from app.agent import runner as analysis_runner
+    from app.agent.conversation import orchestrator as conversation_orchestrator
     logger.info(
         "agent worker started (reconciler and analysis runner)",
         extra={"worker_id": worker_id},
@@ -117,6 +119,34 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
         try:
             with session_scope() as session:
                 summary = scheduler.reconcile_once(session, settings, store)
+            # Conversation turns: drive the rule path, then close turns whose
+            # analysis has settled. Both are cheap reads when nothing is active.
+            try:
+                with session_scope() as session:
+                    turn_claim = queue_repo.claim_next_turn(
+                        session, worker_id=worker_id, settings=settings
+                    )
+                if turn_claim is not None:
+                    # The orchestrator owns its transactions: the model call runs
+                    # outside them so a cancel is never blocked behind it.
+                    status = conversation_orchestrator.run_turn(
+                        get_session_factory(), turn_id=turn_claim.turn_id, settings=settings
+                    )
+                    with session_scope() as session:
+                        queue_repo.release_turn_claim(
+                            session,
+                            turn_claim,
+                            terminal=status
+                            in ("COMPLETED", "FAILED", "CANCELLED", "WAITING_INPUT"),
+                            failed=status == "FAILED",
+                            delay_seconds=max(1, int(settings.worker_poll_seconds)),
+                        )
+                with session_scope() as session:
+                    for turn_id in conversation_repo.list_awaiting_analysis(session):
+                        conversation_orchestrator.reconcile_turn(session, turn_id)
+                    queue_repo.requeue_stale_turns(session)
+            except Exception:
+                logger.exception("conversation orchestration failed")
             with session_scope() as session:
                 claim = queue_repo.claim_next_analysis(
                     session, worker_id=worker_id, settings=settings

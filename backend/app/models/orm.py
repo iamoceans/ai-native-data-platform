@@ -184,6 +184,15 @@ class MetricDefinition(Base):
 
 
 class AgentSession(Base):
+    """One user's continuous conversation (design 8.1).
+
+    `resolved_context` is the confirmed analysis scope the next turn inherits;
+    `pending_clarification` is a draft that has *not* been confirmed and must
+    never be read as scope. Both are versioned by `context_version`, which every
+    scope-changing write bumps so a stale client is rejected instead of silently
+    overwriting a newer scope.
+    """
+
     __tablename__ = "agent_sessions"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -193,21 +202,128 @@ class AgentSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    context_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    resolved_context: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    pending_clarification: Mapped[dict | None] = mapped_column(JSONB)
+    skill_config: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    __table_args__ = (Index("ix_sessions_owner_time", "user_id", "updated_at"),)
+
+
+class ConversationTurn(Base):
+    """One accepted user input and its processing lifecycle (design 8.2).
+
+    The partial unique index `uq_conversation_turns_active` is the
+    database-level "at most one active turn per session" guarantee; the API
+    answers SESSION_BUSY instead of queueing behind it. `skill_snapshot` freezes
+    the skill versions this turn actually loaded, so a later upgrade cannot
+    rewrite what a finished turn did.
+    """
+
+    __tablename__ = "conversation_turns"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("agent_sessions.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=False
+    )
+    user_message_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("agent_messages.id"), nullable=False
+    )
+    assistant_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("agent_messages.id")
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str | None] = mapped_column(Text)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    base_context_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    context_before: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    context_after: Mapped[dict | None] = mapped_column(JSONB)
+    skill_snapshot: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    budget: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    checkpoint_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('QUEUED','RESOLVING','WAITING_INPUT','ANALYZING','RESPONDING',"
+            "'COMPLETED','FAILED','CANCELLED')",
+            name="ck_conversation_turn_status",
+        ),
+        UniqueConstraint(
+            "session_id", "idempotency_key",
+            name="conversation_turns_session_idempotency_key",
+        ),
+        Index("ix_conversation_turns_session", "session_id", "created_at", "id"),
+        Index(
+            "uq_conversation_turns_active",
+            "session_id",
+            unique=True,
+            postgresql_where=text("status IN ('QUEUED','RESOLVING','ANALYZING','RESPONDING')"),
+        ),
+    )
 
 
 class AgentMessage(Base):
+    """One committed user or assistant message (design 8.1).
+
+    `sequence` is the session-scoped ordering key, allocated under the session
+    row lock, so a reader can never observe two messages in different orders or
+    a gap that fills in later. `content_schema_version` lets the reader tell
+    messages written before the conversation layer existed (version 0) from the
+    closed DTOs written now.
+    """
+
     __tablename__ = "agent_messages"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     session_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("agent_sessions.id"), nullable=False
     )
+    turn_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("conversation_turns.id")
+    )
     role: Mapped[str] = mapped_column(Text, nullable=False)
+    sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    content_schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     content: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     __table_args__ = (
         CheckConstraint("role IN ('user','assistant')", name="agent_messages_role_check"),
+        UniqueConstraint(
+            "session_id", "sequence", name="agent_messages_session_sequence_key"
+        ),
         Index("ix_messages_session", "session_id", "created_at", "id"),
     )
 
@@ -223,6 +339,12 @@ class AnalysisTask(Base):
     )
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("analysis_tasks.id")
+    )
+    # Set when a conversation turn created this analysis; unique so one turn
+    # owns at most one analysis (design 8.1). Legacy direct submissions leave it
+    # NULL.
+    conversation_turn_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("conversation_turns.id")
     )
     status: Mapped[str] = mapped_column(Text, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
@@ -249,6 +371,12 @@ class AnalysisTask(Base):
         ),
         Index("ix_analyses_owner_time", "user_id", "created_at"),
         Index("ix_analysis_session", "session_id", "created_at"),
+        Index(
+            "uq_analysis_conversation_turn",
+            "conversation_turn_id",
+            unique=True,
+            postgresql_where=text("conversation_turn_id IS NOT NULL"),
+        ),
     )
 
 
@@ -521,6 +649,82 @@ class BusinessMemory(Base):
         CheckConstraint("source IN ('model','curator')", name="ck_business_memory_source"),
         UniqueConstraint("dedupe_key", name="business_memory_dedupe_key_key"),
         Index("ix_business_memory_metric", "metric_key", "status"),
+    )
+
+
+class Skill(Base):
+    """A skill identity: who owns it, its slug, whether it participates.
+
+    Builtins have no owner (`owner_user_id IS NULL`) and are read-only for
+    ordinary users; an uploaded skill belongs to exactly one user (enforced by
+    `ck_skills_owner_matches_source`). Enabling is a property of the identity,
+    never of a version, so upgrading or disabling cannot rewrite history.
+    """
+
+    __tablename__ = "skills"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"))
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint("source IN ('builtin','upload')", name="ck_skills_source"),
+        CheckConstraint(
+            "(source = 'builtin' AND owner_user_id IS NULL) OR "
+            "(source = 'upload' AND owner_user_id IS NOT NULL)",
+            name="ck_skills_owner_matches_source",
+        ),
+        UniqueConstraint("owner_user_id", "slug", name="skills_owner_slug_key"),
+        Index(
+            "uq_skills_builtin_slug",
+            "slug",
+            unique=True,
+            postgresql_where=text("owner_user_id IS NULL"),
+        ),
+        Index("ix_skills_owner", "owner_user_id", "enabled"),
+    )
+
+
+class SkillVersion(Base):
+    """One immutable package: manifest, bounded text files and their hash.
+
+    Never updated after insert. `(skill_id, content_hash)` is unique so the same
+    package re-imported returns this row instead of creating a duplicate, and
+    `(skill_id, version)` makes version numbers monotonic per skill.
+    """
+
+    __tablename__ = "skill_versions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("skills.id"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    manifest: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    files: Mapped[list] = mapped_column(JSONB, nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    compatibility: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_skill_versions_version"),
+        UniqueConstraint("skill_id", "version", name="skill_versions_skill_version_key"),
+        UniqueConstraint("skill_id", "content_hash", name="skill_versions_skill_hash_key"),
+        Index("ix_skill_versions_skill", "skill_id", "version"),
     )
 
 

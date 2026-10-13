@@ -23,6 +23,8 @@ EXPECTED_TABLES = {
     "auth_sessions",
     # Beyond the spec's frozen DDL list: the learned business knowledge store.
     "business_memory",
+    # Beyond the spec's frozen DDL list: conversation turns (design 2026-10-13).
+    "conversation_turns",
     "datasets",
     "datasources",
     "execution_capacity",
@@ -39,6 +41,8 @@ EXPECTED_TABLES = {
     "query_results",
     "roles",
     "saved_queries",
+    "skills",
+    "skill_versions",
     "task_events",
     "task_queue",
     "user_roles",
@@ -53,6 +57,10 @@ EXPECTED_CONSTRAINTS = {
     "ck_business_memory_kind",
     "ck_business_memory_status",
     "ck_business_memory_source",
+    "ck_conversation_turn_status",
+    "ck_skills_source",
+    "ck_skills_owner_matches_source",
+    "ck_skill_versions_version",
 }
 
 EXPECTED_INDEXES = {
@@ -74,6 +82,13 @@ EXPECTED_INDEXES = {
     "ix_results_expiry",
     "ix_roles_users",
     "ix_business_memory_metric",
+    "ix_sessions_owner_time",
+    "ix_conversation_turns_session",
+    "uq_conversation_turns_active",
+    "uq_analysis_conversation_turn",
+    "uq_skills_builtin_slug",
+    "ix_skills_owner",
+    "ix_skill_versions_skill",
 }
 
 

@@ -309,12 +309,43 @@ class AnalysisMemoryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 class AgentSessionCreate(StrictModel):
     title: str = Field(min_length=1, max_length=200)
+    skill_config: dict[str, Any] | None = None
 
 
 class AgentSessionResponse(BaseModel):
     id: uuid.UUID
     title: str
     created_at: datetime
+    updated_at: datetime | None = None
+    archived_at: datetime | None = None
+    context_version: int = 0
+    resolved_context: dict[str, Any] = Field(default_factory=dict)
+    skill_config: dict[str, Any] = Field(default_factory=dict)
+    active_turn_id: uuid.UUID | None = None
+
+
+class AgentSessionSummary(BaseModel):
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    archived_at: datetime | None = None
+    context_version: int
+    active_turn_id: uuid.UUID | None = None
+
+
+class AgentSessionListResponse(BaseModel):
+    items: list[AgentSessionSummary]
+    next_cursor: str | None = None
+
+
+class SessionPatch(StrictModel):
+    """Rename, archive or re-bind skills; scope changes go through turns."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    archived: bool | None = None
+    skill_config: dict[str, Any] | None = None
+    expected_context_version: int | None = Field(default=None, ge=0)
 
 
 class AgentMessageResponse(BaseModel):
@@ -322,11 +353,130 @@ class AgentMessageResponse(BaseModel):
     role: str
     content: dict[str, Any]
     created_at: datetime
+    sequence: int = 0
+    turn_id: uuid.UUID | None = None
+    content_schema_version: int = 1
 
 
 class AgentMessageListResponse(BaseModel):
     items: list[AgentMessageResponse]
     next_cursor: str | None = None
+
+
+class TurnScopePatch(StrictModel):
+    """Explicit UI values for this turn (design 6.2); `clear` beats inheritance.
+
+    Completeness is the three-state value the session stores; the bridge to the
+    analysis API's boolean happens server-side (`bridge_data_complete`), so a
+    user's "complete" claim never becomes a verified fact.
+    """
+
+    metric_key: str | None = Field(default=None, min_length=2, max_length=128)
+    baseline_start: date | None = None
+    baseline_end: date | None = None
+    current_start: date | None = None
+    current_end: date | None = None
+    comparison: str | None = Field(default=None, pattern="^(explicit|previous_period|year_over_year)$")
+    dimensions: list[str] | None = Field(default=None, max_length=3)
+    filters: dict[str, str] | None = None
+    data_complete_state: str | None = Field(
+        default=None, pattern="^(unknown|complete|incomplete)$"
+    )
+    clear: list[str] = Field(default_factory=list, max_length=16)
+
+
+class TurnSkillSelection(StrictModel):
+    mode: str = Field(pattern="^(off|manual|auto)$")
+    version_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    reference_paths: list[str] = Field(default_factory=list, max_length=32)
+
+
+class TurnCreate(StrictModel):
+    text: str = Field(min_length=1, max_length=4000)
+    expected_context_version: int | None = Field(default=None, ge=0)
+    parent_analysis_id: uuid.UUID | None = None
+    scope_patch: TurnScopePatch | None = None
+    skill_selection: TurnSkillSelection | None = None
+
+
+class TurnResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    status: str
+    intent: str | None = None
+    user_message_id: uuid.UUID
+    assistant_message_id: uuid.UUID | None = None
+    analysis_id: uuid.UUID | None = None
+    base_context_version: int
+    context_after: dict[str, Any] | None = None
+    skill_snapshot: dict[str, Any] = Field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Skills (design 2026-10-13, section 9)
+# ---------------------------------------------------------------------------
+class SkillVersionSummary(BaseModel):
+    id: uuid.UUID
+    version: int
+    content_hash: str
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    # Current verdict against the live metric registry, plus the verdict the
+    # import recorded (kept so a reader can tell "was applicable then" from
+    # "is applicable now").
+    compatibility: dict[str, Any] = Field(default_factory=dict)
+    compatibility_at_import: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class SkillSummary(BaseModel):
+    id: uuid.UUID
+    slug: str
+    source: str
+    enabled: bool
+    archived_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    latest_version: SkillVersionSummary | None = None
+    version_count: int = 0
+    versions: list[SkillVersionSummary] = Field(default_factory=list)
+
+
+class SkillDetailResponse(SkillSummary):
+    body: str | None = None
+
+
+class SkillListResponse(BaseModel):
+    items: list[SkillSummary]
+
+
+class SkillVersionDetailResponse(SkillVersionSummary):
+    skill_id: uuid.UUID
+    files: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SkillPreviewResponse(BaseModel):
+    name: str
+    description: str
+    content_hash: str
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    compatibility: dict[str, Any] = Field(default_factory=dict)
+    metric_keys: list[str] = Field(default_factory=list)
+    preferred_dimensions: list[str] = Field(default_factory=list)
+    required_inputs: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    body_preview: str = ""
+    body_truncated: bool = False
+    files: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SkillPatch(StrictModel):
+    """Enable, disable or archive; version content is immutable."""
+
+    enabled: bool | None = None
+    archived: bool | None = None
 
 
 class AnalysisContext(StrictModel):

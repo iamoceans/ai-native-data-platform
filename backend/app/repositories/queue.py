@@ -549,6 +549,135 @@ def delete_expired_leases(session: Session, older_than_days: int = 30) -> int:
 INGESTION_LEASE_SECONDS = 1800
 
 
+# ---------------------------------------------------------------------------
+# Conversation turns (design 10.1). The orchestrator only holds a lease while it
+# is doing work: waiting for a clarification answer or for the linked analysis
+# must not occupy a worker, so the claim is released with a delay instead of
+# being renewed.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TurnClaim:
+    queue_id: uuid.UUID
+    turn_id: uuid.UUID
+    worker_id: str
+    fencing_token: int
+    attempt: int
+
+
+def claim_next_turn(
+    session: Session, *, worker_id: str, settings: Settings
+) -> TurnClaim | None:
+    from app.constants import TERMINAL_CONVERSATION_TURN_STATUSES
+    from app.models.orm import ConversationTurn
+
+    queue_row = session.execute(
+        select(TaskQueue)
+        .where(
+            TaskQueue.kind == "conversation",
+            or_(
+                TaskQueue.state == QueueState.READY,
+                (TaskQueue.state == QueueState.LEASED) & (TaskQueue.lease_until < func.now()),
+            ),
+            TaskQueue.available_at <= func.now(),
+        )
+        .order_by(TaskQueue.available_at, TaskQueue.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    ).scalar_one_or_none()
+    if queue_row is None:
+        return None
+    turn = session.execute(
+        select(ConversationTurn).where(ConversationTurn.id == queue_row.resource_id).with_for_update()
+    ).scalar_one_or_none()
+    if turn is None:
+        queue_row.state = QueueState.FAILED
+        session.flush()
+        return None
+    if turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
+        queue_row.state = (
+            QueueState.DONE
+            if turn.status == "COMPLETED"
+            else QueueState.FAILED
+        )
+        session.flush()
+        return None
+    now = utcnow()
+    queue_row.state = QueueState.LEASED
+    queue_row.worker_id = worker_id
+    queue_row.lease_until = now + timedelta(seconds=settings.lease_seconds)
+    queue_row.attempt = int(queue_row.attempt) + 1
+    queue_row.fencing_token = int(queue_row.fencing_token) + 1
+    session.flush()
+    return TurnClaim(
+        queue_id=queue_row.id,
+        turn_id=turn.id,
+        worker_id=worker_id,
+        fencing_token=int(queue_row.fencing_token),
+        attempt=int(queue_row.attempt),
+    )
+
+
+def release_turn_claim(
+    session: Session,
+    claim: TurnClaim,
+    *,
+    terminal: bool = False,
+    failed: bool = False,
+    delay_seconds: int = 1,
+) -> bool:
+    row = session.execute(
+        select(TaskQueue).where(TaskQueue.id == claim.queue_id).with_for_update()
+    ).scalar_one_or_none()
+    if (
+        row is None
+        or row.worker_id != claim.worker_id
+        or int(row.fencing_token) != claim.fencing_token
+    ):
+        return False
+    if terminal:
+        row.state = QueueState.FAILED if failed else QueueState.DONE
+    else:
+        row.state = QueueState.READY
+        row.available_at = func.now() + _seconds(delay_seconds)
+    row.worker_id = None
+    row.lease_until = None
+    session.flush()
+    return True
+
+
+def requeue_stale_turns(session: Session) -> list[uuid.UUID]:
+    """Reconciler: re-queue turns whose orchestrator disappeared mid-lease."""
+    from app.constants import TERMINAL_CONVERSATION_TURN_STATUSES
+    from app.models.orm import ConversationTurn
+
+    rows = list(
+        session.execute(
+            select(TaskQueue)
+            .where(
+                TaskQueue.kind == "conversation",
+                TaskQueue.state == QueueState.LEASED,
+                TaskQueue.lease_until < func.now(),
+            )
+            .with_for_update(skip_locked=True)
+        ).scalars()
+    )
+    requeued: list[uuid.UUID] = []
+    for row in rows:
+        turn = session.get(ConversationTurn, row.resource_id)
+        if turn is None or turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
+            row.state = QueueState.FAILED
+            continue
+        row.state = QueueState.READY
+        row.worker_id = None
+        row.lease_until = None
+        row.available_at = func.now()
+        requeued.append(row.resource_id)
+    session.flush()
+    return requeued
+
+
 def claim_next_ingestion(session: Session, *, worker_id: str):
     from app.models.orm import IngestionTask
 

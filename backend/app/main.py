@@ -14,6 +14,7 @@ from app.api.routes import (
     admin,
     auth,
     charts,
+    conversations,
     datasets,
     datasources,
     health,
@@ -21,6 +22,7 @@ from app.api.routes import (
     metrics,
     queries,
     saved_queries,
+    skills,
 )
 from app.config import get_settings
 from app.constants import SCHEMA_VERSION
@@ -50,6 +52,7 @@ def create_app() -> FastAPI:
             {"name": "queries", "description": "SQL submission, results and events"},
             {"name": "metrics", "description": "Versioned governed metric definitions"},
             {"name": "analyses", "description": "Sessions, analysis tasks, reports and evidence"},
+            {"name": "skills", "description": "Uploadable analysis skills and their versions"},
             {"name": "admin", "description": "Users, roles, grants, audits"},
             {"name": "health", "description": "Liveness and readiness"},
         ],
@@ -89,6 +92,8 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
     app.include_router(saved_queries.router, prefix=prefix)
+    app.include_router(conversations.router, prefix=prefix)
+    app.include_router(skills.router, prefix=prefix)
     app.include_router(analyses.router, prefix=prefix)
     app.include_router(charts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.constants import SCHEMA_VERSION
@@ -72,3 +72,30 @@ def purge_older_than_days(session: Session, days: int) -> int:
     cutoff = utcnow() - timedelta(days=days)
     result = session.execute(delete(TaskEvent).where(TaskEvent.created_at < cutoff))
     return int(result.rowcount or 0)
+
+
+def events_for_resources(
+    session: Session,
+    *,
+    pairs: list[tuple[str, uuid.UUID]],
+    after_id: int,
+    limit: int = 200,
+) -> list[TaskEvent]:
+    """Events for several resources at once (a session's turns and analyses).
+
+    One ordered query keeps the stream's ordering honest: the client merges by
+    event id, and ids are monotonic across resources.
+    """
+    if not pairs:
+        return []
+    return list(
+        session.execute(
+            select(TaskEvent)
+            .where(
+                tuple_(TaskEvent.resource_kind, TaskEvent.resource_id).in_(pairs),
+                TaskEvent.id > after_id,
+            )
+            .order_by(TaskEvent.id)
+            .limit(limit)
+        ).scalars()
+    )

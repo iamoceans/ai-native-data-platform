@@ -273,6 +273,72 @@ def drain_worker(max_cycles: int = 50, worker_id: str | None = None) -> int:
     return processed
 
 
+def run_pending_analyses(max_analyses: int = 5) -> int:
+    """Drive pending analyses to completion the way the agent worker does.
+
+    Each pass: claim one analysis, let it submit its queries, run those queries,
+    then claim again so it can observe and synthesize.
+    """
+    from app.agent import runner as analysis_runner
+    from app.config import get_settings
+    from app.db import session_scope
+    from app.repositories import queue as queue_repo
+
+    settings = get_settings()
+    worker = f"test-aw-{uuid.uuid4().hex[:6]}"
+    completed = 0
+    for _ in range(max_analyses * 4):
+        with session_scope() as session:
+            claim = queue_repo.claim_next_analysis(session, worker_id=worker, settings=settings)
+        if claim is None:
+            break
+        with session_scope() as session:
+            analysis_runner.execute_claim(session, claim=claim, settings=settings)
+        drain_worker()
+        completed += 1
+    return completed
+
+
+def drain_conversations(max_cycles: int = 20, worker_id: str | None = None) -> int:
+    """Run the conversation orchestration synchronously (claim -> execute -> reconcile)."""
+    from app.agent.conversation import orchestrator
+    from app.config import get_settings
+    from app.constants import TERMINAL_CONVERSATION_TURN_STATUSES
+    from app.db import session_scope
+    from app.repositories import conversation as conversation_repo
+    from app.repositories import queue as queue_repo
+
+    settings = get_settings()
+    worker = worker_id or f"test-cw-{uuid.uuid4().hex[:6]}"
+    processed = 0
+    for _ in range(max_cycles):
+        with session_scope() as session:
+            claim = queue_repo.claim_next_turn(session, worker_id=worker, settings=settings)
+        if claim is not None:
+            from app.db import get_session_factory
+
+            status = orchestrator.run_turn(
+                get_session_factory(), turn_id=claim.turn_id, settings=settings
+            )
+            with session_scope() as session:
+                queue_repo.release_turn_claim(
+                    session,
+                    claim,
+                    terminal=status in {str(s) for s in TERMINAL_CONVERSATION_TURN_STATUSES},
+                    failed=status == "FAILED",
+                )
+            processed += 1
+        with session_scope() as session:
+            awaiting = conversation_repo.list_awaiting_analysis(session)
+        for turn_id in awaiting:
+            with session_scope() as session:
+                orchestrator.reconcile_turn(session, turn_id)
+            processed += 1
+        if claim is None and not awaiting:
+            break
+    return processed
+
+
 def wait_for_query(client, query_id: str, timeout: float = 20.0) -> dict:
     import time
 

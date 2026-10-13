@@ -14,10 +14,6 @@ from app.agent.budget import AnalysisBudget
 from app.agent.state import AnalysisStatus, TERMINAL_ANALYSIS_STATUSES
 from app.api.deps import current_auth, get_db, get_settings_dep, get_trace_id, require_csrf
 from app.api.dto import (
-    AgentMessageListResponse,
-    AgentMessageResponse,
-    AgentSessionCreate,
-    AgentSessionResponse,
     AnalysisCreate,
     AnalysisDetail,
     AnalysisListResponse,
@@ -35,6 +31,7 @@ from app.ids import sha256_hex
 from app.models.orm import QueryDependency
 from app.repositories import analyses as analyses_repo
 from app.repositories import audit as audit_repo
+from app.repositories import conversation as conversation_repo
 from app.repositories import datasets as datasets_repo
 from app.repositories import events as events_repo
 from app.repositories import idempotency as idempotency_repo
@@ -47,7 +44,6 @@ from app.results.cursor import decode_list_cursor, encode_list_cursor
 router = APIRouter(tags=["analyses"])
 
 ANALYSES_ROUTE = "GET /analyses"
-MESSAGES_ROUTE = "GET /sessions/messages"
 SSE_POLL_SECONDS = 1.0
 SSE_HEARTBEAT_SECONDS = 15.0
 SSE_MAX_SECONDS = 30 * 60
@@ -97,45 +93,6 @@ def _detail(session: Session, task) -> AnalysisDetail:
     )
 
 
-@router.post("/sessions", response_model=AgentSessionResponse, status_code=201)
-def create_session(
-    payload: AgentSessionCreate,
-    auth: AuthContext = Depends(require_csrf),
-    session: Session = Depends(get_db),
-) -> AgentSessionResponse:
-    if "analysis.create" not in auth.capabilities:
-        raise ApiError(ErrorCode.FORBIDDEN, "analysis capability required")
-    row = analyses_repo.create_session(session, user_id=auth.user.id, title=payload.title)
-    return AgentSessionResponse(id=row.id, title=row.title, created_at=row.created_at)
-
-
-@router.get("/sessions/{session_id}/messages", response_model=AgentMessageListResponse)
-def list_messages(
-    session_id: uuid.UUID,
-    auth: AuthContext = Depends(current_auth),
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings_dep),
-    cursor: str | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-) -> AgentMessageListResponse:
-    _own_session(db, auth, session_id)
-    route = f"{MESSAGES_ROUTE}:{session_id}"
-    offset = decode_list_cursor(settings.resolved_cursor_secret(), cursor, route=route) if cursor else 0
-    rows, total = analyses_repo.list_messages(db, session_id=session_id, limit=limit, offset=offset)
-    next_cursor = (
-        encode_list_cursor(settings.resolved_cursor_secret(), route=route, offset=offset + len(rows))
-        if offset + len(rows) < total
-        else None
-    )
-    return AgentMessageListResponse(
-        items=[
-            AgentMessageResponse(id=row.id, role=row.role, content=row.content, created_at=row.created_at)
-            for row in rows
-        ],
-        next_cursor=next_cursor,
-    )
-
-
 @router.post("/analyses", response_model=AnalysisSubmitResponse, status_code=202)
 def create_analysis(
     payload: AnalysisCreate,
@@ -149,6 +106,15 @@ def create_analysis(
     if "analysis.create" not in auth.capabilities:
         raise ApiError(ErrorCode.FORBIDDEN, "analysis capability required")
     _own_session(session, auth, payload.session_id)
+    # Design 9: the legacy entry point takes part in the same busy protection as
+    # a conversation turn, so it cannot bypass a session's active turn.
+    active_turn = conversation_repo.active_turn(session, payload.session_id)
+    if active_turn is not None:
+        raise ApiError(
+            ErrorCode.SESSION_BUSY,
+            "a conversation turn is active in this session",
+            details={"turn_id": str(active_turn.id), "status": str(active_turn.status)},
+        )
     if payload.parent_id is not None:
         _own_analysis(session, auth, payload.parent_id)
     request_hash = sha256_hex(
@@ -353,10 +319,7 @@ def cancel_analysis(
     session: Session = Depends(get_db),
 ) -> AnalysisDetail:
     task = _own_analysis(session, auth, analysis_id)
-    if task.status not in TERMINAL_ANALYSIS_STATUSES:
-        for query in analyses_repo.list_queries(session, analysis_id):
-            queries_repo.request_cancel(session, query)
-        analyses_repo.set_status(task, AnalysisStatus.CANCELLED)
+    if analyses_repo.cancel_task(session, task):
         events_repo.add_event(
             session,
             resource_kind="analysis",

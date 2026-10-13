@@ -48,6 +48,23 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
             f"metric definitions: {len(definitions)} loaded "
             f"({metric_report['created']} created, {metric_report['updated']} updated)"
         )
+        # Builtin skills are versioned contracts too; they need the administrator
+        # to exist (a version records who published it), so this runs after the
+        # admin block below only when one already exists.
+        if users_repo.get_user_by_username(session, args.admin_username) is not None:
+            from app.skills.frontmatter import SkillError
+            from app.skills.service import sync_builtins
+
+            try:
+                skill_report = sync_builtins(session, settings=settings)
+                print(
+                    f"builtin skills: {skill_report['created']} created, "
+                    f"{skill_report['updated']} new versions, {skill_report['skipped']} unchanged"
+                )
+            except SkillError as exc:
+                # Bootstrap must not fail over an absent metadata directory, but
+                # it must say so: an empty skill library is worth noticing.
+                print(f"builtin skills not loaded: {exc.message}")
 
         username = args.admin_username
         admin = users_repo.get_user_by_username(session, username)
@@ -101,6 +118,25 @@ def cmd_load_metrics(args: argparse.Namespace) -> int:
     with session_scope() as session:
         report = sync_metric_definitions(session, definitions)
     print(f"metrics: {len(definitions)} definitions ({report['created']} new, {report['updated']} updated)")
+    return 0
+
+
+def cmd_load_skills(args: argparse.Namespace) -> int:
+    """Validate and publish the builtin skills from metadata/skills/*.md."""
+    settings = get_settings()
+    from app.skills.frontmatter import SkillError
+    from app.skills.service import sync_builtins
+
+    try:
+        with session_scope() as session:
+            report = sync_builtins(session, settings=settings)
+    except SkillError as exc:
+        print(f"builtin skills not loaded: {exc.message}", file=sys.stderr)
+        return 1
+    print(
+        f"builtin skills: {report['created']} created, {report['updated']} new versions, "
+        f"{report['skipped']} unchanged"
+    )
     return 0
 
 
@@ -200,6 +236,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     load_metrics = sub.add_parser("load-metrics", help="validate and publish metric definitions")
     load_metrics.set_defaults(func=cmd_load_metrics)
+
+    load_skills = sub.add_parser("load-skills", help="validate and publish builtin skills")
+    load_skills.set_defaults(func=cmd_load_skills)
     return parser
 
 

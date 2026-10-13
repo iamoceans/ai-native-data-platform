@@ -106,6 +106,71 @@ class PermissionRequestStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class ConversationTurnStatus(StrEnum):
+    """Lifecycle of one accepted user input in a conversation (design 8.3)."""
+
+    QUEUED = "QUEUED"
+    RESOLVING = "RESOLVING"
+    WAITING_INPUT = "WAITING_INPUT"
+    ANALYZING = "ANALYZING"
+    RESPONDING = "RESPONDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+# WAITING_INPUT is terminal for the turn: the clarification message is committed
+# and the next user message opens a new turn.
+TERMINAL_CONVERSATION_TURN_STATUSES = frozenset(
+    {
+        ConversationTurnStatus.WAITING_INPUT,
+        ConversationTurnStatus.COMPLETED,
+        ConversationTurnStatus.FAILED,
+        ConversationTurnStatus.CANCELLED,
+    }
+)
+
+# At most one turn per session may be in these states (partial unique index).
+ACTIVE_CONVERSATION_TURN_STATUSES = frozenset(
+    {
+        ConversationTurnStatus.QUEUED,
+        ConversationTurnStatus.RESOLVING,
+        ConversationTurnStatus.ANALYZING,
+        ConversationTurnStatus.RESPONDING,
+    }
+)
+
+# Explicit state machine; nothing else may write a turn status.
+CONVERSATION_TURN_TRANSITIONS: dict[
+    ConversationTurnStatus, frozenset[ConversationTurnStatus]
+] = {
+    ConversationTurnStatus.QUEUED: frozenset(
+        {ConversationTurnStatus.RESOLVING, ConversationTurnStatus.FAILED,
+         ConversationTurnStatus.CANCELLED}
+    ),
+    ConversationTurnStatus.RESOLVING: frozenset(
+        {ConversationTurnStatus.WAITING_INPUT, ConversationTurnStatus.ANALYZING,
+         ConversationTurnStatus.RESPONDING, ConversationTurnStatus.FAILED,
+         ConversationTurnStatus.CANCELLED}
+    ),
+    ConversationTurnStatus.ANALYZING: frozenset(
+        {ConversationTurnStatus.RESPONDING, ConversationTurnStatus.FAILED,
+         ConversationTurnStatus.CANCELLED}
+    ),
+    ConversationTurnStatus.RESPONDING: frozenset(
+        {ConversationTurnStatus.COMPLETED, ConversationTurnStatus.FAILED,
+         ConversationTurnStatus.CANCELLED}
+    ),
+}
+
+
+class SkillSource(StrEnum):
+    """Where a skill identity came from (design 8.2)."""
+
+    BUILTIN = "builtin"
+    UPLOAD = "upload"
+
+
 class ErrorCode(StrEnum):
     # auth / policy
     UNAUTHENTICATED = "UNAUTHENTICATED"
@@ -141,6 +206,17 @@ class ErrorCode(StrEnum):
     # metadata
     METADATA_UNAVAILABLE = "METADATA_UNAVAILABLE"
     METADATA_SYNC_NOT_AVAILABLE = "METADATA_SYNC_NOT_AVAILABLE"
+    # agent / conversation
+    LLM_UNAVAILABLE = "LLM_UNAVAILABLE"
+    ANALYSIS_EXECUTION_ERROR = "ANALYSIS_EXECUTION_ERROR"
+    # conversation (design 9)
+    CONVERSATIONAL_DISABLED = "CONVERSATIONAL_DISABLED"
+    SESSION_BUSY = "SESSION_BUSY"
+    CONTEXT_VERSION_CONFLICT = "CONTEXT_VERSION_CONFLICT"
+    # skills (design 9)
+    SKILL_TOO_LARGE = "SKILL_TOO_LARGE"
+    SKILL_INVALID = "SKILL_INVALID"
+    SKILL_UNSUPPORTED = "SKILL_UNSUPPORTED"
     # server
     INTERNAL_ERROR = "INTERNAL_ERROR"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"

@@ -108,6 +108,28 @@ class Settings(BaseSettings):
     agent_max_sql_repairs: int = 2
     agent_max_wall_seconds: int = 180
 
+    # --- conversational Ask (design 2026-10-13, section 14) ---
+    # Off by default: the UI entry point and the new write APIs are both gated,
+    # so a deployment can adopt the conversation layer deliberately.
+    conversational_ask_enabled: bool = False
+    conversation_turn_deadline_seconds: int = 300
+    # Conversation history and skill content share the model input budget
+    # (design 6.4); these cap what may be assembled before the budget applies.
+    conversation_history_messages: int = 12
+    conversation_skill_pool_max: int = 10
+    conversation_skill_content_max_bytes: int = 24 * 1024
+    # Skill package limits (design 7.3).
+    skill_upload_max_bytes: int = 2 * 1024 * 1024
+    skill_expanded_max_bytes: int = 4 * 1024 * 1024
+    skill_file_max_bytes: int = 256 * 1024
+    skill_md_max_bytes: int = 64 * 1024
+    skill_files_max: int = 32
+    skill_path_max_length: int = 200
+    skill_path_max_depth: int = 4
+    skill_compression_ratio_max: int = 100
+    skills_per_user_max: int = 50
+    skill_versions_max: int = 20
+
     # --- sensitive-data policy (spec section 12.3) ---
     # Column names matching this regex cannot be registered as queryable
     # datasets unless they live behind an admin-confirmed secure view.

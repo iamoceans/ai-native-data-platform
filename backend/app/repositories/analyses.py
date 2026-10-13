@@ -16,6 +16,7 @@ from app.models.orm import (
     AnalysisArtifact,
     AnalysisStep,
     AnalysisTask,
+    QueryDependency,
     QueryJob,
 )
 
@@ -31,11 +32,97 @@ def get_session(session: Session, session_id: uuid.UUID) -> AgentSession | None:
     return session.get(AgentSession, session_id)
 
 
+def get_session_for_update(session: Session, session_id: uuid.UUID) -> AgentSession | None:
+    """Lock the session row: message sequence and busy checks allocate under it."""
+    return session.execute(
+        select(AgentSession).where(AgentSession.id == session_id).with_for_update()
+    ).scalar_one_or_none()
+
+
+def list_sessions(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    include_archived: bool,
+    limit: int,
+    offset: int,
+) -> tuple[list[AgentSession], int]:
+    filters = [AgentSession.user_id == user_id]
+    if not include_archived:
+        filters.append(AgentSession.archived_at.is_(None))
+    total = session.execute(
+        select(func.count()).select_from(AgentSession).where(*filters)
+    ).scalar_one()
+    rows = session.execute(
+        select(AgentSession)
+        .where(*filters)
+        .order_by(AgentSession.updated_at.desc(), AgentSession.id)
+        .limit(limit)
+        .offset(offset)
+    ).scalars()
+    return list(rows), int(total)
+
+
+def touch_session(session: Session, row: AgentSession) -> None:
+    row.updated_at = utcnow()
+    session.flush()
+
+
+def update_session_scope(
+    session: Session,
+    row: AgentSession,
+    *,
+    resolved_context: dict[str, Any] | None = None,
+    pending_clarification: dict[str, Any] | None = None,
+    clear_pending_clarification: bool = False,
+    skill_config: dict[str, Any] | None = None,
+) -> None:
+    """Write scope/skill state and bump `context_version` in one place.
+
+    Every scope-changing write goes through here so the version can never drift
+    from the data a client is holding (design 8.3: concurrent version check).
+    """
+    if resolved_context is not None:
+        row.resolved_context = resolved_context
+    if pending_clarification is not None:
+        row.pending_clarification = pending_clarification
+    elif clear_pending_clarification:
+        row.pending_clarification = None
+    if skill_config is not None:
+        row.skill_config = skill_config
+    row.context_version = int(row.context_version) + 1
+    row.updated_at = utcnow()
+    session.flush()
+
+
 def add_message(
-    session: Session, *, session_id: uuid.UUID, role: str, content: dict[str, Any]
+    session: Session,
+    *,
+    session_id: uuid.UUID,
+    role: str,
+    content: dict[str, Any],
+    turn_id: uuid.UUID | None = None,
+    content_schema_version: int = 1,
 ) -> AgentMessage:
+    """Append a message with the next session-scoped sequence number.
+
+    The caller must hold (or this call takes) the session row lock so two
+    concurrent writers cannot allocate the same sequence.
+    """
+    get_session_for_update(session, session_id)
+    next_sequence = session.execute(
+        select(func.coalesce(func.max(AgentMessage.sequence), 0) + 1).where(
+            AgentMessage.session_id == session_id
+        )
+    ).scalar_one()
     row = AgentMessage(
-        id=uuid.uuid4(), session_id=session_id, role=role, content=content
+        id=uuid.uuid4(),
+        session_id=session_id,
+        role=role,
+        content=content,
+        turn_id=turn_id,
+        sequence=int(next_sequence),
+        content_schema_version=content_schema_version,
     )
     session.add(row)
     session.flush()
@@ -45,17 +132,50 @@ def add_message(
 def list_messages(
     session: Session, *, session_id: uuid.UUID, limit: int, offset: int
 ) -> tuple[list[AgentMessage], int]:
+    """Stable order: `(sequence, id)`, which the backfill made gap-free.
+
+    Rows written before migration `c4d9a17e6f20` carry sequence 0 after
+    conversion; `created_at, id` keeps them in their original order.
+    """
     total = session.execute(
         select(func.count()).select_from(AgentMessage).where(AgentMessage.session_id == session_id)
     ).scalar_one()
     rows = session.execute(
         select(AgentMessage)
         .where(AgentMessage.session_id == session_id)
-        .order_by(AgentMessage.created_at, AgentMessage.id)
+        .order_by(AgentMessage.sequence, AgentMessage.created_at, AgentMessage.id)
         .limit(limit)
         .offset(offset)
     ).scalars()
     return list(rows), int(total)
+
+
+def message_content(row: AgentMessage) -> dict[str, Any]:
+    """Read a message through the compatibility layer (design 8.1).
+
+    Messages written before the conversation layer are free-form dicts
+    (`{"question", "analysis_id"}` / `{"analysis_id", "status"}`); the closed
+    message DTOs introduced with it carry `content_schema_version >= 1` and are
+    returned as-is. The conversion never invents content.
+    """
+    content = dict(row.content or {})
+    if int(row.content_schema_version or 0) >= 1:
+        return content
+    if row.role == "user":
+        converted: dict[str, Any] = {"schema_version": 0, "text": content.get("question", "")}
+        if content.get("analysis_id"):
+            converted["analysis_id"] = content["analysis_id"]
+        if content.get("drilldown"):
+            converted["drilldown"] = content["drilldown"]
+        return converted
+    converted = {
+        "schema_version": 0,
+        "kind": "analysis",
+        "analysis_id": content.get("analysis_id"),
+        "status": content.get("status"),
+        "report_available": bool(content.get("report_available")),
+    }
+    return converted
 
 
 def create_analysis(
@@ -68,12 +188,14 @@ def create_analysis(
     parent_id: uuid.UUID | None,
     budget: dict[str, Any],
     policy_revision: int,
+    conversation_turn_id: uuid.UUID | None = None,
 ) -> AnalysisTask:
     row = AnalysisTask(
         id=uuid.uuid4(),
         session_id=session_id,
         user_id=user_id,
         parent_id=parent_id,
+        conversation_turn_id=conversation_turn_id,
         status=AnalysisStatus.CREATED,
         question=question,
         context=context,
@@ -90,6 +212,22 @@ def create_analysis(
 
 def get_analysis(session: Session, analysis_id: uuid.UUID) -> AnalysisTask | None:
     return session.get(AnalysisTask, analysis_id)
+
+
+def cancel_task(session: Session, task: AnalysisTask) -> bool:
+    """Cancel an unfinished analysis the same way the API does.
+
+    Shared by `POST /analyses/{id}/cancel` and the conversation turn cancel so
+    the two paths cannot drift. Returns True when this call changed the status.
+    """
+    from app.repositories import queries as queries_repo
+
+    if task.status in TERMINAL_ANALYSIS_STATUSES:
+        return False
+    for query in list_queries(session, task.id):
+        queries_repo.request_cancel(session, query)
+    set_status(task, AnalysisStatus.CANCELLED)
+    return True
 
 
 def get_analysis_for_update(session: Session, analysis_id: uuid.UUID) -> AnalysisTask | None:
@@ -235,3 +373,55 @@ def list_queries(session: Session, analysis_id: uuid.UUID) -> list[QueryJob]:
         ).scalars()
     )
 
+
+
+def list_dependencies(session: Session, query_ids: list[uuid.UUID]) -> list[QueryDependency]:
+    """Datasets a set of queries touched (used by evidence permission checks)."""
+    if not query_ids:
+        return []
+    return list(
+        session.execute(
+            select(QueryDependency).where(QueryDependency.query_id.in_(query_ids))
+        ).scalars()
+    )
+
+
+def list_session_turn_ids(session: Session, session_id: uuid.UUID) -> list[uuid.UUID]:
+    from app.models.orm import ConversationTurn
+
+    return list(
+        session.execute(
+            select(ConversationTurn.id).where(ConversationTurn.session_id == session_id)
+        ).scalars()
+    )
+
+
+def list_session_analysis_ids(session: Session, session_id: uuid.UUID) -> list[uuid.UUID]:
+    return list(
+        session.execute(
+            select(AnalysisTask.id).where(AnalysisTask.session_id == session_id)
+        ).scalars()
+    )
+
+
+def analysis_dataset_actions_ok(
+    session: Session, *, role_ids: list[uuid.UUID], analysis_id: uuid.UUID
+) -> bool:
+    """Do the roles still hold `query` on every dataset this analysis read?
+
+    Shared by the evidence endpoints, the explanation layer and the conversation
+    transcript: report-derived text must never be served after a revocation
+    (design 11.2/11.3).
+    """
+    from app.constants import DatasetAction
+    from app.repositories import datasets as datasets_repo
+
+    query_ids = [row.id for row in list_queries(session, analysis_id)]
+    if not query_ids:
+        return True
+    for dependency in list_dependencies(session, query_ids):
+        if not datasets_repo.has_dataset_action(
+            session, role_ids, dependency.dataset_id, DatasetAction.QUERY
+        ):
+            return False
+    return True
