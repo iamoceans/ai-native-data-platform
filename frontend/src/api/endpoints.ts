@@ -125,6 +125,7 @@ export interface CreateAnalysisInput {
   currentEnd: string;
   dimensions: string[];
   dataComplete: boolean;
+  filters?: Record<string, string>;
 }
 
 export async function createAnalysis(input: CreateAnalysisInput): Promise<{ analysis_id: string; status: string }> {
@@ -140,7 +141,7 @@ export async function createAnalysis(input: CreateAnalysisInput): Promise<{ anal
         current_start: input.currentStart,
         current_end: input.currentEnd,
         dimensions: input.dimensions,
-        filters: {},
+        filters: input.filters ?? {},
         data_complete: input.dataComplete,
       },
     },
@@ -625,7 +626,12 @@ export async function getSession(sessionId: string): Promise<SessionDetail> {
 
 export async function patchSession(
   sessionId: string,
-  patch: { title?: string; archived?: boolean; skill_config?: Record<string, unknown> },
+  patch: {
+    title?: string;
+    archived?: boolean;
+    skill_config?: Record<string, unknown>;
+    expected_context_version?: number;
+  },
 ): Promise<SessionDetail> {
   return apiFetch<SessionDetail>(`/api/v1/sessions/${sessionId}`, {
     method: "PATCH",

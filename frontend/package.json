@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "npm run gen:api && tsc -b --noEmit",
     "gen:api": "openapi-typescript openapi.json -o src/api/schema.d.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:regression": "playwright test --config=playwright.regression.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "5.102.8",

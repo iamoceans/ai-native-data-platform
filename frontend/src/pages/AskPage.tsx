@@ -15,6 +15,7 @@ import {
   listSessionMessages,
   listSessions,
   listSkills,
+  patchSession,
   type ConversationMessage,
   type SkillSummary,
   type TurnDetail,
@@ -22,6 +23,7 @@ import {
 import { ChartPanel } from "../components/ChartPanel";
 import {
   draftFromContext,
+  parseFilters,
   ScopePanel,
   scopePatchFromDraft,
   SessionList,
@@ -49,13 +51,16 @@ export function AskPage() {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [error, setError] = useState<ApiError | null>(null);
-  const [draft, setDraft] = useState<ScopeDraft | null>(null);
+  const [edits, setEdits] = useState<{ sessionId: string | null; fields: Partial<ScopeDraft> } | null>(null);
+  const [skillsEdited, setSkillsEdited] = useState(false);
   const [skillMode, setSkillMode] = useState<"off" | "manual" | "auto">("auto");
   const [pickedSkills, setPickedSkills] = useState<string[]>([]);
   const [scopeCollapsed, setScopeCollapsed] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const sessionId = routeSessionId ?? null;
+  const currentSessionRef = useRef(sessionId);
+  currentSessionRef.current = sessionId;
 
   const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
   const skills = useQuery({ queryKey: ["skills"], queryFn: () => listSkills(false) });
@@ -104,10 +109,39 @@ export function AskPage() {
     () => draftFromContext(session.data?.resolved_context ?? {}),
     [session.data?.resolved_context],
   );
-  // A fresh draft follows the confirmed scope until the user edits it.
+  // Only user edits are stored. Every untouched field follows the live confirmed
+  // context, including updates that arrive after createTurn has returned.
+  const draft = session.data ? {
+    ...confirmed,
+    ...(edits?.sessionId === sessionId ? edits.fields : {}),
+  } : null;
+  const setDraft = (next: ScopeDraft | null) => {
+    if (!next || !draft) { setEdits(null); return; }
+    const fields = { ...(edits?.sessionId === sessionId ? edits.fields : {}) };
+    for (const key of Object.keys(next) as (keyof ScopeDraft)[]) {
+      if (JSON.stringify(next[key]) === JSON.stringify(draft[key])) continue;
+      if (JSON.stringify(next[key]) === JSON.stringify(confirmed[key])) {
+        delete fields[key];
+      } else {
+        Object.assign(fields, { [key]: next[key] });
+      }
+    }
+    setEdits({ sessionId, fields });
+  };
   useEffect(() => {
-    if (draft === null && session.data) setDraft(confirmed);
-  }, [draft, confirmed, session.data]);
+    setEdits(null);
+    setText("");
+    setError(null);
+    setSkillsEdited(false);
+    setSkillMode("auto");
+    setPickedSkills([]);
+  }, [sessionId]);
+  useEffect(() => {
+    if (!session.data || skillsEdited) return;
+    const config = session.data.skill_config;
+    setSkillMode(config.mode === "manual" || config.mode === "off" ? config.mode : "auto");
+    setPickedSkills(Array.isArray(config.version_ids) ? config.version_ids.filter((id): id is string => typeof id === "string") : []);
+  }, [session.data, skillsEdited]);
 
   const metricOptions = useMemo(
     () =>
@@ -132,9 +166,9 @@ export function AskPage() {
   });
 
   const send = useMutation({
-    mutationFn: () => {
+    mutationFn: (originSessionId: string) => {
       const patch = draft ? scopePatchFromDraft(draft, confirmed) : null;
-      return createTurn(sessionId as string, {
+      return createTurn(originSessionId, {
         text: text.trim(),
         idempotencyKey: crypto.randomUUID(),
         expectedContextVersion: session.data?.context_version,
@@ -142,15 +176,43 @@ export function AskPage() {
         skillSelection: { mode: skillMode, version_ids: pickedSkills },
       });
     },
-    onSuccess: () => {
-      setText("");
-      setError(null);
-      setDraft(null);
-      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
-      queryClient.invalidateQueries({ queryKey: ["session-messages", sessionId] });
+    onSuccess: (_created, originSessionId) => {
+      if (originSessionId === currentSessionRef.current) {
+        setText("");
+        setError(null);
+        setDraft(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ["session", originSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["session-messages", originSessionId] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
-    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
+    onError: (failure, originSessionId) => {
+      if (originSessionId === currentSessionRef.current) {
+        setError(failure instanceof ApiError ? failure : new ApiError(400, "INVALID_SCOPE", failure.message, false, {}));
+      }
+      queryClient.invalidateQueries({ queryKey: ["session", originSessionId] });
+    },
+  });
+
+  const bindSkills = useMutation({
+    mutationFn: (originSessionId: string) => patchSession(originSessionId, {
+      expected_context_version: session.data?.context_version,
+      skill_config: { mode: skillMode, version_ids: pickedSkills },
+    }),
+    onSuccess: (updated, originSessionId) => {
+      queryClient.setQueryData(["session", updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      if (originSessionId === currentSessionRef.current) {
+        setSkillsEdited(false);
+        setError(null);
+      }
+    },
+    onError: (failure, originSessionId) => {
+      if (originSessionId === currentSessionRef.current) {
+        setError(failure instanceof ApiError ? failure : null);
+      }
+      queryClient.invalidateQueries({ queryKey: ["session", originSessionId] });
+    },
   });
 
   const stop = useMutation({
@@ -176,6 +238,7 @@ export function AskPage() {
         currentStart: scope.currentStart,
         currentEnd: scope.currentEnd,
         dimensions: scope.dimensions,
+        filters: parseFilters(scope.filterText),
         dataComplete: scope.dataCompleteState === "complete",
       });
     },
@@ -183,7 +246,7 @@ export function AskPage() {
     onError: (failure) => setError(failure instanceof ApiError ? failure : null),
   });
 
-  const disabledFallback = send.error instanceof ApiError && send.error.code === "CONVERSATIONAL_DISABLED";
+  const disabledFallback = send.variables === sessionId && send.error instanceof ApiError && send.error.code === "CONVERSATIONAL_DISABLED";
   useEffect(() => {
     if (disabledFallback && !legacySubmit.isPending && !legacySubmit.isSuccess) {
       legacySubmit.mutate();
@@ -191,11 +254,11 @@ export function AskPage() {
   }, [disabledFallback, legacySubmit]);
 
   const onSend = () => {
-    if (!text.trim() || !sessionId) return;
-    send.mutate();
+    if (!text.trim() || !sessionId || !session.data || activeTurnId || send.isPending || bindSkills.isPending) return;
+    send.mutate(sessionId);
   };
 
-  const busy = Boolean(activeTurnId) || send.isPending;
+  const busy = Boolean(activeTurnId) || send.isPending || bindSkills.isPending;
   const turn = activeTurn.data ?? null;
 
   return (
@@ -297,7 +360,7 @@ export function AskPage() {
             }
             metrics={metricOptions}
             onChange={setDraft}
-            onReset={() => setDraft(confirmed)}
+            onReset={() => setEdits(null)}
             collapsed={scopeCollapsed}
             onToggle={() => setScopeCollapsed((value) => !value)}
           />
@@ -307,10 +370,12 @@ export function AskPage() {
           mode={skillMode}
           selected={pickedSkills}
           onModeChange={(mode) => {
+            setSkillsEdited(true);
             setSkillMode(mode);
-            if (mode !== "manual") setPickedSkills([]);
           }}
-          onSelectedChange={setPickedSkills}
+          onSelectedChange={(ids) => { setSkillsEdited(true); setPickedSkills(ids); }}
+          onBind={() => { if (sessionId) bindSkills.mutate(sessionId); }}
+          busy={busy || !session.data}
         />
         {draft?.metricKey ? <MemoryPanel metricKey={draft.metricKey} /> : null}
       </div>

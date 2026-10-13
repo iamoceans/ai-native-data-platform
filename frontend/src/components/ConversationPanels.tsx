@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { SessionSummary, SkillSummary, TurnScopePatch } from "../api/endpoints";
 
 /** Left column: the user's conversations, newest first. */
@@ -56,6 +57,7 @@ export interface ScopeDraft {
   currentEnd: string;
   dimensions: string[];
   filters: Record<string, string>;
+  filterText: string;
   dataCompleteState: string;
 }
 
@@ -77,6 +79,8 @@ export function ScopePanel({
   collapsed: boolean;
   onToggle: () => void;
 }) {
+  const [filterError, setFilterError] = useState<string | null>(null);
+  useEffect(() => setFilterError(null), [draft.filterText]);
   const metric = metrics.find((item) => item.key === draft.metricKey);
   const allowed = metric?.dimensions ?? [];
   return (
@@ -90,7 +94,7 @@ export function ScopePanel({
       {collapsed ? (
         <p className="muted small" data-testid="scope-summary">
           {draft.metricKey || "未选指标"} · {draft.currentStart || "?"} → {draft.currentEnd || "?"}
-          {Object.entries(draft.filters).map(([key, value]) => ` · ${key}=${value}`).join("")}
+          {draft.filterText ? ` · ${draft.filterText}` : ""}
         </p>
       ) : (
         <div className="stack">
@@ -170,12 +174,20 @@ export function ScopePanel({
             <input
               placeholder="platform=android（留空表示清除）"
               data-testid="scope-filters"
-              value={Object.entries(draft.filters)
-                .map(([key, value]) => `${key}=${value}`)
-                .join(",")}
-              onChange={(event) => onChange({ ...draft, filters: parseFilters(event.target.value) })}
+              value={draft.filterText}
+              aria-invalid={Boolean(filterError)}
+              onChange={(event) => onChange({ ...draft, filterText: event.target.value })}
+              onBlur={() => {
+                try {
+                  parseFilters(draft.filterText);
+                  setFilterError(null);
+                } catch (failure) {
+                  setFilterError((failure as Error).message);
+                }
+              }}
             />
           </div>
+          {filterError ? <p className="notice error" role="alert">{filterError}</p> : null}
           <div className="form-row">
             <span>完整性</span>
             <select
@@ -210,14 +222,20 @@ function OriginTag({ origin }: { origin?: string }) {
 }
 
 export function parseFilters(value: string): Record<string, string> {
-  const filters: Record<string, string> = {};
-  for (const part of value.split(",")) {
-    const [key, raw] = part.split("=");
-    if (key && key.trim() && raw !== undefined && raw.trim()) {
-      filters[key.trim()] = raw.trim();
+  if (!value.trim()) return {};
+  const entries = value.split(",").map((part) => {
+    const separator = part.indexOf("=");
+    const key = part.slice(0, separator).trim();
+    const raw = part.slice(separator + 1).trim();
+    if (separator < 1 || !key || !raw || raw.includes("=")) {
+      throw new Error("筛选格式应为 key=value，多个条件用逗号分隔；留空表示清除。");
     }
+    return [key, raw] as const;
+  });
+  if (new Set(entries.map(([key]) => key)).size !== entries.length) {
+    throw new Error("筛选条件不能重复指定同一个字段。");
   }
-  return filters;
+  return Object.fromEntries(entries);
 }
 
 /** Skill picker: the session's mode plus a per-turn manual selection (max 3). */
@@ -227,12 +245,16 @@ export function SkillPicker({
   selected,
   onModeChange,
   onSelectedChange,
+  onBind,
+  busy,
 }: {
   skills: SkillSummary[];
   mode: "off" | "manual" | "auto";
   selected: string[];
   onModeChange: (mode: "off" | "manual" | "auto") => void;
   onSelectedChange: (versionIds: string[]) => void;
+  onBind: () => void;
+  busy: boolean;
 }) {
   return (
     <section className="conversation-panel" aria-label="技能">
@@ -241,6 +263,7 @@ export function SkillPicker({
         <select
           data-testid="skill-mode"
           value={mode}
+          disabled={busy}
           onChange={(event) => onModeChange(event.target.value as "off" | "manual" | "auto")}
         >
           <option value="auto">自动匹配</option>
@@ -248,20 +271,23 @@ export function SkillPicker({
           <option value="off">不使用</option>
         </select>
       </div>
-      {mode === "manual" ? (
+      {mode !== "off" ? (
         <ul className="skill-list compact" data-testid="skill-picker">
           {skills
-            .filter((skill) => skill.enabled && skill.source === "builtin")
-            .map((skill) => {
-              const versionId = skill.latest_version?.id ?? "";
+            .filter((skill) => skill.enabled && !skill.archived_at)
+            .flatMap((skill) => (skill.versions.length
+              ? skill.versions
+              : skill.latest_version ? [skill.latest_version] : []).map((version) => {
+              const versionId = version.id;
               const checked = selected.includes(versionId);
               return (
-                <li key={skill.id}>
+                <li key={versionId}>
                   <label className="chip">
                     <input
                       type="checkbox"
-                      data-testid={`skill-pick-${skill.slug}`}
+                      data-testid={`skill-pick-${versionId}`}
                       checked={checked}
+                      disabled={busy || (!checked && selected.length >= 3)}
                       onChange={(event) =>
                         onSelectedChange(
                           event.target.checked
@@ -271,18 +297,24 @@ export function SkillPicker({
                       }
                     />
                     {skill.slug}
-                    <span className="muted small"> v{skill.latest_version?.version ?? "?"}</span>
+                    <span className="muted small"> v{version.version}{skill.source === "upload" ? " · 自建" : ""}</span>
                   </label>
                 </li>
               );
-            })}
-          <li className="muted small">最多选择 3 个版本；自建技能请先在 Skills 页启用。</li>
+            }))}
+          <li className="muted small">最多选择 3 个固定版本；新版本不会自动替换已绑定版本。</li>
         </ul>
       ) : (
         <p className="muted small">
-          {mode === "auto" ? "按范围自动匹配内置技能。" : "本轮不加载任何技能。"}
+          本轮不加载任何技能。
         </p>
       )}
+      {mode !== "off" ? <p className="muted small">{mode === "auto"
+        ? "自动匹配内置技能及已保存到本会话的自建版本。选择后点击保存，让自建技能进入后续匹配。"
+        : "所选版本直接用于本轮；保存后可在后续对话继续使用。"}</p> : null}
+      <button type="button" className="ghost small" data-testid="skill-bind" disabled={busy} onClick={onBind}>
+        保存到本会话
+      </button>
     </section>
   );
 }
@@ -290,6 +322,7 @@ export function SkillPicker({
 /** The per-turn patch: only fields the user actually changed are sent. */
 export function scopePatchFromDraft(draft: ScopeDraft, baseline: ScopeDraft): TurnScopePatch | null {
   const patch: TurnScopePatch = {};
+  const filters = parseFilters(draft.filterText);
   if (draft.metricKey && draft.metricKey !== baseline.metricKey) patch.metric_key = draft.metricKey;
   for (const field of ["baselineStart", "baselineEnd", "currentStart", "currentEnd"] as const) {
     const key = field.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`) as
@@ -303,11 +336,10 @@ export function scopePatchFromDraft(draft: ScopeDraft, baseline: ScopeDraft): Tu
     patch.dimensions = draft.dimensions;
   }
   const filtersChanged =
-    JSON.stringify(draft.filters) !== JSON.stringify(baseline.filters) ||
-    Object.keys(draft.filters).length === 0;
+    JSON.stringify(filters) !== JSON.stringify(baseline.filters);
   if (filtersChanged) {
-    patch.filters = draft.filters;
-    if (Object.keys(draft.filters).length === 0 && Object.keys(baseline.filters).length > 0) {
+    patch.filters = filters;
+    if (Object.keys(filters).length === 0 && Object.keys(baseline.filters).length > 0) {
       patch.clear = ["filters"];
     }
   }
@@ -327,6 +359,7 @@ export function draftFromContext(context: Record<string, unknown>): ScopeDraft {
     currentEnd: String(context.current_end ?? ""),
     dimensions: Array.isArray(context.dimensions) ? (context.dimensions as string[]) : [],
     filters: (context.filters as Record<string, string>) ?? {},
+    filterText: Object.entries((context.filters as Record<string, string>) ?? {}).map(([key, value]) => `${key}=${value}`).join(","),
     dataCompleteState: String(context.data_complete_state ?? "unknown"),
   };
 }
