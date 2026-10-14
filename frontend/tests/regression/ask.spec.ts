@@ -246,3 +246,28 @@ test('disabled fallback retains the sent scope while the user edits pending scop
  expect(analyses[0].context.filters).toEqual({platform:'android'});
  expect(analyses[0].context.baseline_start).toBe('2026-09-01');
 });
+
+test('keeps skill chips and their checkboxes on one row', async ({page}) => {
+ await fixture(page);
+ // A chip is a <label>; the global column default used to stack its checkbox
+ // above the skill name, leaving a tall pill with a floating box.
+ const chips = await page.locator('.conversation-side .chip').evaluateAll(nodes => nodes.map(el => {
+  const box = el.getBoundingClientRect();
+  const input = el.querySelector('input')!.getBoundingClientRect();
+  return {
+   direction: getComputedStyle(el).flexDirection,
+   height: +box.height.toFixed(1),
+   offset: +Math.abs((input.top + input.height / 2) - (box.top + box.height / 2)).toFixed(1),
+  };
+ }));
+ expect(chips.length).toBeGreaterThan(0);
+ for (const chip of chips) {
+  expect(chip.direction).toBe('row');
+  expect(chip.height).toBeLessThan(30);
+  expect(chip.offset).toBeLessThan(3);
+ }
+ // Both chip kinds are on screen: scope dimensions and picked skill versions.
+ const labels = await page.locator('.conversation-side .chip').allInnerTexts();
+ expect(labels.some(text => text.includes('platform'))).toBe(true);
+ expect(labels.some(text => text.includes('v1'))).toBe(true);
+});

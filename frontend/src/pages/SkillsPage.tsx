@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   createSkill,
@@ -74,17 +74,17 @@ export function SkillsPage() {
     onError: (failure) => setError(failure instanceof ApiError ? failure : null),
   });
 
-  const onPick = (candidate: File | null) => {
+  const onPick = (candidate: File) => {
     setFile(candidate);
     setPreview(null);
     setError(null);
     setNotice(null);
-    if (candidate) runPreview.mutate(candidate);
+    runPreview.mutate(candidate);
   };
 
   return (
     <PermissionGate capability="analysis.create">
-      <div className="page">
+      <div className="skills">
         <header className="page-head">
           <h1>Skills</h1>
           <p className="muted">
@@ -99,12 +99,23 @@ export function SkillsPage() {
             <span className="muted">先预览校验结果，再确认保存</span>
           </div>
           <div className="form-row">
-            <input
-              type="file"
-              accept=".md,.zip"
-              data-testid="skill-file"
-              onChange={(event) => onPick(event.target.files?.[0] ?? null)}
-            />
+            <div className="file-pick">
+              <FileButton
+                label="选择文件"
+                accept=".md,.zip"
+                className="ghost"
+                buttonTestId="skill-pick-file"
+                inputTestId="skill-file"
+                onPick={onPick}
+              />
+              <span
+                className={file ? "file-name picked" : "file-name"}
+                title={file?.name}
+                data-testid="skill-file-name"
+              >
+                {file ? file.name : "未选择文件"}
+              </span>
+            </div>
             <button
               type="button"
               className="primary"
@@ -225,6 +236,57 @@ export function SkillsPage() {
   );
 }
 
+/**
+ * A file picker drawn with the workspace's own controls: the native
+ * `<input type="file">` stays hidden and a real button opens it, so the visible
+ * control is the shared button style instead of the browser's own chrome.
+ */
+function FileButton({
+  label,
+  accept,
+  className,
+  buttonTestId,
+  inputTestId,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  accept: string;
+  className: string;
+  buttonTestId: string;
+  inputTestId: string;
+  disabled?: boolean;
+  onPick: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        hidden
+        data-testid={inputTestId}
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          // Clear the selection so picking the same file again still fires.
+          event.target.value = "";
+          if (picked) onPick(picked);
+        }}
+      />
+      <button
+        type="button"
+        className={className}
+        data-testid={buttonTestId}
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+      >
+        {label}
+      </button>
+    </>
+  );
+}
+
 function SkillRow({
   skill,
   busy,
@@ -286,18 +348,15 @@ function SkillRow({
             >
               {skill.archived_at ? "恢复" : "归档"}
             </button>
-            <label className="ghost small" data-testid={`skill-new-version-${skill.slug}`}>
-              新版本
-              <input
-                type="file"
-                accept=".md,.zip"
-                hidden
-                onChange={(event) => {
-                  const picked = event.target.files?.[0];
-                  if (picked) onNewVersion(picked);
-                }}
-              />
-            </label>
+            <FileButton
+              label="新版本"
+              accept=".md,.zip"
+              className="ghost small"
+              buttonTestId={`skill-new-version-${skill.slug}`}
+              inputTestId={`skill-new-version-input-${skill.slug}`}
+              disabled={busy}
+              onPick={onNewVersion}
+            />
           </>
         ) : (
           <span className="muted">内置技能由仓库维护，只读</span>

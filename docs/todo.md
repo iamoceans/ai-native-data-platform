@@ -48,6 +48,70 @@ See the medium-defects section in `docs/acceptance.md`.
 
 See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0.
 
+## 2026-10-15 UI control consistency (Skills page, shared label styles, charts)
+
+- [x] The upload row no longer renders the browser's native file control: the
+      input is hidden and a real button opens it, with the picked file name shown
+      next to it. The per-skill 新版本 action is a real button (keyboard
+      reachable, same computed style as 停用 / 归档) instead of an unstyled
+      `<label class="ghost small">`.
+- [x] 显示已归档 keeps its checkbox and text on one line; the `dl.kv` preview
+      facts and `header.page-head` have rules instead of browser defaults; the
+      page no longer nests two `.page` containers (it was 40px narrower than
+      every other page); a wrapped column `.form-row` no longer sizes its
+      children to max-content (at 390px the row hung past the card border).
+- [x] The Ask page's 技能 chips (and the scope dimension chips) rendered as tall
+      pills with a floating checkbox: `.chip` set `display` / `align-items` but
+      not `flex-direction`, so the global `label { flex-direction: column }`
+      applied. The same leak hit `.check` (admin role pickers) and
+      `.inline-label` (admin status filter); all four classes are now listed in
+      one rule that keeps inline labels on one row.
+- [x] The contribution chart no longer paints its value over the next column: a
+      bar is a length on a full-width track and the signed value is text beside
+      it (live probe before: a 21px bar holding 159px of text inside a 15px
+      column). Values display with two decimals and the exact Decimal on hover;
+      shares display as a percentage instead of a 14-digit fraction; the table
+      view carries the same formatting plus the exact values; negative bars use
+      the declared `--bad` token instead of an undeclared `--danger`.
+- [x] The chart reports the points its bounded read window leaves out: the live
+      analysis holds 576 groups, the client fetched 200, and the panel used to
+      show 200 rows under a 共 576 点 footer with no notice. It now warns
+      (`另有 376 个未显示`) and the footer reads 图表 200 / 共 576 点.
+- [x] Ten mocked browser cases added (4 `skills.spec.ts`, 1 `ask.spec.ts`,
+      6 `chart.spec.ts`). On this host the suite now runs to completion -
+      **29 passed**, against 18 passed before this work - which supersedes the
+      earlier stalled attempts for this suite. The chip case was run against the
+      unfixed stylesheet and fails there (`column` received), and the chart
+      cases address markup that did not exist before the change, so they cannot
+      pass unfixed by construction. Frontend typecheck and production build
+      exit 0.
+- [x] Deployed and re-checked live on 2026-10-15 (three rebuilds, `up -d
+      --no-deps frontend` each time, backend and workers untouched): the Skills
+      page renders with its four real skills and previews
+      `metadata/skills/channel-contribution.md` as `SKILL.md` (a wrongly named
+      single file still shows `SKILL_UNSUPPORTED`); the 技能 chip measured
+      176x25 row after the fix against 136x69 column before it; on
+      `/admin/permissions` the `.check` pickers (19px) and `.inline-label`
+      filter (34px) are on one row; the 576-point chart renders 200 rows with no
+      overflow and states the 376 it left out. Nothing was saved or submitted.
+- [ ] Open, product decision: the chart still renders up to 200 two-line rows
+      inside a chat message. A top-N cap (top 10-20 by absolute change, with the
+      existing notice) would read better but changes what the panel shows.
+- [ ] Not verified: engine matrix, A09 and the deployed Playwright journeys were
+      not run for this frontend-only change; the deployed image was built from
+      built from the working copy before this change was committed.
+- [ ] Pre-existing, found by the live narrow-width probe and not fixed: the top
+      navigation cannot wrap, so at a 390px viewport every page scrolls sideways
+      by ~190px (7 links, 560px min-content width). One-line fix if wanted.
+- [ ] Left as-is - class names with no rule in `styles.css`:
+      `AdminDatasourcesPage.tsx` asks for `class="mono small"` while only
+      `.mono-id` is defined; `ResultTable.tsx`'s `.result-wrap` / `.col-name` and
+      `.message.assistant` are unstyled.
+
+See `docs/acceptance.md`, "2026-10-15 Shared control styles: native file input
+and leaking label default" and "2026-10-15 Chart panel: values, precision and
+the hidden read window".
+
 ## 2026-10-14 code-review fixes
 
 - [x] Analysis failure handling imports the error enum and publishes failure plus

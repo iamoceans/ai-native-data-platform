@@ -143,7 +143,8 @@ a:hover {
 }
 
 .workspace,
-.catalog {
+.catalog,
+.skills {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -181,6 +182,16 @@ label.inline {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+/* A <label> that wraps its own control (a checkbox chip, an inline filter) is
+   not a stacked field: the column default above would put the control on its
+   own line. Any new inline label has to be listed here. */
+label.check,
+label.chip,
+label.inline-check,
+label.inline-label {
+  flex-direction: row;
 }
 
 .grow {
@@ -453,6 +464,9 @@ button.ghost:hover:not(:disabled) {
 
   .form-row {
     flex-direction: column;
+    /* In column direction a wrapping row sizes items to their max-content
+       width, which overflows the card; nowrap keeps them inside it. */
+    flex-wrap: nowrap;
     align-items: stretch;
   }
 }
@@ -512,19 +526,22 @@ button.ghost:hover:not(:disabled) {
   .period-grid { grid-template-columns: 1fr 1fr; }
 }
 
-/* ChartSpec panel (M6): bars carry a sign and a value, never colour alone. */
+/* ChartSpec panel (M6): the bar is a length and the signed value is text beside
+   it, so a narrow panel cannot push the label out of the bar it belongs to.
+   Every row shares one full-width track, which also makes the lengths
+   comparable. */
 .chart-bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.chart-bars li { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) auto auto; align-items: center; gap: 10px; }
-.chart-label { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.chart-bar { display: inline-block; padding: 4px 8px; border-radius: 4px; color: var(--text); background: var(--accent-soft); border: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.chart-bar.negative { border-left: 4px solid var(--danger, #b42318); }
-.chart-bar.positive { border-left: 4px solid var(--accent); }
+.chart-bars li { display: grid; gap: 5px; }
+.chart-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.chart-label { flex: 1 1 auto; min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.chart-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart-share { white-space: nowrap; }
+.chart-bar { display: block; height: 12px; border-radius: 3px; background: var(--accent-soft); border: 1px solid var(--border); border-left-width: 4px; }
+.chart-bar.positive { border-left-color: var(--accent); }
+.chart-bar.negative { background: var(--bad-soft); border-left-color: var(--bad); }
 .chart-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .chart-table th, .chart-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 button.ghost.small { padding: 2px 8px; font-size: 13px; }
-@media (max-width: 720px) {
-  .chart-bars li { grid-template-columns: 1fr; }
-}
 
 /* Administration screens (M6): tables stay readable at 1440px and stack on mobile. */
 .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -558,6 +575,14 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
 .memory-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 
 /* ---- skills ---- */
+/* Standalone page header: a title above the cards, one sentence under it. */
+.page-head { display: grid; gap: 6px; }
+.page-head h1 { font-size: 20px; }
+.page-head p { margin: 0; }
+/* Preview facts: label column plus value column, no browser default indent. */
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; align-items: baseline; }
+.kv dt { font-size: 12px; color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; font-size: 13px; }
 .skill-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .skill-row { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .skill-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -567,7 +592,12 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
   background: var(--bg); font-size: 13px; line-height: 1.7; white-space: pre-wrap;
   max-height: 260px; overflow: auto;
 }
-.inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.inline-check { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+/* The picked file name stands in for the native file input's own text. */
+.file-pick { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.file-pick button { flex: none; white-space: nowrap; }
+.file-name { min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.file-name.picked { color: var(--text); font-family: "SFMono-Regular", ui-monospace, "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace; }
 .notice.ok { border-left: 4px solid var(--ok); background: var(--ok-soft); }
 
 /* ---- conversation (Askdata) ---- */

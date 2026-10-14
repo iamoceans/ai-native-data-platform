@@ -1204,3 +1204,193 @@ transport, but a live Spark operation/cancel race and independent-transport
 authorization were not reproduced. Spark code is unchanged. No deployment or
 commit was performed. The proxy-header launch flag takes effect when the updated
 image is built/run (native launchers must supply it explicitly).
+
+## 2026-10-15 Shared control styles: native file input and leaking label default
+
+Two related defects were found on the running platform and fixed together.
+
+The Skills page was the one screen whose controls came from the browser instead
+of the workspace stylesheet. Rendered and inspected with a mocked API
+(headless Chromium via the installed Edge build, 1440px and 390px), before the
+fix:
+
+- the upload row rendered the native `<input type="file">` - a browser-drawn
+  选择文件 / 未选择文件 control with its own OS chrome - next to the styled
+  buttons;
+- each row's 新版本 was a `<label class="ghost small">`, and the stylesheet only
+  matches `button.ghost`, so it rendered as plain muted text beside the bordered
+  停用 / 归档 buttons and was not keyboard reachable (its input is `hidden`);
+- 显示已归档 stacked its checkbox above its text: `.inline-check` set `display`
+  and `align-items` but not `flex-direction`, so the global
+  `label { flex-direction: column }` still applied;
+- `dl.kv` (preview facts) and `header.page-head` had no rules at all, so the
+  definition list kept the UA's 40px indent and the page title rendered at the
+  same 16px as the in-card headings;
+- the page nested two `.page` containers (the shell's `main.page` plus its own),
+  leaving every card 40px narrower and offset relative to all other pages;
+- at 390px the wrapped column `.form-row` sized both children to their
+  max-content width (probe: 328px row inside a 276px content box), so the upload
+  row hung ~52px past the card border;
+- on the Ask page the 技能 panel's skill chips stacked their checkbox above the
+  name (live probe: 136x69px with `flex-direction: column`, i.e. a tall pill
+  with a floating box, instead of a 176x25px pill). `.chip` set `display`,
+  `align-items` and `gap` but not `flex-direction`, so the global
+  `label { flex-direction: column }` applied. The same leak hit every other
+  `<label>`-based inline control: the scope panel's dimension chips, and the
+  administration screens' `.check` role/group pickers and `.inline-label`
+  filters (`.inline` and, now, `.inline-check` were the only ones that reset it).
+
+Changed: `frontend/src/pages/SkillsPage.tsx` (hidden input plus a real button
+through a local `FileButton`; the picked file name shown in the shared mono
+style; 新版本 is a real button, disabled while another action is in flight; the
+page container is `.skills`), `frontend/src/styles.css` (`.file-pick`,
+`.file-name`, `.page-head`, `.kv`, `.inline-check` direction,
+`.form-row { flex-wrap: nowrap }` in the column branch, and one rule listing the
+inline label classes - `label.check`, `label.chip`, `label.inline-check`,
+`label.inline-label` - that must stay on one row). Picking the same file twice
+now re-runs validation in both places (`event.target.value = ""` after reading
+the file).
+
+Observed checks:
+
+- `cd frontend; npx playwright test --config=playwright.regression.config.ts`
+  -> **23 passed** (18 pre-existing, 4 new in `tests/regression/skills.spec.ts`,
+  1 new in `tests/regression/ask.spec.ts`). Output:
+  `runtime/skills-ui-regression-20261015.txt`. The new Skills cases assert: no
+  non-hidden `input[type=file]` on the page; the picker button plus file-name
+  display; re-picking the same file re-validating; 停用 / 归档 / 新版本 sharing
+  one computed border, background and padding; focus + Enter opening the picker
+  and creating a version; `.kv` label and value on one row; 显示已归档 on one
+  line; and at 390px the row inside the card's content box with no sideways
+  scroll of the `main` container. The new Ask case measures every
+  `.conversation-side .chip` (scope dimension and skill version chips): row
+  direction, under 30px tall, checkbox vertically centred. That case was run
+  against the unfixed stylesheet and fails there (`column` received), so it
+  guards the fix rather than the current rendering; the Skills cases address
+  testids (`skill-pick-file`, `skill-file-name`) that did not exist before the
+  change, so they cannot pass unfixed by construction.
+- `cd frontend; npm run test:unit` -> **7 passed**.
+- `cd frontend; npm run typecheck` -> **exit 0** (regenerated
+  `src/api/schema.d.ts`); `npm run build` -> **exit 0**, 90 modules,
+  `dist/assets/index-DscJurKw.css` 14.36 kB.
+- Rendered states inspected: 1440px and 390px, empty and picked-file, preview
+  open.
+
+Live deployment checks (same day, twice - once per fix): the frontend image was
+rebuilt from this working tree and only the frontend container was recreated
+(`docker compose -f compose.yaml -f compose.dev.yaml --profile full build
+frontend`, then `up -d --no-deps frontend`, compose project `ainative`), so the
+backend and both workers kept running. After the first rebuild the served
+`index.html` referenced `assets/index-DscJurKw.css` and
+`assets/index-DT32nYP0.js`; that CSS carried `.file-pick`, `.file-name`,
+`.page-head`, `.kv` and `.form-row{flex-flow:column;align-items:stretch}` (the
+minifier folds `flex-direction: column` plus `flex-wrap: nowrap` into
+`flex-flow`), and the bundle carried the new `未选择文件` placeholder. A browser
+run against the live stack (`E2E_BASE_URL=http://127.0.0.1:3000`, sign-in through
+the suite's global setup) rendered the page with its four real skills: the picker
+button, the placeholder, the three per-row buttons sharing one style, and the
+显示已归档 checkbox on one line. Picking
+`metadata/skills/channel-contribution.md` as `SKILL.md` returned a real preview
+(名称 / 说明 / 适用性 / 内容哈希 / 文件 in the two-column layout, body preview,
+保存为新技能 enabled); the same file named `channel-contribution.md` was rejected
+by the real validator with `SKILL_UNSUPPORTED` ("a single-file skill must be
+named SKILL.md") and that error rendered in the notice. The preview path is
+read-only - nothing was saved.
+
+The second live probe opened an existing session on `/ask` (no session was
+created and no scope was submitted): the 技能 panel's first chip measured
+`136x69` with `flex-direction: column`, checkbox top-left and the skill name
+below it. After the second rebuild the same probe returned `176x25` with
+`flex-direction: row`, and the served CSS carried
+`label.check,label.chip,label.inline-check,label.inline-label{flex-direction:row}`
+(new asset hash `index-D2SnToFv.css`).
+
+A narrow-width probe of the live stack found one pre-existing shell defect the
+mocked suite cannot see: `.nav` (`display: flex`, no wrap) cannot shrink below
+the min-content width of its 7 links, so at a 390px viewport every page scrolls
+sideways by ~190px (`NAV.nav right=580`; `/sql` and the admin pages behave the
+same). It is unrelated to this change, was left unfixed and is listed in
+`docs/todo.md`. Because the mocked shell only has the 5-link visitor navigation,
+the narrow regression asserts the `main` container rather than the document.
+
+Not verified here: no PostgreSQL/MySQL/Doris/DataHub matrix, no A09 and no
+deployed journey were run - the change touches no API, worker or SQL code. The
+deployed image carries this tree's content (it was built from the working copy
+before this change was committed). The administration screens were probed live
+for the same corrections (read-only visits, no form submitted): on
+`/admin/permissions` every `.check` role picker
+rendered 19px tall with the checkbox centred and the `.inline-label` status
+filter 34px tall - the height of the `<select>` it wraps - all with
+`flex-direction: row`; `/admin/datasources` and `/catalog` expose no
+label-based inline control (their `.chip` and `mono small` classes sit on spans
+and cells). The admin pages' column `.form-row` branch was not exercised, as
+none of these visits hit a narrow viewport. Class names with no rule remain in
+`AdminDatasourcesPage.tsx` (`mono small`, only `.mono-id` exists) and
+`ResultTable.tsx` (`.result-wrap`, `.col-name`) plus `.message.assistant`; they
+were left unchanged and are listed in `docs/todo.md`.
+
+## 2026-10-15 Chart panel: values, precision and the hidden read window
+
+The contribution chart inside an Ask conversation rendered as overlapping text.
+Measured on the live stack before the fix (panel 524px wide, conversation
+message):
+
+- each row was a 4-column grid whose computed columns were
+  `180px 15.2656px 264.734px 0px`: the label took its maximum, the bar column
+  collapsed to 15px, and the share text took 265px;
+- the bar element itself was 21px wide with `scrollWidth` 159, because the value
+  `▼ -2475.870515 USD` lived **inside** the bar - so the text painted over the
+  neighbouring 净变化占比 column;
+- `net_change_share` was rendered as the raw Decimal `0.98432613727771` (14
+  significant digits), which is what starved the bar column in the first place;
+- `.chart-bar.negative` referenced `var(--danger, #b42318)`, a token this
+  stylesheet never declares (the app's is `--bad`), so negative bars used a
+  fallback colour;
+- the same analysis holds 576 groups while the client's bounded read
+  (`GET /charts/{id}?limit=200`) returns 200: the panel showed 200 rows, the
+  footer said 共 576 点, and nothing reported the missing 376.
+  `build_bounded_view` reports the stored chart's own cap in `truncated`
+  (`MAX_CHART_POINTS = 1000`), not the window, so the flag stays false here.
+
+Changed: `frontend/src/components/ChartPanel.tsx` - the bar is now a pure
+length (`aria-hidden`, no text) on its own full-width track, so every row shares
+one track and the lengths stay comparable; the signed value is text in the row
+head, formatted with two decimals (`▼ -2,475.87 USD`) with the exact Decimal in
+`title`; the share is a percentage (`净变化占比 98.4%`, one decimal, `0.4%`-level
+values stay visible) with the exact fraction in `title`; the table view uses the
+same two formatters and keeps the exact values in `title`; the panel computes
+`total_points - data.length - offset` itself and warns about the points the
+window leaves out; the footer now reads `图表 200 / 共 576 点` plus the rounding
+rule. `frontend/src/styles.css` - `.chart-row-head` (flex, wraps), `.chart-bar`
+as a 12px block, and the old
+`minmax(120px, 180px) minmax(0, 1fr) auto auto` grid with its 720px override
+removed; sign colours now use the declared `--bad` / `--accent` tokens.
+
+Observed checks:
+
+- `cd frontend; npx playwright test --config=playwright.regression.config.ts`
+  -> **29 passed** (19 Ask, 6 new in `tests/regression/chart.spec.ts`, 4 Skills).
+  Output: `runtime/skills-ui-regression-20261015.txt`. The chart cases assert
+  the formatted value and share strings, the exact values in `title`, the table
+  view carrying the same numbers, no bar containing text, no row cell
+  overflowing its column, no bar leaving its row, the 390px panel staying inside
+  its own box, and the window/cap notices appearing and disappearing correctly.
+- Live, after redeploy: 200 rows measured with zero overflowing cells and zero
+  bars past the panel edge; values `▼ -2,475.87 USD` / `▲ 22.56 USD`; shares
+  `98.4%` / `-0.9%` / `0.4%`; `title` = `-2475.870515 USD` and
+  `0.9843261372777194934258249453`; notice
+  `按变化量从大到小只显示前 200 个分组，另有 376 个未显示（未合并、未补零）。`;
+  footer `单位 USD · 证据 2 条 · 数据引用 calculation:d6b97a66 · 图表 200 / 共 576 点`.
+- `cd frontend; npm run typecheck` and `npm run build` exit 0.
+- Rendered and inspected at 1440px (conversation message) and 390px (mocked
+  AnalysisPage).
+
+The 200-point read window was left in place - only made honest. Rendering up to
+200 two-line rows inside a chat message is still long; a top-N cap is a product
+decision and was not taken (recorded in `docs/todo.md`).
+
+Not verified here: no engine matrix, no A09, no deployed journey; the deployed
+image carries this tree's content (built from the working copy before this
+change was committed). The chart's own `truncated`/`dropped_points` path was
+exercised only against the mocked payload, not against a stored chart that hit
+the 1000-point cap.

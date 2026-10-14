@@ -129,6 +129,16 @@ the multi-turn conversation re-run. Two defects were found and fixed during that
 re-verification: drilldown validated its dimension after session state, and the
 harness compared group keys as ordered tuples. See `docs/acceptance.md`,
 "2026-10-14 review fixes — live re-verification".
+Re-observed 2026-10-15 after the frontend control and layout fixes (native file
+input replaced, leaking `label { flex-direction: column }` contained, chart
+values moved out of the bar and the hidden read window reported): the mocked
+browser regressions now run to completion on this host - **29 passed**, against
+18 before that work, superseding the earlier stalled attempts - the frontend
+typecheck and production build exit 0, and the changed screens were re-checked
+against the deployed stack (Skills, the Ask 技能 panel, `/admin/permissions`,
+the 576-point chart). The backend static suite, the service matrix, A09 and the
+deployed journeys were **not** rerun for this frontend-only change. See
+`docs/acceptance.md`, the three "2026-10-15" records.
 
 ## Invariants - do not break these
 
