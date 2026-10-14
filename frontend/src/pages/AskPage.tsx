@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { analysisPollInterval } from "../api/polling";
 import {
   cancelTurn,
   createAgentSession,
@@ -73,7 +74,7 @@ export function AskPage() {
     queryKey: ["session", sessionId],
     queryFn: () => getSession(sessionId as string),
     enabled: Boolean(sessionId),
-    refetchInterval: (query) => (query.state.data?.active_turn_id ? 2000 : false),
+    refetchInterval: (query) => (query.state.data?.active_turn_id ? 2000 : 15000),
   });
 
   const messages = useQuery({
@@ -97,12 +98,14 @@ export function AskPage() {
   // to the polling above instead of showing a stale conversation.
   const { connected } = useSessionEvents(
     sessionId,
-    () => {
+    (event) => {
+      if (event.type === "stream.end") return;
       queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["session-messages", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["turn", sessionId] });
     },
-    Boolean(sessionId),
+    Boolean(sessionId && activeTurnId),
+    activeTurnId,
   );
 
   const confirmed = useMemo(
@@ -165,18 +168,26 @@ export function AskPage() {
     onError: (failure) => setError(failure instanceof ApiError ? failure : null),
   });
 
+  type Submission = {
+    sessionId: string;
+    text: string;
+    scope: ScopeDraft;
+    patch: ReturnType<typeof scopePatchFromDraft> | null;
+    contextVersion: number;
+    skillSelection: { mode: "off" | "manual" | "auto"; version_ids: string[] };
+    idempotencyKey: string;
+  };
   const send = useMutation({
-    mutationFn: (originSessionId: string) => {
-      const patch = draft ? scopePatchFromDraft(draft, confirmed) : null;
-      return createTurn(originSessionId, {
-        text: text.trim(),
-        idempotencyKey: crypto.randomUUID(),
-        expectedContextVersion: session.data?.context_version,
-        scopePatch: patch,
-        skillSelection: { mode: skillMode, version_ids: pickedSkills },
+    mutationFn: (submission: Submission) => {
+      return createTurn(submission.sessionId, {
+        text: submission.text,
+        idempotencyKey: submission.idempotencyKey,
+        expectedContextVersion: submission.contextVersion,
+        scopePatch: submission.patch,
+        skillSelection: submission.skillSelection,
       });
     },
-    onSuccess: (_created, originSessionId) => {
+    onSuccess: (_created, { sessionId: originSessionId }) => {
       if (originSessionId === currentSessionRef.current) {
         setText("");
         setError(null);
@@ -186,8 +197,13 @@ export function AskPage() {
       queryClient.invalidateQueries({ queryKey: ["session-messages", originSessionId] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
-    onError: (failure, originSessionId) => {
+    onError: (failure, submission) => {
+      const originSessionId = submission.sessionId;
       if (originSessionId === currentSessionRef.current) {
+        if (failure instanceof ApiError && failure.code === "CONVERSATIONAL_DISABLED") {
+          legacySubmit.mutate(submission);
+          return;
+        }
         setError(failure instanceof ApiError ? failure : new ApiError(400, "INVALID_SCOPE", failure.message, false, {}));
       }
       queryClient.invalidateQueries({ queryKey: ["session", originSessionId] });
@@ -227,11 +243,13 @@ export function AskPage() {
   // Legacy fallback: with the conversational flag off the turn API answers 503,
   // so the same question goes through the one-shot analysis path instead.
   const legacySubmit = useMutation({
-    mutationFn: () => {
-      const scope = draft ?? confirmed;
+    retry: false,
+    mutationFn: (submission: Submission) => {
+      const scope = submission.scope;
       return createAnalysis({
-        sessionId: sessionId as string,
-        question: text.trim(),
+        sessionId: submission.sessionId,
+        question: submission.text,
+        idempotencyKey: submission.idempotencyKey,
         metricKey: scope.metricKey,
         baselineStart: scope.baselineStart,
         baselineEnd: scope.baselineEnd,
@@ -242,23 +260,34 @@ export function AskPage() {
         dataComplete: scope.dataCompleteState === "complete",
       });
     },
-    onSuccess: (created) => navigate(`/analyses/${created.analysis_id}`),
-    onError: (failure) => setError(failure instanceof ApiError ? failure : null),
+    onSuccess: (created, submission) => {
+      if (submission.sessionId === currentSessionRef.current) navigate(`/analyses/${created.analysis_id}`);
+    },
+    onError: (failure, submission) => {
+      if (submission.sessionId === currentSessionRef.current) setError(failure instanceof ApiError ? failure : null);
+    },
   });
 
-  const disabledFallback = send.variables === sessionId && send.error instanceof ApiError && send.error.code === "CONVERSATIONAL_DISABLED";
-  useEffect(() => {
-    if (disabledFallback && !legacySubmit.isPending && !legacySubmit.isSuccess) {
-      legacySubmit.mutate();
-    }
-  }, [disabledFallback, legacySubmit]);
-
   const onSend = () => {
-    if (!text.trim() || !sessionId || !session.data || activeTurnId || send.isPending || bindSkills.isPending) return;
-    send.mutate(sessionId);
+    if (!text.trim() || !sessionId || !session.data || activeTurnId || send.isPending || legacySubmit.isPending || bindSkills.isPending) return;
+    try {
+      const scope = draft ?? confirmed;
+      send.mutate({
+        sessionId,
+        text: text.trim(),
+        scope: { ...scope, dimensions: [...scope.dimensions] },
+        patch: draft ? scopePatchFromDraft(draft, confirmed) : null,
+        contextVersion: session.data.context_version,
+        skillSelection: { mode: skillMode, version_ids: [...pickedSkills] },
+        idempotencyKey: crypto.randomUUID(),
+      });
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure : new ApiError(400, "INVALID_SCOPE",
+        failure instanceof Error ? failure.message : String(failure), false, {}));
+    }
   };
 
-  const busy = Boolean(activeTurnId) || send.isPending || bindSkills.isPending;
+  const busy = Boolean(activeTurnId) || send.isPending || legacySubmit.isPending || bindSkills.isPending;
   const turn = activeTurn.data ?? null;
 
   return (
@@ -394,7 +423,7 @@ function MessageRow({ message }: { message: ConversationMessage }) {
     queryKey: ["analysis", analysisId],
     queryFn: () => getAnalysis(analysisId as string),
     enabled: Boolean(analysisId) && isResult,
-    refetchInterval: 3000,
+    refetchInterval: (query) => analysisPollInterval(query.state.data?.status),
   });
   const chartId =
     (analysis.data?.final_report as { chart_ids?: string[] } | undefined)?.chart_ids?.[0] ?? null;

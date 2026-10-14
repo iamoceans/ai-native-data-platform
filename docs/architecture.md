@@ -124,15 +124,17 @@ evaluation ground truth; it is never mounted into the agent's metadata context.
 2. The gateway parses the SQL with SQLGlot: exactly one statement, SELECT/UNION
    only, node denylist (writes/DDL/session/locking/`INTO`), function allowlist,
    join policy, subquery depth and relation budget.
-3. Table references are resolved through SQLGlot scope analysis (CTEs are not
+3. Before resolving names, the gateway filters active datasets to those with
+   both current `query` and `discover` grants. Hidden/unknown names get one
+   generic refusal. Table references are resolved through SQLGlot scope analysis (CTEs are not
    physical tables), rewritten to fully qualified registered names, then `qualify`
    expands `*` and validates every column against the latest schema snapshot.
 4. The outer `LIMIT` is rewritten to `max_rows + 1` (the extra row exists only to
    detect truncation; it is dropped before publication).
-5. `query` and `discover` permissions are checked for every referenced dataset.
+5. `query` and `discover` permissions are re-checked for every referenced dataset.
 6. `query_jobs` + `task_queue` + `query_dependencies` + audit + `query.queued`
    event are written in one transaction.
-7. A worker claims the task (`SELECT ... FOR UPDATE SKIP LOCKED`), locks capacity
+7. A worker locks the resource before its queue (`FOR UPDATE SKIP LOCKED`), locks capacity
    rows, creates an execution lease with a fencing token and commits.
 8. The monitor thread heartbeats (5 s), polls the cancel flag, and cancels the
    source query at the deadline. The executor streams batches from a server-side
@@ -142,7 +144,9 @@ evaluation ground truth; it is never mounted into the agent's metadata context.
    the result row, sets `SUCCEEDED`, releases the lease, marks the queue item done
    and appends the `query.finished` event and audit record.
 10. Failure/cancel/timeout/lost: the same publish path with the corresponding
-    terminal state; stale workers are rejected by the fencing token.
+    terminal state; stale workers are rejected by the fencing token. File-publication
+    errors also use this terminal path. A cancellation committed during publication
+    is resolved under the job lock, with failure details preserved as a cause.
 
 ## State machines
 
@@ -212,7 +216,13 @@ with `scripts/capture_datahub_fixtures.py`).
   canonical SQL (date range mandatory, named parameters, closed formula grammar
   - components, numbers, `+ - * /`, `nullif/coalesce/abs/round`; anything else
   is refused). Multi-dataset metrics compile one aggregate per dataset plus a
-  composition formula; nothing joins fine-grained facts.
+  composition formula; nothing joins fine-grained facts. The runner evaluates
+  that closed formula in Decimal over named component aggregates (including
+  SQL NULL semantics). Nonadditive breakdowns also compile a separate period
+  aggregate with the same filters and windows but without breakdown dimensions.
+  Nonadditive/nonlinear formulas do not produce additive contribution charts.
+  Older incompatible in-flight calculation checkpoints require resubmission;
+  previously completed reports remain historical artifacts.
 - `app/analysis/` implements the specification's arithmetic exactly:
   `compare_totals` (`change_pct`, baseline-zero handling), `decompose_contribution`
   (net/gross shares, contribution_pp, NULL bucket, OTHER merge, additivity
@@ -311,6 +321,9 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   evidence and chart reads use the same grant check. Transcript explanations
   check every quoted analysis, including ownership and missing references;
   model history and recent-analysis context use the same current grants.
+  History is the latest twelve messages, presented in chronological order.
+  The disabled-feature Ask fallback uses one submitted scope snapshot and one
+  idempotency key; errors do not trigger a render-driven retry.
   Model memory retrieval checks the source analysis's registered dependency IDs
   against the requesting user's current grants; a memory without traceable
   dependencies is not injected. The shared knowledge list and curator workflow
@@ -354,3 +367,25 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
 - The production phases of the specification (sections 31-32): Kyuubi/Spark batch
   provider, Flink streaming jobs, MCP egress and enterprise semantics. See the
   roadmap row in `docs/todo.md`.
+
+### 2026-10-15 concurrency and resource bounds
+
+Query resource locking is job -> queue -> lease for claim, publication and
+reconciliation; capacity locks retain global -> datasource -> user ordering.
+Analysis/turn/ingestion claims lock the resource before its queue and skip locked
+resources. The analysis model call still holds the task lock; a competing
+reclaimer skips it instead of holding its queue while waiting. Moving model calls
+outside that transaction requires fenced post-call writes and is not implemented.
+Task-queue state changes use an explicit allow-table.
+
+Optional driver plans compile both periods before enqueuing, submit inside one
+savepoint and skip `AnalysisError` without leaving a half-plan. Deterministic
+driver errors become report limitations; NULL eCPM breakdown cells remain NULL
+and do not enter Decimal conversion.
+
+The API buffers HTTP bodies only to its configured bound before routing; bounded
+JSON mappings cannot be persisted without validation. Query result/SSE grants
+include discover and query; datasource list topology is administrative only.
+Frontend SSE closes on terminal stream control events; session streams restart
+for a new active turn. Idle tabs poll session/transcript at 15 seconds to detect
+cross-tab activity, and terminal historical analyses stop their own 3-second polls.

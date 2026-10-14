@@ -147,6 +147,7 @@ class PostgresProvider:
             connect_timeout=int(
                 config.get("connect_timeout_seconds", self._settings.connect_timeout_seconds)
             ),
+            sslmode=config.get("ssl_mode", "prefer"),
             application_name="ainative-platform",
             autocommit=False,
             row_factory=tuple_row,

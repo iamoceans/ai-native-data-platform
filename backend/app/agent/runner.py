@@ -38,6 +38,7 @@ from app.agent.state import AnalysisStatus, TERMINAL_ANALYSIS_STATUSES
 from app.analysis.compare import compare_totals
 from app.analysis.contribution import decompose_contribution
 from app.analysis.drivers import decompose_revenue
+from app.analysis.types import AnalysisError
 from app.charts.spec import contribution_chart
 from app.api.dto import QueryLimits, QuerySubmitRequest
 from app.config import Settings
@@ -46,6 +47,7 @@ from app.errors import ApiError
 from app.ids import utcnow
 from app.metrics.compiler import CompiledMetric, CompiledQuery, compile_metric
 from app.metrics.registry import MetricDefinitionModel
+from app.metrics.evaluator import additive_composition, evaluate_formula
 from app.models.orm import Dataset, MetricDefinition, QueryResult
 from app.query.gateway import submit_query
 from app.repositories import analyses as analyses_repo
@@ -194,6 +196,9 @@ def _submit_compiled(
             "period": period,
             "metric_alias": query.metric_alias,
             "post_aggregation": query.post_aggregation,
+            "period_total": query.period_total,
+            "composition": compiled.composition,
+            "aggregation_kind": compiled.aggregation_kind,
             "group_by": list(query.group_by),
             "dataset_id": str(dataset.id),
             "dataset": query.dataset,
@@ -493,6 +498,16 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
     expires_at = None
     primary_ids: list[str] = []
     driver_values: dict[str, Decimal] = {}
+    total_periods = {item["period"] for item in descriptors if item.get("period_total")}
+    components: dict[str, dict[str, Decimal | None]] = {"baseline": {}, "current": {}}
+    group_components: dict[str, dict[tuple, dict[str, Decimal | None]]] = {"baseline": {}, "current": {}}
+    composition = next((item.get("composition") for item in descriptors if item.get("composition")), None)
+    aggregation_kind = (task.state or {}).get("metric_definition", {}).get("aggregation_kind", "sum")
+    if dimensions and aggregation_kind not in {"sum", "sum_of_aggregates"} and not total_periods:
+        raise AnalysisExecutionError("analysis predates period-total compilation; resubmit it")
+    primary_aliases = {item["metric_alias"] for item in descriptors if item.get("role") != DRIVER_ROLE}
+    if len(primary_aliases) > 1 and composition is None:
+        raise AnalysisExecutionError("analysis lacks its composition formula; resubmit it")
     for descriptor in descriptors:
         job = jobs[uuid.UUID(descriptor["query_id"])]
         result = session.execute(
@@ -509,24 +524,50 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
             driver_values[str(descriptor["period"])] = value
         else:
             primary_ids.append(str(job.id))
-            totals[descriptor["period"]] += value
-            if dimensions and not descriptor.get("post_aggregation"):
-                rows = _rows_from_result(payload)
-                period_groups = grouped[descriptor["period"]]
-                for row in rows:
+            period = descriptor["period"]
+            alias = descriptor["metric_alias"]
+            is_total = descriptor.get("period_total") or period not in total_periods
+            if is_total:
+                has_value = bool(_values_from_result(payload, alias))
+                if not composition and aggregation_kind not in {"sum", "sum_of_aggregates"} and not has_value:
+                    raise AnalysisExecutionError("nonadditive period value is undefined")
+                components[period][alias] = value if has_value or not composition else None
+            if dimensions and not descriptor.get("period_total") and not descriptor.get("post_aggregation"):
+                for row in _rows_from_result(payload):
                     key = tuple(
                         None if row.get(dimension) is None else str(row.get(dimension))
                         for dimension in dimensions
                     )
-                    period_groups[key] = period_groups.get(key, Decimal(0)) + Decimal(
-                        str(row.get(descriptor["metric_alias"], 0))
+                    cell = group_components[period].setdefault(key, {})
+                    previous = cell.get(alias)
+                    incoming = Decimal(str(row[alias])) if row.get(alias) is not None else None
+                    cell[alias] = (
+                        (previous or Decimal(0)) + incoming if incoming is not None else previous
                     )
         dataset_ids.add(descriptor["dataset_id"])
         expires_at = result.expires_at if expires_at is None else min(expires_at, result.expires_at)
 
+    for period in totals:
+        if composition:
+            value = evaluate_formula(composition, components[period])
+            if value is None:
+                raise AnalysisExecutionError("metric composition is undefined for this period")
+            totals[period] = value
+        else:
+            totals[period] = sum(components[period].values(), Decimal(0))
+        for key, cell in group_components[period].items():
+            if composition:
+                # An absent source segment has zero aggregate, not a shifted component order.
+                value = evaluate_formula(composition, {name: cell.get(name, Decimal(0)) for name in components[period]})
+                if value is not None:
+                    grouped[period][key] = value
+            else:
+                grouped[period][key] = sum((value for value in cell.values() if value is not None), Decimal(0))
+
     comparison = compare_totals(totals["baseline"], totals["current"])
     raw = comparison.as_dict()
     observation: dict = {
+        "calculation_version": 2,
         "baseline": raw["baseline"],
         "current": raw["current"],
         "delta": raw["delta"],
@@ -538,7 +579,10 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
         "primary_query_ids": primary_ids,
         "evidence_available_until": expires_at.isoformat() if expires_at else None,
     }
-    if dimensions and (grouped["baseline"] or grouped["current"]):
+    additive = aggregation_kind in {"sum", "sum_of_aggregates"} and (
+        composition is None or additive_composition(composition)
+    )
+    if additive and dimensions and (grouped["baseline"] or grouped["current"]):
         contribution = decompose_contribution(
             [
                 {
@@ -626,12 +670,17 @@ def _driver_observation(task, *, observation: dict, dimension_values: dict, grou
     target = observation.get("target")
     if not target or "baseline" not in dimension_values or "current" not in dimension_values:
         return None
-    drivers = decompose_revenue(
-        impressions_baseline=dimension_values["baseline"],
-        impressions_current=dimension_values["current"],
-        revenue_baseline=target["revenue_baseline"],
-        revenue_current=target["revenue_current"],
-    )
+    try:
+        drivers = decompose_revenue(
+            impressions_baseline=dimension_values["baseline"],
+            impressions_current=dimension_values["current"],
+            revenue_baseline=target["revenue_baseline"],
+            revenue_current=target["revenue_current"],
+        )
+    except AnalysisError as exc:
+        observation["driver_warning"] = f"驱动分解已跳过：{exc.code}"
+        logger.info("driver calculation skipped: %s", exc.code, extra={"analysis_id": str(task.id)})
+        return None
     return {"target_key": target["key"], **drivers.as_dict()}
 
 
@@ -725,6 +774,16 @@ def _attempt_repairs(session, *, task, settings: Settings, jobs: dict, failed: l
                 dimensions=dimensions,
                 filters=descriptor.get("filters"),
             )
+            # Replace only the failed source query; compiling a whole composed
+            # metric again would duplicate healthy components and period totals.
+            from dataclasses import replace
+
+            compiled = replace(compiled, queries=tuple(
+                query for query in compiled.queries
+                if query.dataset == descriptor["dataset"]
+                and query.metric_alias == descriptor["metric_alias"]
+                and query.period_total == bool(descriptor.get("period_total"))
+            ))
             submitted = _submit_compiled(
                 session,
                 task=task,
@@ -733,7 +792,7 @@ def _attempt_repairs(session, *, task, settings: Settings, jobs: dict, failed: l
                 period=descriptor["period"],
                 settings=settings,
                 role=descriptor.get("role", PRIMARY_ROLE),
-                step_suffix="_repair",
+                step_suffix=f"_repair_{descriptor['query_id']}",
                 filters=descriptor.get("filters"),
                 dimensions=dimensions,
             )
@@ -872,7 +931,8 @@ def _extend_with_driver_step(session, *, task, settings: Settings) -> bool:
             dimensions=[],
             filters=filters,
         )
-    except (ApiError, AnalysisExecutionError, KeyError, ValueError):
+    except (ApiError, AnalysisError, AnalysisExecutionError, KeyError, ValueError) as exc:
+        logger.info("driver decomposition skipped: %s", type(exc).__name__, extra={"analysis_id": str(task.id)})
         return False
     additional = 2 * len(compiled.queries)
     if queries_used + additional > settings.agent_max_queries:
@@ -880,32 +940,24 @@ def _extend_with_driver_step(session, *, task, settings: Settings) -> bool:
     if tool_calls + additional > settings.agent_max_tool_calls:
         return False
     submitted: list[dict] = []
-    for period in ("baseline", "current"):
-        try:
-            compiled = _compile_period(
-                impressions_definition,
-                context=dict(task.context or {}),
-                period=period,
-                dimensions=[],
-                filters=filters,
-            )
-            submitted.extend(
-                _submit_compiled(
-                    session,
-                    task=task,
-                    auth=auth,
-                    compiled=compiled,
-                    period=period,
-                    settings=settings,
-                    role=DRIVER_ROLE,
-                    step_suffix="_drivers",
-                    filters=filters,
-                    dimensions=[],
-                )
-            )
-        except (ApiError, AnalysisExecutionError):
-            logger.info("driver decomposition skipped", extra={"analysis_id": str(task.id)})
-            return False
+    try:
+        # Compile both windows before any enqueue. A later optional refusal must
+        # not leave a half-submitted companion plan consuming source resources.
+        compiled_periods = {"baseline": compiled, "current": _compile_period(
+            impressions_definition, context=dict(task.context or {}),
+            period="current", dimensions=[], filters=filters,
+        )}
+        with session.begin_nested():
+            for period, period_compiled in compiled_periods.items():
+                submitted.extend(_submit_compiled(
+                    session, task=task, auth=auth, compiled=period_compiled,
+                    period=period, settings=settings, role=DRIVER_ROLE,
+                    step_suffix="_drivers", filters=filters, dimensions=[],
+                ))
+    except (ApiError, AnalysisError, AnalysisExecutionError) as exc:
+        logger.info("driver decomposition skipped: %s", type(exc).__name__,
+                    extra={"analysis_id": str(task.id)})
+        return False
     if not submitted:
         return False
     driver_step = PlanStep(
@@ -987,6 +1039,12 @@ def _synthesizing(session, *, task) -> bool:
     jobs = {job.id: job for job in analyses_repo.list_queries(session, task.id)}
     if not observation:
         raise AnalysisExecutionError("synthesis without observations")
+    contract = state.get("metric_definition") or {}
+    if observation.get("calculation_version") != 2 and (
+        contract.get("aggregation_kind", "sum") not in {"sum", "sum_of_aggregates"}
+        or len(contract.get("datasets") or []) > 1
+    ):
+        raise AnalysisExecutionError("analysis uses an old calculation checkpoint; resubmit it")
     primary_ids = list(observation.get("primary_query_ids") or [])
     dataset_ids = list(observation.get("dataset_ids") or [])
     calculation = {
@@ -1092,7 +1150,10 @@ def _synthesizing(session, *, task) -> bool:
         data_complete=bool(context.get("data_complete", True)),
         chart_ids=chart_ids,
         drivers=drivers_payload,
-        warnings=[f"已按最新 Schema 修复查询：丢弃列 {item.get('dropped_dimension')}" for item in applied_repairs],
+        warnings=[f"已按最新 Schema 修复查询：丢弃列 {item.get('dropped_dimension')}" for item in applied_repairs]
+        + ([observation["driver_warning"]] if observation.get("driver_warning") else [])
+        + (["非可加指标按独立周期聚合比较，未做分组贡献分解"]
+           if definition.aggregation_kind not in {"sum", "sum_of_aggregates"} else []),
     )
     task.final_report = report
     target = AnalysisStatus.COMPLETED if report["status"] == "COMPLETED" else AnalysisStatus.PARTIAL

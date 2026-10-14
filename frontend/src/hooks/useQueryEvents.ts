@@ -22,12 +22,15 @@ export function useQueryEvents(
     if (!queryId || !enabled) return;
     const source = new EventSource(`/api/v1/queries/${queryId}/events`, { withCredentials: true });
     const forward = (type: string) => (message: MessageEvent<string>) => {
+      // Transport errors have no data; allow native reconnect without a REST storm.
+      if (typeof message.data !== "string") return;
       let data: Record<string, unknown> = {};
       try {
         data = JSON.parse(message.data) as Record<string, unknown>;
       } catch {
         data = { raw: message.data };
       }
+      if (type === "stream.end" || type === "stream.closed" || (type === "error" && data.code)) source.close();
       handler.current({
         id: message.lastEventId ? Number(message.lastEventId) : null,
         type,

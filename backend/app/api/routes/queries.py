@@ -59,6 +59,8 @@ def ensure_query_dataset_permission(session: Session, auth: AuthContext, query_i
     for dependency in dependencies:
         if not datasets_repo.has_dataset_action(
             session, auth.role_ids, dependency.dataset_id, DatasetAction.QUERY
+        ) or not datasets_repo.has_dataset_action(
+            session, auth.role_ids, dependency.dataset_id, DatasetAction.DISCOVER
         ):
             raise ApiError(
                 ErrorCode.PERMISSION_DENIED,
@@ -245,6 +247,7 @@ def query_events(
     session: Session = Depends(get_db),
 ) -> StreamingResponse:
     load_own_query(session, auth, query_id)
+    ensure_query_dataset_permission(session, auth, query_id)
     last_event_id = request.headers.get("Last-Event-ID") or request.query_params.get("last_event_id")
     last_id = int(last_event_id) if last_event_id and str(last_event_id).isdigit() else 0
     user_id = auth.user.id
@@ -319,6 +322,8 @@ def _still_authorized(session_factory, query_id: uuid.UUID, user_id: uuid.UUID) 
         for dependency in dependencies:
             if not datasets_repo.has_dataset_action(
                 session, role_ids, dependency.dataset_id, DatasetAction.QUERY
+            ) or not datasets_repo.has_dataset_action(
+                session, role_ids, dependency.dataset_id, DatasetAction.DISCOVER
             ):
                 return False
         return True

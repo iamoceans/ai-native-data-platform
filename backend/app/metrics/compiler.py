@@ -12,7 +12,7 @@ pick a metric key - it can never invent a formula.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -52,6 +52,7 @@ class CompiledQuery:
     metric_alias: str
     components: dict[str, str]
     post_aggregation: str | None = None
+    period_total: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -62,6 +63,7 @@ class CompiledQuery:
             "metric_alias": self.metric_alias,
             "components": dict(self.components),
             "post_aggregation": self.post_aggregation,
+            "period_total": self.period_total,
         }
 
 
@@ -372,6 +374,15 @@ def compile_metric(
                 )
             )
         composition = compile_formula(definition.formula, {name: name for name in component_sql})
+
+    # Nonadditive values cannot be rolled up from breakdown rows. Ask the
+    # source for the ungrouped period aggregate (daily only for distinct/day).
+    if requested and (definition.aggregation_kind not in {"sum", "sum_of_aggregates"}):
+        total = compile_metric(
+            definition, dimensions=[], period_start=period_start,
+            period_end=period_end, filters=filters,
+        )
+        queries.extend(replace(query, period_total=True) for query in total.queries)
 
     return CompiledMetric(
         metric_key=definition.metric_key,

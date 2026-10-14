@@ -77,7 +77,14 @@ def compile_query(
     """Validate and authorize a query against the datasource's engine dialect."""
     from app.providers.dialects import parse_dialect_for
 
-    datasets = [row for row in datasets_repo.list_datasets_for_datasource(session, datasource.id) if row.active]
+    # Resolve only within the authorized catalog: hidden names must not affect
+    # ambiguity errors, column validation, or source introspection.
+    datasets = [
+        row for row in datasets_repo.list_datasets_for_datasource(session, datasource.id)
+        if row.active
+        and datasets_repo.has_dataset_action(session, auth.role_ids, row.id, DatasetAction.QUERY)
+        and datasets_repo.has_dataset_action(session, auth.role_ids, row.id, DatasetAction.DISCOVER)
+    ]
     schema_cache: dict[uuid.UUID, list[dict]] = {}
     snapshot_ids: dict[uuid.UUID, uuid.UUID | None] = {}
 
@@ -89,17 +96,22 @@ def compile_query(
         snapshot_ids[dataset.id] = view.snapshot_id
         return schema_cache[dataset.id]
 
-    validated = validate_query(
-        sql=sql,
-        dialect=parse_dialect_for(datasource.kind),
-        datasets=datasets,
-        schema_loader=schema_loader,
-        database=str(datasource.connection_config.get("database", "")),
-        max_rows=limits.max_rows,
-        max_relations=settings.max_relations,
-        max_subquery_depth=settings.max_subquery_depth,
-        engine=str(datasource.kind),
-    )
+    try:
+        validated = validate_query(
+            sql=sql,
+            dialect=parse_dialect_for(datasource.kind),
+            datasets=datasets,
+            schema_loader=schema_loader,
+            database=str(datasource.connection_config.get("database", "")),
+            max_rows=limits.max_rows,
+            max_relations=settings.max_relations,
+            max_subquery_depth=settings.max_subquery_depth,
+            engine=str(datasource.kind),
+        )
+    except ApiError as exc:
+        if exc.code == ErrorCode.DATASET_NOT_REGISTERED:
+            raise ApiError(ErrorCode.PERMISSION_DENIED, "dataset not found or not authorized") from exc
+        raise
     if datasource.kind == "spark" and (validated.placeholder_names or parameters):
         raise ApiError(ErrorCode.SQL_UNSUPPORTED, "Spark parameterized queries are not supported")
     # Authorization: query + discover on every referenced dataset (spec 12.1).

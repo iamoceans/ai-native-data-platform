@@ -10,8 +10,9 @@ async function fixture(page: Page) {
   second: { id: 'second', title: 'second', context_version: 5, active_turn_id: null, resolved_context: { ...scope, metric_key: 'clicks', dimensions: ['region'] }, skill_config: {}, updated_at: '2026-10-14' },
  };
  const turns: any[] = []; const patches: any[] = [];
- const control = { rejectBinding: false, turnDelay: 0, bindingDelay: 0, rejectTurn: false, conversationalDisabled: false };
+ const control = { rejectBinding: false, turnDelay: 0, bindingDelay: 0, rejectTurn: false, conversationalDisabled: false, rejectAnalysis: false, analysisDelay: 0 };
  const analyses: any[] = [];
+ const analysisKeys: string[] = [];
  await page.context().route('**/api/v1/**', async route => {
   const path = new URL(route.request().url()).pathname;
   let body: any = { items: [] };
@@ -41,14 +42,14 @@ async function fixture(page: Page) {
    if (control.turnDelay) await new Promise(resolve => setTimeout(resolve, control.turnDelay));
   }
   if (path.endsWith('/turns/turn')) body = { id:'turn', status:'RESOLVING', session_id:'first', created_at:'2026-10-14' };
-  if (path.endsWith('/analyses') && route.request().method() === 'POST') { analyses.push(route.request().postDataJSON()); body = {analysis_id:'legacy'}; }
+  if (path.endsWith('/analyses') && route.request().method() === 'POST') { analyses.push(route.request().postDataJSON()); analysisKeys.push(route.request().headers()['idempotency-key']); if (control.analysisDelay) await new Promise(resolve => setTimeout(resolve, control.analysisDelay)); if (control.rejectAnalysis) { await route.fulfill({status:503,json:{error:{code:'SERVICE_NOT_READY',message:'analysis unavailable',retryable:true,details:{}}}}); return; } body = {analysis_id:'legacy'}; }
   if (path.endsWith('/analyses/legacy')) body = {analysis_id:'legacy',status:'QUEUED',steps:[],state:{},question:'legacy analysis',checkpoint_version:0,policy_revision:1,final_report:null};
   if (path.endsWith('/events')) { await route.fulfill({ status:200, contentType:'text/event-stream', body:'' }); return; }
   await route.fulfill({ json:body });
  });
  await page.goto('/ask/first');
  await expect(page.getByTestId('scope-current-start')).toHaveValue('2026-09-08');
- return { turns, patches, sessions, control, analyses };
+ return { turns, patches, sessions, control, analyses, analysisKeys };
 }
 
 test('inherits asynchronously resolved scope and resets edits when switching sessions', async ({page}) => {
@@ -206,4 +207,42 @@ test('reverting a user edit resumes following confirmed context', async ({page})
  await page.getByTestId('conversation-send').click();
  await expect.poll(() => turns.length).toBe(2);
  expect(turns[1].scope_patch).toBeNull();
+});
+
+for (const reject of [false, true]) {
+ test('disabled fallback sends once even after rerenders: reject=' + reject, async ({page}) => {
+  const { control, analyses, analysisKeys } = await fixture(page);
+  control.conversationalDisabled = true;
+  control.rejectAnalysis = reject;
+  control.analysisDelay = 200;
+  await page.getByTestId('conversation-input').fill('fallback');
+  await page.getByTestId('conversation-send').click();
+  await expect.poll(() => analyses.length).toBe(1);
+  if (reject) {
+   await expect(page.getByTestId('conversation-error')).toContainText('SERVICE_NOT_READY');
+   await page.getByTestId('conversation-input').fill('new text triggers render');
+   await page.getByTestId('scope-baseline-start').fill('2026-08-01');
+  } else {
+   await expect(page).toHaveURL(/analyses.*legacy$/);
+  }
+  await page.waitForTimeout(700);
+  expect(analyses).toHaveLength(1);
+  expect(analysisKeys[0]).toMatch(/^[0-9a-f-]{36}$/);
+ });
+}
+
+
+test('disabled fallback retains the sent scope while the user edits pending scope', async ({page}) => {
+ const { control, analyses } = await fixture(page);
+ control.conversationalDisabled = true;
+ control.turnDelay = 900;
+ await page.getByTestId('scope-filters').fill('platform=android');
+ await page.getByTestId('conversation-input').fill('original question');
+ await page.getByTestId('conversation-send').click();
+ await page.getByTestId('scope-filters').fill('platform=ios');
+ await page.getByTestId('scope-baseline-start').fill('2026-08-01');
+ await expect.poll(() => analyses.length).toBe(1);
+ expect(analyses[0].question).toBe('original question');
+ expect(analyses[0].context.filters).toEqual({platform:'android'});
+ expect(analyses[0].context.baseline_start).toBe('2026-09-01');
 });

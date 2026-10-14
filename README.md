@@ -156,7 +156,27 @@ key is read from the mounted file only - never from `.env`, a request field or t
 browser - and endpoint, model and key path are administrator configuration that a
 user question cannot override.
 
+The second 2026-10-15 review also fixes driver-error skipping, driver percent
+escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock
+order, failed result publication and current result grants. Nonadministrators
+receive datasource summaries without connection configuration or secret refs.
+HTTP bodies are capped at 4 MiB by default, with smaller structured-map bounds;
+terminal streams and historical analysis polling stop. Spark concurrent
+cancellation over its shared transport remains suspected and needs live
+verification; see `docs/todo.md`.
+
 ## Verification
+
+The 2026-10-15 defect fixes give nonadditive breakdowns an independent period
+aggregate and evaluate multi-source composition formulas in Decimal. Nonadditive
+metrics produce period comparisons without additive contribution attribution.
+Ask's disabled-feature fallback sends once per user submission with an
+idempotency key; login denials retain their audit despite request rollback;
+memory reads/counts enforce source grants; model history uses the latest window;
+query schema validation operates on the authorized catalog. See
+`docs/acceptance.md` for executed regression checks. Previously completed reports
+are not rewritten; rerun affected analyses. In-flight obsolete nonadditive or
+composed calculation checkpoints fail explicitly and must be resubmitted.
 
 ```bash
 # static suites (no services needed): unit + security + contract

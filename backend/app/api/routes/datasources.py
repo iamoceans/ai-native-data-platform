@@ -50,7 +50,7 @@ def _page(request: Request, settings: Settings) -> tuple[int, int]:
     return limit, offset
 
 
-@router.get("/datasources", response_model=DatasourceListResponse)
+@router.get("/datasources", response_model=DatasourceListResponse, response_model_exclude_none=True)
 def list_datasources(
     request: Request,
     _auth: AuthContext = Depends(current_auth),
@@ -59,7 +59,12 @@ def list_datasources(
 ) -> DatasourceListResponse:
     limit, offset = _page(request, settings)
     rows, total = datasources_repo.list_datasources(session, limit=limit, offset=offset)
-    items = [DatasourceResponse(**datasource_service.datasource_to_dict(row)) for row in rows]
+    items = []
+    for row in rows:
+        item = datasource_service.datasource_to_dict(row)
+        if "admin.manage" not in _auth.capabilities:
+            item = {key: value for key, value in item.items() if key not in {"connection_config", "secret_ref"}}
+        items.append(DatasourceResponse(**item))
     next_cursor = None
     if offset + len(rows) < total:
         next_cursor = encode_list_cursor(

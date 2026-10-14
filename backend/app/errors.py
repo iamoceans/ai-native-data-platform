@@ -27,6 +27,7 @@ STATUS_BY_CODE: dict[str, int] = {
     ErrorCode.SQL_FORBIDDEN: 403,
     ErrorCode.SQL_UNSUPPORTED: 422,
     ErrorCode.QUERY_TOO_LARGE: 413,
+    ErrorCode.REQUEST_TOO_LARGE: 413,
     ErrorCode.DATASET_NOT_REGISTERED: 404,
     ErrorCode.AMBIGUOUS_TABLE_REFERENCE: 422,
     ErrorCode.SCHEMA_CHANGED: 409,

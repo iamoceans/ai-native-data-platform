@@ -157,9 +157,9 @@ export function AdminDatasourcesPage() {
                     </th>
                     <td>{datasource.kind}</td>
                     <td className="mono small">
-                      {String(datasource.connection_config.host ?? "?")}:
-                      {String(datasource.connection_config.port ?? "?")}/
-                      {String(datasource.connection_config.database ?? "?")}
+                      {String(datasource.connection_config?.host ?? "?")}:
+                      {String(datasource.connection_config?.port ?? "?")}/
+                      {String(datasource.connection_config?.database ?? "?")}
                     </td>
                     <td>
                       <StatusBadge status={datasource.health_status} />

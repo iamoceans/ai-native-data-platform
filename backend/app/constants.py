@@ -172,6 +172,7 @@ class SkillSource(StrEnum):
 
 
 class ErrorCode(StrEnum):
+    REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
     # auth / policy
     UNAUTHENTICATED = "UNAUTHENTICATED"
     FORBIDDEN = "FORBIDDEN"

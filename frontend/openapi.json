@@ -4649,12 +4649,26 @@
             "title": "Kind"
           },
           "connection_config": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Connection Config"
           },
           "secret_ref": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Secret Ref"
           },
           "capabilities": {
@@ -4690,8 +4704,6 @@
           "id",
           "name",
           "kind",
-          "connection_config",
-          "secret_ref",
           "capabilities",
           "enabled",
           "health_status",

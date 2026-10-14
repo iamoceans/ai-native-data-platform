@@ -13,9 +13,15 @@
   validates the header against the session hash.
 - Login rate limiting: attempts per (username, client IP) in a moving window. This
   limiter is in-process; with more than one API replica a shared store is required
-  (noted as a production item).
+  (noted as a production item). Storage is bounded to 10,000 keys with expired
+  buckets pruned; saturation denies new keys until expiry. The backend image
+  starts Uvicorn with `--no-proxy-headers`, so arbitrary forwarded headers cannot
+  change the limiter key. Native Uvicorn launches must use the same flag. The
+  direct peer IP is used; clients behind one reverse proxy share that peer.
 - Error uniformity: unknown user, wrong password and inactive account return the
-  same 401 message; failures are audited with `outcome=denied`.
+  same 401 message; failures are audited with `outcome=denied`. Login denial
+  and `outcome=rate_limited` audits commit before raising the HTTP error, so
+  the request dependency's rollback cannot discard them.
 
 ## Authorization
 
@@ -29,10 +35,22 @@
   SSE replay. Revoking a grant bumps `policy_state.revision` and cancels associated
   active queries in the same transaction.
 - Cross-user private resources return `404`, not `403`.
+- Query results and query SSE require both current `query` and `discover` grants.
+- Datasource connection configuration and `secret_ref` are returned only to
+  callers with `admin.manage`; other users receive the selection/status fields.
+- Business-memory listing, status counts and curation responses require current
+  `query` and `discover` grants on all registered source-analysis dependencies;
+  missing provenance fails closed. Counts include only visible statements.
+- Query resolution uses only the authorized active catalog. Hidden and unknown
+  tables return the same generic refusal before column validation or source
+  schema introspection; ambiguity details contain authorized names only.
 
 ## SQL safety (defense in depth)
 
-1. **Request**: single statement, size <= 64 KiB, named parameters only.
+1. **Request**: single statement, SQL size <= 64 KiB, named parameters only.
+   `AIND_REQUEST_BODY_MAX_BYTES` caps all HTTP bodies before parsing (default
+   4 MiB), including chunked/multipart uploads. Parameters, filters and session
+   skill configuration are limited to 100 entries / 64 KiB serialized JSON.
 2. **AST**: SQLGlot parse with `RAISE`; `Command` fallbacks and parse warnings are
    rejected; only `SELECT`/`UNION` at the top level; denylist of write/DDL/session/
    locking/`INTO` nodes; executable comments (`/*!`) rejected at the raw-text level;
@@ -108,3 +126,11 @@
   explicitly treated as untrusted content, and every compiled query still passes
   through the same Query Gateway. The external endpoint, model and API-key file
   remain administrator-only environment configuration.
+
+Provider binding escapes non-placeholder percent text in comments, identifiers
+and literals while restoring only AST-recognized bindings. PostgreSQL forwards
+the configured `ssl_mode` to libpq; required verification failures are not
+downgraded. MySQL/Doris execution sockets have finite read/write timeouts at the
+query timeout plus five seconds; other connections use the default timeout plus
+five seconds. These controls were regression-tested without live engines on
+2026-10-15; deployment acceptance remains pending.

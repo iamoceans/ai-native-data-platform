@@ -44,10 +44,11 @@ export function SqlWorkspacePage() {
 
   useQueryEvents(
     queryId,
-    () => {
+    (event) => {
+      if (event.type === "stream.end") return;
       queryClient.invalidateQueries({ queryKey: ["query", queryId] });
     },
-    Boolean(queryId),
+    Boolean(queryId) && !TERMINAL.has(detail.data?.status ?? ""),
   );
 
   // Load the first result page once a query succeeds.

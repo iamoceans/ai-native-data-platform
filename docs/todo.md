@@ -9,6 +9,45 @@ that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
+## 2026-10-15 medium defects
+
+- [x] Regressions verify the existing NULL eCPM fix and optional driver skipping;
+      companion submissions are atomic and kernel errors become report limits.
+- [x] Driver percent escaping, PostgreSQL TLS-mode forwarding and finite
+      MySQL/Doris socket bounds verified by unit/attack regressions.
+- [x] Resource-before-queue locking, explicit queue transitions and fenced
+      publication failure (including a simultaneous cancellation) verified locally.
+- [x] Results/query SSE recheck both grants; nonadmin datasource summaries omit
+      connection configuration/secret refs; request bodies/maps and limiter bounded.
+- [x] Terminal SSE and history polling stop; idle cross-tab context refresh retained.
+      Frontend resource tests 7 passed; generated API types and production build pass.
+- [ ] PostgreSQL contention tests: 2 skipped; no configured live control database.
+- [ ] Engine stalls, TLS negotiation, deployed/browser journeys: not verified live.
+- [ ] Spark shared-socket cancellation race: suspected; live reproduction required
+      before choosing a transport-isolation change. Spark implementation unchanged.
+- [ ] Moving model calls outside the task-lock transaction with fenced writes:
+      not implemented; reclaim skips the task lock safely.
+
+Acceptance: static **469 passed**, frontend resource tests **7 passed**.
+See the medium-defects section in `docs/acceptance.md`.
+
+## 2026-10-15 reported defects
+
+- [x] Independent nonadditive period totals and Decimal composition, including
+      NULL semantics and unique source-repair keys; static regressions pass.
+- [x] Disabled Ask fallback submits once with a scope snapshot and idempotency
+      key; typecheck and production build pass.
+- [x] Login denial/rate-limit audits survive rollback in local HTTP + SQLite tests.
+- [x] Memory HTTP list/counts/curation require source grants; unauthorized query
+      resolution cannot reach schema introspection.
+- [x] Model history selects the latest twelve messages in chronological order.
+- [ ] Browser regressions: added, but runs stalled without a final result.
+- [ ] Full-service matrix, deployed journeys and A09: not executed for these fixes.
+- [ ] Rerun affected historical reports; stored artifacts are not rewritten.
+      Obsolete in-flight calculation checkpoints require resubmission.
+
+See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0.
+
 ## 2026-10-14 code-review fixes
 
 - [x] Analysis failure handling imports the error enum and publishes failure plus

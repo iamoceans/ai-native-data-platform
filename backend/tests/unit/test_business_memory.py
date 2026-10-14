@@ -430,9 +430,10 @@ def test_curation_audit_records_the_previous_status(monkeypatch):
         lambda session, **kwargs: captured.update(kwargs),
     )
 
+    monkeypatch.setattr(memory_routes.memory_repo, "memory_dataset_actions_ok", lambda *args, **kw: True)
     item = memory_routes._curate(
         Session(),
-        SimpleNamespace(user=SimpleNamespace(id=uuid.uuid4())),
+        SimpleNamespace(user=SimpleNamespace(id=uuid.uuid4()), role_ids=[]),
         row.id,
         status="rejected",
         trace_id="test-trace",

@@ -19,7 +19,7 @@ from typing import Callable, Iterator
 
 from app.auth.rbac import ensure_dataset_action
 from app.config import Settings
-from app.constants import DatasetAction, ErrorCode, QueryStatus
+from app.constants import DatasetAction, ErrorCode, QueryStatus, TERMINAL_QUERY_STATUSES
 from app.datasource.secrets import SecretResolver
 from app.datasource.service import build_provider
 from app.errors import ApiError
@@ -153,7 +153,9 @@ class _ExecutionMonitor(threading.Thread):
         self._provider = provider
         self._handle = handle
         self._deadline = deadline
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
+        self._next_heartbeat = 0.0
+        self._next_cancel = 0.0
         self._lock = threading.Lock()
         self.cancel_sent = False
         self.lease_lost = False
@@ -162,36 +164,46 @@ class _ExecutionMonitor(threading.Thread):
         self.last_cancel_requested = False
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:  # pragma: no cover - thread behaviour
-        while not self._stop.wait(self._settings.cancel_poll_seconds):
+        while not self._stop_event.wait(self._settings.cancel_poll_seconds):
+            now = time.monotonic()
+            if now > self._deadline:
+                with self._lock:
+                    self.deadline_exceeded = True
+                self._cancel()
             try:
                 with _tx(self._session_factory) as session:
-                    alive = queue_repo.heartbeat(session, self._claim, self._settings)
+                    alive = True
+                    heartbeat_due = now >= self._next_heartbeat
+                    if heartbeat_due:
+                        alive = queue_repo.heartbeat(session, self._claim, self._settings)
                     cancel_requested = queue_repo.check_cancel_requested(session, self._claim.query_id)
+                if heartbeat_due:
+                    self._next_heartbeat = now + self._settings.heartbeat_seconds
             except Exception:
                 logger.exception("monitor heartbeat failed", extra={"query_id": str(self._claim.query_id)})
+                # Deadline cancellation above does not depend on control DB health.
                 continue
             if not alive:
                 with self._lock:
                     self.lease_lost = True
-                self._cancel()
-                return
             if cancel_requested:
                 with self._lock:
                     self.user_cancel_requested = True
                     self.last_cancel_requested = True
-                self._cancel()
-            if time.monotonic() > self._deadline:
-                with self._lock:
-                    self.deadline_exceeded = True
+            if self.lease_lost or self.user_cancel_requested or self.deadline_exceeded:
                 self._cancel()
 
     def _cancel(self) -> None:
+        # KILL QUERY may succeed before an engine enters its blocking phase.
+        # Retry until execution exits, including after a transient cancel error.
+        now = time.monotonic()
         with self._lock:
-            if self.cancel_sent:
+            if now < self._next_cancel:
                 return
+            self._next_cancel = now + max(1.0, self._settings.cancel_poll_seconds)
             self.cancel_sent = True
         try:
             self._provider.cancel(self._handle)
@@ -428,9 +440,19 @@ def execute_claim(
         )
         return
 
-    stored = store.publish(
-        columns=columns, rows_json=rows_json, rows_typed=rows_typed, truncated=truncated
-    )
+    try:
+        stored = store.publish(
+            columns=columns, rows_json=rows_json, rows_typed=rows_typed, truncated=truncated
+        )
+    except Exception:
+        logger.exception("result storage failed", extra={"query_id": str(claim.query_id)})
+        _publish_terminal(
+            session_factory, claim, status=QueryStatus.FAILED,
+            code=ErrorCode.STORAGE_UNAVAILABLE,
+            message="could not store the query result", details=None,
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+        return
     expires_at = utcnow() + timedelta(days=settings.result_ttl_days)
     published = False
     try:
@@ -584,13 +606,22 @@ def _publish_terminal_status(
     ):
         published = queue_repo.publish_terminal(
             session, claim, status=QueryStatus.CANCELLED,
-            code=ErrorCode.QUERY_CANCELLED, message="query was cancelled", details=details,
+            code=ErrorCode.QUERY_CANCELLED, message="query was cancelled",
+            details={**(details or {}), "cause": {
+                "code": code, "message": message, "details": details or {},
+            }},
         )
         return QueryStatus.CANCELLED if published else None
     published = queue_repo.publish_terminal(
         session, claim, status=status, code=code, message=message, details=details
     )
-    return status if published else None
+    if not published:
+        return None
+    # publish_terminal refreshes this same ORM identity under its job lock and
+    # may resolve FAILED to CANCELLED when cancellation wins the race.
+    if job is not None and job.status in TERMINAL_QUERY_STATUSES:
+        return job.status
+    return status
 
 
 def _short(exc: BaseException) -> str:

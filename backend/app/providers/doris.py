@@ -37,6 +37,8 @@ from app.providers.base import (
 )
 from app.providers.sql_prep import prepare_driver_sql
 
+_SOCKET_TIMEOUT_GRACE_SECONDS = 5
+
 INTERNAL_CATALOG = "internal"
 
 _FIELD_TYPES: dict[int, str] = {
@@ -130,8 +132,14 @@ class DorisProvider:
             ),
         )
 
-    def _connect(self) -> pymysql.connections.Connection:
+    def _connect(self, *, timeout_seconds: int | None = None) -> pymysql.connections.Connection:
         config = self._config
+        # Bound a stalled socket while allowing the server deadline to fire first.
+        deadline = (
+            timeout_seconds if timeout_seconds is not None
+            else self._settings.default_timeout_seconds
+        )
+        socket_timeout = max(1, int(deadline)) + _SOCKET_TIMEOUT_GRACE_SECONDS
         return pymysql.connect(
             host=config["host"],
             port=int(config.get("port", 9030)),
@@ -141,6 +149,8 @@ class DorisProvider:
             connect_timeout=int(
                 config.get("connect_timeout_seconds", self._settings.connect_timeout_seconds)
             ),
+            read_timeout=socket_timeout,
+            write_timeout=socket_timeout,
             charset="utf8mb4",
             autocommit=True,
             cursorclass=pymysql.cursors.Cursor,
@@ -239,7 +249,7 @@ class DorisProvider:
 
     # ------------------------------------------------------------------ exec
     def open_execution(self, query: ValidatedQuery) -> ExecutionHandle:
-        conn = self._connect()
+        conn = self._connect(timeout_seconds=query.timeout_seconds)
         timeout_seconds = max(1, int(query.timeout_seconds))
         try:
             with conn.cursor() as cur:

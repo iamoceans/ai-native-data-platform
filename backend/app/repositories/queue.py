@@ -1,7 +1,7 @@
 """Task queue, execution leases and the claim protocol (spec section 13).
 
 Claiming follows the specification exactly:
-  - SELECT ... FOR UPDATE SKIP LOCKED picks one READY row
+  - SELECT ... FOR UPDATE SKIP LOCKED picks a resource, then its READY queue row
   - queue owner / lease / fencing_token are updated in a short transaction
   - capacity rows are locked in the fixed order global -> datasource -> user
   - no row locks are held while the SQL itself runs
@@ -12,15 +12,19 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import TypeVar
 
 from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.constants import LeaseState, QueryStatus, QueueState, TERMINAL_QUERY_STATUSES
+from app.constants import ErrorCode, LeaseState, QueryStatus, QueueState, TERMINAL_QUERY_STATUSES
 from app.errors import ApiError
 from app.ids import utcnow
-from app.models.orm import ExecutionCapacity, ExecutionLease, QueryJob, TaskQueue
+from app.models.orm import (
+    AnalysisTask, ConversationTurn, ExecutionCapacity, ExecutionLease,
+    IngestionTask, QueryJob, TaskQueue,
+)
 from app.repositories import events as events_repo
 from app.repositories import queries as queries_repo
 from app.repositories.datasources import GLOBAL_SCOPE_ID
@@ -48,6 +52,69 @@ class AnalysisClaim:
     worker_id: str
     fencing_token: int
     attempt: int
+
+
+_Resource = TypeVar("_Resource", QueryJob, AnalysisTask, ConversationTurn, IngestionTask)
+
+_QUEUE_TRANSITIONS = {
+    QueueState.READY: frozenset({QueueState.LEASED, QueueState.DONE, QueueState.FAILED}),
+    QueueState.LEASED: frozenset({QueueState.READY, QueueState.DONE, QueueState.FAILED}),
+    QueueState.DONE: frozenset(),
+    QueueState.FAILED: frozenset(),
+}
+
+
+def transition(row: TaskQueue, target: QueueState) -> None:
+    current = QueueState(row.state)
+    target = QueueState(target)
+    if target == current:
+        return
+    if target not in _QUEUE_TRANSITIONS[current]:
+        raise RuntimeError(f"invalid queue transition {current} -> {target}")
+    row.state = target
+
+
+def _claim_resource_queue(
+    session: Session, *, kind: str, model: type[_Resource], resumable: bool = False
+) -> tuple[_Resource | None, TaskQueue | None]:
+    """Lock the resource before its queue, matching completion/cancellation.
+
+    SKIP LOCKED applies to the resource itself: a worker doing a checkpoint
+    must never make a competing claimer hold its queue while waiting for it.
+    Recheck queue eligibility under its lock after choosing the resource.
+    """
+    eligible = TaskQueue.state == QueueState.READY
+    if resumable:
+        eligible = or_(
+            eligible,
+            (TaskQueue.state == QueueState.LEASED) & (TaskQueue.lease_until < func.now()),
+        )
+    resource = session.execute(
+        select(model).join(TaskQueue, TaskQueue.resource_id == model.id)
+        .where(TaskQueue.kind == kind, eligible, TaskQueue.available_at <= func.now())
+        .order_by(TaskQueue.available_at, TaskQueue.id)
+        .with_for_update(of=model, skip_locked=True).limit(1)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if resource is None:
+        # Orphan cleanup needs only a queue lock; there is no resource to lock.
+        orphan = session.execute(
+            select(TaskQueue).where(TaskQueue.kind == kind, eligible,
+                ~select(model.id).where(model.id == TaskQueue.resource_id).exists())
+            .with_for_update(skip_locked=True).limit(1)
+        ).scalar_one_or_none()
+        if orphan is not None:
+            transition(orphan, QueueState.FAILED)
+            session.flush()
+        return None, None
+    row = session.execute(
+        select(TaskQueue).where(TaskQueue.kind == kind,
+            TaskQueue.resource_id == resource.id, eligible,
+            TaskQueue.available_at <= func.now())
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    return resource, row
 
 
 def enqueue(session: Session, *, kind: str, resource_id: uuid.UUID) -> TaskQueue:
@@ -107,36 +174,17 @@ def claim_next_query(session: Session, *, worker_id: str, settings: Settings) ->
     The caller commits this transaction before executing anything.
     """
     now = utcnow()
-    queue_row = session.execute(
-        select(TaskQueue)
-        .where(
-            TaskQueue.kind == "query",
-            TaskQueue.state == QueueState.READY,
-            TaskQueue.available_at <= func.now(),
-        )
-        .order_by(TaskQueue.available_at, TaskQueue.id)
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    ).scalar_one_or_none()
+    job, queue_row = _claim_resource_queue(session, kind="query", model=QueryJob)
     if queue_row is None:
         return None
-
-    job = session.execute(
-        select(QueryJob).where(QueryJob.id == queue_row.resource_id).with_for_update()
-    ).scalar_one_or_none()
-    if job is None:
-        # Orphaned queue row: consistency checker reports it; do not guess.
-        queue_row.state = QueueState.FAILED
-        session.flush()
-        return None
     if job.status in TERMINAL_QUERY_STATUSES:
-        queue_row.state = (
+        transition(queue_row, (
             QueueState.DONE if job.status == QueryStatus.SUCCEEDED else QueueState.FAILED
-        )
+        ))
         session.flush()
         return None
     if job.status != QueryStatus.QUEUED:
-        queue_row.state = QueueState.FAILED
+        transition(queue_row, QueueState.FAILED)
         session.flush()
         return None
 
@@ -147,7 +195,7 @@ def claim_next_query(session: Session, *, worker_id: str, settings: Settings) ->
         job.error = queries_repo.sql_error(
             "QUEUE_TIMEOUT", "query did not get an execution slot before the queue timeout"
         )
-        queue_row.state = QueueState.FAILED
+        transition(queue_row, QueueState.FAILED)
         events_repo.add_event(
             session,
             resource_kind="query",
@@ -164,7 +212,7 @@ def claim_next_query(session: Session, *, worker_id: str, settings: Settings) ->
         return None
 
     lease_until = now + timedelta(seconds=settings.lease_seconds)
-    queue_row.state = QueueState.LEASED
+    transition(queue_row, QueueState.LEASED)
     queue_row.worker_id = worker_id
     queue_row.lease_until = lease_until
     queue_row.attempt = int(queue_row.attempt) + 1
@@ -191,7 +239,7 @@ def claim_next_query(session: Session, *, worker_id: str, settings: Settings) ->
         lease.heartbeat_at = now
         lease.lease_until = lease_until
 
-    job.status = QueryStatus.RUNNING
+    queries_repo.transition(job, QueryStatus.RUNNING)
     job.started_at = now
     job.attempt = int(queue_row.attempt)
     job.provider_handle = {"worker_id": worker_id, "fencing_token": fencing_token, "attempt": int(queue_row.attempt)}
@@ -222,37 +270,19 @@ def claim_next_analysis(
     from app.models.orm import AnalysisTask
 
     now = utcnow()
-    queue_row = session.execute(
-        select(TaskQueue)
-        .where(
-            TaskQueue.kind == "analysis",
-            or_(
-                TaskQueue.state == QueueState.READY,
-                (TaskQueue.state == QueueState.LEASED) & (TaskQueue.lease_until < func.now()),
-            ),
-            TaskQueue.available_at <= func.now(),
-        )
-        .order_by(TaskQueue.available_at, TaskQueue.id)
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    ).scalar_one_or_none()
+    task, queue_row = _claim_resource_queue(
+        session, kind="analysis", model=AnalysisTask, resumable=True
+    )
     if queue_row is None:
         return None
-    task = session.execute(
-        select(AnalysisTask).where(AnalysisTask.id == queue_row.resource_id).with_for_update()
-    ).scalar_one_or_none()
-    if task is None:
-        queue_row.state = QueueState.FAILED
-        session.flush()
-        return None
     if task.status in TERMINAL_ANALYSIS_STATUSES:
-        queue_row.state = (
+        transition(queue_row, (
             QueueState.DONE if task.status in {AnalysisStatus.COMPLETED, AnalysisStatus.PARTIAL}
             else QueueState.FAILED
-        )
+        ))
         session.flush()
         return None
-    queue_row.state = QueueState.LEASED
+    transition(queue_row, QueueState.LEASED)
     queue_row.worker_id = worker_id
     queue_row.lease_until = now + timedelta(seconds=settings.lease_seconds)
     queue_row.attempt = int(queue_row.attempt) + 1
@@ -285,9 +315,9 @@ def release_analysis_claim(
     ):
         return False
     if terminal:
-        row.state = QueueState.FAILED if failed else QueueState.DONE
+        transition(row, QueueState.FAILED if failed else QueueState.DONE)
     else:
-        row.state = QueueState.READY
+        transition(row, QueueState.READY)
         row.available_at = func.now() + _seconds(delay_seconds)
     row.worker_id = None
     row.lease_until = None
@@ -320,15 +350,28 @@ def check_cancel_requested(session: Session, query_id: uuid.UUID) -> bool:
     return row is not None
 
 
+def _lock_query_rows(
+    session: Session, query_id: uuid.UUID
+) -> tuple[ExecutionLease | None, QueryJob | None, TaskQueue | None]:
+    job = session.execute(
+        select(QueryJob).where(QueryJob.id == query_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    queue_row = session.execute(
+        select(TaskQueue).where(TaskQueue.kind == "query", TaskQueue.resource_id == query_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+    lease = session.execute(
+        select(ExecutionLease).where(ExecutionLease.query_id == query_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    return lease, job, queue_row
+
+
 def _lock_lease_and_job(
     session: Session, claim: ClaimedTask
 ) -> tuple[ExecutionLease | None, QueryJob | None]:
-    lease = session.execute(
-        select(ExecutionLease).where(ExecutionLease.query_id == claim.query_id).with_for_update()
-    ).scalar_one_or_none()
-    job = session.execute(
-        select(QueryJob).where(QueryJob.id == claim.query_id).with_for_update()
-    ).scalar_one_or_none()
+    lease, job, _ = _lock_query_rows(session, claim.query_id)
     return lease, job
 
 
@@ -383,7 +426,7 @@ def publish_success(
             expires_at=expires_at,
         )
     )
-    job.status = QueryStatus.SUCCEEDED
+    queries_repo.transition(job, QueryStatus.SUCCEEDED)
     job.finished_at = utcnow()
     job.error = None
     lease.state = LeaseState.RELEASED
@@ -391,7 +434,7 @@ def publish_success(
         select(TaskQueue).where(TaskQueue.kind == "query", TaskQueue.resource_id == claim.query_id).with_for_update()
     ).scalar_one_or_none()
     if queue_row is not None:
-        queue_row.state = QueueState.DONE
+        transition(queue_row, QueueState.DONE)
     events_repo.add_event(
         session,
         resource_kind="query",
@@ -425,6 +468,16 @@ def publish_terminal(
         return False
     engine_status = QueryStatus(job.status)
     target = QueryStatus(status)
+    if engine_status == QueryStatus.CANCEL_REQUESTED and target == QueryStatus.FAILED:
+        # The locked, refreshed row decides the cancel/error race. An earlier
+        # executor read may still have observed RUNNING before cancellation.
+        details = {
+            **(details or {}),
+            "cause": {"code": code, "message": message, "details": details or {}},
+        }
+        target = QueryStatus.CANCELLED
+        code = ErrorCode.QUERY_CANCELLED
+        message = "query was cancelled"
     # CANCEL_REQUESTED resolves to CANCELLED/TIMED_OUT/LOST; RUNNING may fail.
     if target == QueryStatus.CANCELLED and engine_status not in (
         QueryStatus.RUNNING,
@@ -445,7 +498,7 @@ def publish_terminal(
         select(TaskQueue).where(TaskQueue.kind == "query", TaskQueue.resource_id == claim.query_id).with_for_update()
     ).scalar_one_or_none()
     if queue_row is not None:
-        queue_row.state = QueueState.FAILED
+        transition(queue_row, QueueState.FAILED)
     events_repo.add_event(
         session,
         resource_kind="query",
@@ -466,8 +519,10 @@ def list_expired_queued(session: Session, queue_timeout_seconds: int) -> list[Qu
             .where(
                 QueryJob.status == QueryStatus.QUEUED,
                 TaskQueue.state == QueueState.READY,
+                TaskQueue.kind == "query",
                 QueryJob.created_at < cutoff,
             )
+            .order_by(QueryJob.id)
             .with_for_update(of=QueryJob, skip_locked=True)
         ).scalars()
     )
@@ -475,12 +530,19 @@ def list_expired_queued(session: Session, queue_timeout_seconds: int) -> list[Qu
 
 def mark_suspect_leases(session: Session, now=None) -> int:
     moment = now or utcnow()
-    result = session.execute(
-        update(ExecutionLease)
-        .where(ExecutionLease.state == LeaseState.ACTIVE, ExecutionLease.lease_until < moment)
-        .values(state=LeaseState.SUSPECT)
-    )
-    return int(result.rowcount or 0)
+    candidates = list(session.execute(
+        select(ExecutionLease.query_id).where(
+            ExecutionLease.state == LeaseState.ACTIVE, ExecutionLease.lease_until < moment
+        ).order_by(ExecutionLease.query_id)
+    ).scalars())
+    marked = 0
+    for query_id in candidates:
+        lease, _, _ = _lock_query_rows(session, query_id)
+        if lease is not None and lease.state == LeaseState.ACTIVE and lease.lease_until < moment:
+            lease.state = LeaseState.SUSPECT
+            marked += 1
+    session.flush()
+    return marked
 
 
 def reap_lost_leases(session: Session, settings: Settings) -> list[uuid.UUID]:
@@ -499,12 +561,14 @@ def reap_lost_leases(session: Session, settings: Settings) -> list[uuid.UUID]:
         session.execute(
             select(ExecutionLease)
             .where(ExecutionLease.state == LeaseState.SUSPECT, ExecutionLease.lease_until < cutoff)
-            .with_for_update(skip_locked=True)
+            .order_by(ExecutionLease.query_id)
         ).scalars()
     )
     lost: list[uuid.UUID] = []
-    for lease in rows:
-        job = session.get(QueryJob, lease.query_id)
+    for candidate in rows:
+        lease, job, queue_row = _lock_query_rows(session, candidate.query_id)
+        if lease is None or lease.state != LeaseState.SUSPECT or lease.lease_until >= cutoff:
+            continue
         if job is not None and job.status in (QueryStatus.RUNNING, QueryStatus.CANCEL_REQUESTED):
             queries_repo.transition(job, QueryStatus.LOST)
             job.error = queries_repo.sql_error(
@@ -519,11 +583,8 @@ def reap_lost_leases(session: Session, settings: Settings) -> list[uuid.UUID]:
             )
             lost.append(job.id)
         lease.state = LeaseState.RELEASED
-        queue_row = session.execute(
-            select(TaskQueue).where(TaskQueue.resource_id == lease.query_id).with_for_update()
-        ).scalar_one_or_none()
         if queue_row is not None:
-            queue_row.state = QueueState.FAILED
+            transition(queue_row, QueueState.FAILED)
     session.flush()
     return lost
 
@@ -572,39 +633,21 @@ def claim_next_turn(
     from app.constants import TERMINAL_CONVERSATION_TURN_STATUSES
     from app.models.orm import ConversationTurn
 
-    queue_row = session.execute(
-        select(TaskQueue)
-        .where(
-            TaskQueue.kind == "conversation",
-            or_(
-                TaskQueue.state == QueueState.READY,
-                (TaskQueue.state == QueueState.LEASED) & (TaskQueue.lease_until < func.now()),
-            ),
-            TaskQueue.available_at <= func.now(),
-        )
-        .order_by(TaskQueue.available_at, TaskQueue.id)
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    ).scalar_one_or_none()
+    turn, queue_row = _claim_resource_queue(
+        session, kind="conversation", model=ConversationTurn, resumable=True
+    )
     if queue_row is None:
         return None
-    turn = session.execute(
-        select(ConversationTurn).where(ConversationTurn.id == queue_row.resource_id).with_for_update()
-    ).scalar_one_or_none()
-    if turn is None:
-        queue_row.state = QueueState.FAILED
-        session.flush()
-        return None
     if turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
-        queue_row.state = (
+        transition(queue_row, (
             QueueState.DONE
             if turn.status == "COMPLETED"
             else QueueState.FAILED
-        )
+        ))
         session.flush()
         return None
     now = utcnow()
-    queue_row.state = QueueState.LEASED
+    transition(queue_row, QueueState.LEASED)
     queue_row.worker_id = worker_id
     queue_row.lease_until = now + timedelta(seconds=settings.lease_seconds)
     queue_row.attempt = int(queue_row.attempt) + 1
@@ -637,14 +680,29 @@ def release_turn_claim(
     ):
         return False
     if terminal:
-        row.state = QueueState.FAILED if failed else QueueState.DONE
+        transition(row, QueueState.FAILED if failed else QueueState.DONE)
     else:
-        row.state = QueueState.READY
+        transition(row, QueueState.READY)
         row.available_at = func.now() + _seconds(delay_seconds)
     row.worker_id = None
     row.lease_until = None
     session.flush()
     return True
+
+
+def _lock_stale_resource(
+    session: Session, candidate: TaskQueue, model: type[_Resource]
+) -> tuple[_Resource | None, TaskQueue | None]:
+    resource = session.execute(
+        select(model).where(model.id == candidate.resource_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    row = session.execute(
+        select(TaskQueue).where(TaskQueue.id == candidate.id,
+            TaskQueue.state == QueueState.LEASED, TaskQueue.lease_until < func.now())
+        .with_for_update(skip_locked=True).execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    return resource, row
 
 
 def requeue_stale_turns(session: Session) -> list[uuid.UUID]:
@@ -660,16 +718,18 @@ def requeue_stale_turns(session: Session) -> list[uuid.UUID]:
                 TaskQueue.state == QueueState.LEASED,
                 TaskQueue.lease_until < func.now(),
             )
-            .with_for_update(skip_locked=True)
+            .order_by(TaskQueue.resource_id)
         ).scalars()
     )
     requeued: list[uuid.UUID] = []
-    for row in rows:
-        turn = session.get(ConversationTurn, row.resource_id)
-        if turn is None or turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
-            row.state = QueueState.FAILED
+    for candidate in rows:
+        turn, row = _lock_stale_resource(session, candidate, ConversationTurn)
+        if row is None:
             continue
-        row.state = QueueState.READY
+        if turn is None or turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
+            transition(row, QueueState.FAILED)
+            continue
+        transition(row, QueueState.READY)
         row.worker_id = None
         row.lease_until = None
         row.available_at = func.now()
@@ -681,28 +741,15 @@ def requeue_stale_turns(session: Session) -> list[uuid.UUID]:
 def claim_next_ingestion(session: Session, *, worker_id: str):
     from app.models.orm import IngestionTask
 
-    queue_row = session.execute(
-        select(TaskQueue)
-        .where(
-            TaskQueue.kind == "ingestion",
-            TaskQueue.state == QueueState.READY,
-            TaskQueue.available_at <= func.now(),
-        )
-        .order_by(TaskQueue.available_at, TaskQueue.id)
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    ).scalar_one_or_none()
+    task, queue_row = _claim_resource_queue(session, kind="ingestion", model=IngestionTask)
     if queue_row is None:
         return None
-    task = session.execute(
-        select(IngestionTask).where(IngestionTask.id == queue_row.resource_id).with_for_update()
-    ).scalar_one_or_none()
     if task is None or task.status not in ("QUEUED", "RUNNING"):
-        queue_row.state = QueueState.FAILED if task is None else QueueState.DONE
+        transition(queue_row, QueueState.FAILED if task is None else QueueState.DONE)
         session.flush()
         return None
     now = utcnow()
-    queue_row.state = QueueState.LEASED
+    transition(queue_row, QueueState.LEASED)
     queue_row.worker_id = worker_id
     queue_row.lease_until = now + timedelta(seconds=INGESTION_LEASE_SECONDS)
     queue_row.attempt = int(queue_row.attempt) + 1
@@ -726,24 +773,26 @@ def requeue_stale_ingestions(session: Session, max_attempts: int = 3) -> dict:
                 TaskQueue.state == QueueState.LEASED,
                 TaskQueue.lease_until < utcnow(),
             )
-            .with_for_update(skip_locked=True)
+            .order_by(TaskQueue.resource_id)
         ).scalars()
     )
     requeued = 0
     failed = 0
-    for row in rows:
-        task = session.get(IngestionTask, row.resource_id)
+    for candidate in rows:
+        task, row = _lock_stale_resource(session, candidate, IngestionTask)
+        if row is None:
+            continue
         if task is None:
-            row.state = QueueState.FAILED
+            transition(row, QueueState.FAILED)
             continue
         if int(row.attempt) >= max_attempts:
             task.status = "FAILED"
             task.error = {"code": "INGESTION_LOST", "message": "worker lost; attempts exhausted"}
             task.finished_at = utcnow()
-            row.state = QueueState.FAILED
+            transition(row, QueueState.FAILED)
             failed += 1
         else:
-            row.state = QueueState.READY
+            transition(row, QueueState.READY)
             row.available_at = func.now()
             task.status = "QUEUED"
             requeued += 1

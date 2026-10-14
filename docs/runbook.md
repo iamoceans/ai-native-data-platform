@@ -179,7 +179,7 @@ cd frontend; npx playwright test
 | Control DB restored from backup | Queries in `RUNNING` with expired leases are reconciled to `LOST`; results whose files exist stay readable until `expires_at`. |
 | Result file missing/corrupt | `GET /queries/{id}/results` returns `RESULT_UNAVAILABLE` (410). The platform never fabricates an empty result. |
 | Datasource unreachable | Connection tests return sanitized errors; queued jobs fail with `DATASOURCE_UNAVAILABLE` (retryable) without crashing the worker loop. |
-| Disk full while writing results | The atomic publish fails, the job fails, and no partial result is recorded. |
+| Disk full while writing results | Publication failure is fenced into `FAILED / STORAGE_UNAVAILABLE`, releases the lease/queue capacity, and records audit/event evidence without a result row. If cancellation committed first, it resolves to `CANCELLED` with the storage failure retained as a cause. |
 | Need a clean slate | `docker compose run --rm --no-deps backend alembic downgrade base && make migrate && make bootstrap` (destructive: deletes control state), or remove the volumes deliberately. |
 | Reset demo data | `make reset-demo CONFIRM=demo` (drops/recreates the `demo` tables and truncates the demo-owned config tables, then reloads the newest generated run). Reloading a non-empty run without the flag is refused. |
 | DataHub stack down (all quickstart containers exited) | Usually the WSL2 VM restarted under memory pressure. `docker compose --project-name datahub --env-file .env -f infra/datahub/compose.pinned.yaml -f infra/datahub/compose.ainative.yaml --profile quickstart up -d`, wait for GMS `healthy`, then re-run `scripts/metadata_sync.py` if mappings look stale. |
@@ -348,3 +348,23 @@ read-only source authorization, and browser E2E. A separate HiveServer2
 execution connector is not part of this preview: Hive and Spark tables in the
 shared Metastore appear once as assets, and SQL currently runs through Spark
 Thrift Server.
+
+### 2026-10-15 execution and request safeguards
+
+The backend image disables proxy-header rewriting. For a native API process,
+include `--no-proxy-headers` when launching Uvicorn; client addresses are direct
+peers, so one reverse proxy shares a login-limit peer key. The limiter is bounded
+and prunes expired keys; a full key store refuses new keys until expiry.
+
+HTTP request bodies default to 4 MiB (`AIND_REQUEST_BODY_MAX_BYTES`); SQL retains
+its independent 64 KiB limit. Multipart skill uploads still apply their package
+limits after the body cap. Oversized bodies return `REQUEST_TOO_LARGE` (413)
+before route dependencies or writes. Bound maps reject excess entries/JSON size
+with validation errors. Configure both upload and global limits if raising the
+skill upload allowance.
+
+MySQL/Doris sockets bound read/write stalls to the query timeout plus five
+seconds. Cancellation is retried at least one second apart until execution exits;
+heartbeats retain their separate configured cadence. PostgreSQL uses the exact
+registered TLS mode. Live metadata-lock and TLS-engine acceptance were not run
+for this change; the 2026-10-15 record in `docs/acceptance.md` lists executed tests.

@@ -19,6 +19,7 @@ export function useSessionEvents(
   sessionId: string | null,
   onEvent: (event: SessionStreamEvent) => void,
   enabled: boolean,
+  streamKey: string | null = null,
 ): { connected: boolean } {
   const handler = useRef(onEvent);
   handler.current = onEvent;
@@ -31,11 +32,16 @@ export function useSessionEvents(
     }
     const source = new EventSource(sessionEventsUrl(sessionId), { withCredentials: true });
     const forward = (type: string) => (message: MessageEvent<string>) => {
+      if (typeof message.data !== "string") return;
       let data: Record<string, unknown> = {};
       try {
         data = JSON.parse(message.data) as Record<string, unknown>;
       } catch {
         data = { raw: message.data };
+      }
+      if (type === "stream.end" || type === "stream.closed") {
+        source.close();
+        setConnected(false);
       }
       handler.current({
         id: message.lastEventId ? Number(message.lastEventId) : null,
@@ -78,7 +84,7 @@ export function useSessionEvents(
       source.close();
       setConnected(false);
     };
-  }, [sessionId, enabled]);
+  }, [sessionId, enabled, streamKey]);
 
   return { connected };
 }

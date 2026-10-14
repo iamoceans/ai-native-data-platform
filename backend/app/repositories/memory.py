@@ -123,6 +123,7 @@ def list_recent(
     metric_key: str | None = None,
     status: str | None = None,
     limit: int = 50,
+    role_ids: list[uuid.UUID] | None = None,
 ) -> list[BusinessMemory]:
     statement = select(BusinessMemory)
     if metric_key:
@@ -130,9 +131,16 @@ def list_recent(
     if status:
         statement = statement.where(BusinessMemory.status == status)
     rows = session.execute(
-        statement.order_by(BusinessMemory.updated_at.desc(), BusinessMemory.id).limit(limit)
+        statement.order_by(BusinessMemory.updated_at.desc(), BusinessMemory.id)
     ).scalars()
-    return list(rows)
+    visible = []
+    for row in rows:
+        if role_ids is not None and not memory_dataset_actions_ok(session, role_ids=role_ids, row=row):
+            continue
+        visible.append(row)
+        if len(visible) >= limit:
+            break
+    return visible
 
 
 def list_by_ids(session: Session, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, BusinessMemory]:
@@ -171,12 +179,21 @@ def set_status(session: Session, row: BusinessMemory, status: str) -> BusinessMe
     return row
 
 
-def counts(session: Session, *, metric_key: str | None = None) -> dict[str, int]:
+def counts(session: Session, *, metric_key: str | None = None, role_ids: list[uuid.UUID] | None = None) -> dict[str, int]:
     """Rows per status, optionally scoped to one metric.
 
     Scoped counts matter because the list endpoint pages at ``limit``; a UI that
     counted only the rows it fetched would under-report a busy store.
     """
+    if role_ids is not None:
+        statement = select(BusinessMemory)
+        if metric_key:
+            statement = statement.where(BusinessMemory.metric_key == metric_key)
+        visible_counts: dict[str, int] = {}
+        for row in session.execute(statement).scalars():
+            if memory_dataset_actions_ok(session, role_ids=role_ids, row=row):
+                visible_counts[row.status] = visible_counts.get(row.status, 0) + 1
+        return visible_counts
     statement = select(BusinessMemory.status, func.count()).group_by(BusinessMemory.status)
     if metric_key:
         statement = statement.where(BusinessMemory.metric_key == metric_key)

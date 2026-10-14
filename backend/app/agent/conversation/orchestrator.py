@@ -172,9 +172,14 @@ def _user_content(session: Session, turn: ConversationTurn) -> dict[str, Any]:
 
 def _history(session: Session, turn: ConversationTurn) -> list[dict[str, Any]]:
     """Recent messages as a digest; the question text is the only free text."""
-    rows, _ = analyses_repo.list_messages(
+    rows, total = analyses_repo.list_messages(
         session, session_id=turn.session_id, limit=HISTORY_LIMIT, offset=0
     )
+    if total > HISTORY_LIMIT:
+        rows, _ = analyses_repo.list_messages(
+            session, session_id=turn.session_id, limit=HISTORY_LIMIT,
+            offset=total - HISTORY_LIMIT,
+        )
     history = []
     for row in rows:
         content = redact_report_message(

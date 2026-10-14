@@ -37,9 +37,14 @@ def expire_queued(session: Session, settings: Settings) -> list[str]:
         job.error = queries_repo.sql_error(
             "QUEUE_TIMEOUT", "query did not get an execution slot before the queue timeout"
         )
-        queue_row = session.query(queue_repo.TaskQueue).filter_by(resource_id=job.id).one_or_none()
+        queue_row = (
+            session.query(queue_repo.TaskQueue)
+            .filter_by(kind="query", resource_id=job.id)
+            .with_for_update()
+            .one_or_none()
+        )
         if queue_row is not None:
-            queue_row.state = QueueState.FAILED
+            queue_repo.transition(queue_row, QueueState.FAILED)
         events_repo.add_event(
             session,
             resource_kind="query",

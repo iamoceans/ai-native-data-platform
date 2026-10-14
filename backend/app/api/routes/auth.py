@@ -75,6 +75,8 @@ def login(
             outcome="rate_limited",
             details={"username": payload.username},
         )
+        # Only the denial audit was written; persist it before dependency rollback.
+        session.commit()
         raise ApiError(ErrorCode.RATE_LIMITED, "too many login attempts; try again later")
 
     user = users_repo.get_user_by_username(session, payload.username)
@@ -91,6 +93,7 @@ def login(
             outcome="denied",
             details={"username": payload.username},
         )
+        session.commit()
         raise ApiError(ErrorCode.UNAUTHENTICATED, "invalid username or password")
 
     session_row, token, csrf_token = sessions_service.issue_session(session, user, settings)

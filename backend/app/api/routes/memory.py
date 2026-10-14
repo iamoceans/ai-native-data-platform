@@ -1,7 +1,6 @@
 """Business memory endpoints: what the platform learned from its own analyses.
 
-Reading is open to any authenticated user - the statements are business
-knowledge, never credentials or row data. Curation (confirm/reject) is an
+Reading requires current query and discover grants on every source dataset. Curation (confirm/reject) is an
 administrator action: a model-written statement becomes settled business
 knowledge only through a human decision, and a rejection is permanent.
 """
@@ -50,11 +49,11 @@ def list_memory(
     if not 1 <= limit <= MAX_PAGE:
         raise ApiError(ErrorCode.VALIDATION_ERROR, f"limit must be between 1 and {MAX_PAGE}")
     rows = memory_repo.list_recent(
-        session, metric_key=metric_key, status=status, limit=limit
+        session, metric_key=metric_key, status=status, limit=limit, role_ids=_auth.role_ids
     )
     return MemoryListResponse(
         items=[_item(row) for row in rows],
-        counts=memory_repo.counts(session, metric_key=metric_key),
+        counts=memory_repo.counts(session, metric_key=metric_key, role_ids=_auth.role_ids),
     )
 
 
@@ -69,6 +68,8 @@ def _curate(
     row = memory_repo.get(session, memory_id)
     if row is None:
         raise ApiError(ErrorCode.NOT_FOUND, "memory not found")
+    if not memory_repo.memory_dataset_actions_ok(session, role_ids=auth.role_ids, row=row):
+        raise ApiError(ErrorCode.NOT_FOUND, "memory not found or not visible")
     # Read before the write: set_status mutates the row in place, so asking it
     # afterwards would record the new status as the previous one.
     previous = row.status

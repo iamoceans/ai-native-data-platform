@@ -7,10 +7,11 @@ fields so that misspelled parameters fail loudly instead of being ignored.
 from __future__ import annotations
 
 import uuid
+import json
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import TypeAliasType
 
 # Named recursive type (PEP 695 style via typing_extensions) so schema
@@ -21,8 +22,27 @@ JsonValue = TypeAliasType(
 )
 
 
+MAX_MAPPING_ENTRIES = 100
+MAX_MAPPING_BYTES = 64 * 1024
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("parameters", "skill_config", "filters", check_fields=False)
+    @classmethod
+    def bounded_mapping(cls, value):
+        if value is None:
+            return value
+        if len(value) > MAX_MAPPING_ENTRIES:
+            raise ValueError(f"mapping exceeds {MAX_MAPPING_ENTRIES} entries")
+        try:
+            encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, default=str).encode("utf-8")
+        except (ValueError, RecursionError) as exc:
+            raise ValueError("mapping must contain bounded JSON values") from exc
+        if len(encoded) > MAX_MAPPING_BYTES:
+            raise ValueError(f"mapping exceeds {MAX_MAPPING_BYTES} bytes")
+        return value
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +129,8 @@ class DatasourceResponse(BaseModel):
     id: uuid.UUID
     name: str
     kind: str
-    connection_config: dict[str, Any]
-    secret_ref: str
+    connection_config: dict[str, Any] | None = None
+    secret_ref: str | None = None
     capabilities: dict[str, Any]
     enabled: bool
     health_status: str

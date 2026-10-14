@@ -126,11 +126,13 @@ export interface CreateAnalysisInput {
   dimensions: string[];
   dataComplete: boolean;
   filters?: Record<string, string>;
+  idempotencyKey?: string;
 }
 
 export async function createAnalysis(input: CreateAnalysisInput): Promise<{ analysis_id: string; status: string }> {
   return apiFetch<{ analysis_id: string; status: string }>("/api/v1/analyses", {
     method: "POST",
+    headers: { "Idempotency-Key": input.idempotencyKey ?? crypto.randomUUID() },
     body: {
       session_id: input.sessionId,
       question: input.question,

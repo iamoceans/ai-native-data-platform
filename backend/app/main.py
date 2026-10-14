@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
+from app.api.body_limit import RequestBodyLimitMiddleware
 from app.api.routes import (
     analyses,
     admin,
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
         response.headers["X-Trace-Id"] = trace_id
         return response
 
+    app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.request_body_max_bytes)
     register_error_handlers(app)
 
     api = FastAPI  # noqa: F841 - readability anchor

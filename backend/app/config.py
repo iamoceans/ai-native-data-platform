@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # --- gateway budgets (spec section 4) ---
     request_max_bytes: int = 64 * 1024
+    request_body_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024)
     default_max_rows: int = 1_000
     hard_max_rows: int = 10_000
     hard_max_bytes: int = 10 * 1024 * 1024

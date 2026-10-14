@@ -1115,3 +1115,92 @@ DataHub-dependent integration tests remain deselected (stack not started), the
 Spark/Hive preview was not re-run, and no live PostgreSQL lock-*contention*
 scenario was executed beyond the busy-check regressions - the busy path is
 covered by unit tests and by the suites above, not by a concurrent load test.
+
+
+## 2026-10-15 reported defects — static re-verification
+
+Implemented fixes for nonadditive period aggregation and named multi-source
+composition, disabled Ask fallback repetition, rollback-lost login audits,
+business-memory HTTP authorization, oldest-first model history, and unauthorized
+schema probing. Independent review also caught and resolved NULL composition
+semantics, repair-step key collisions and fallback scope changes during a pending
+request. Contributions are limited to additive metrics/compositions; undefined
+period values and incompatible old checkpoints fail explicitly.
+
+Observed commands on this working tree:
+
+- `uv --cache-dir runtime/uv-cache run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q -p no:cacheprovider --basetemp=runtime/pytest-<unique timestamp>`
+  -> **425 passed, 2 warnings** (existing Starlette/httpx/anyio deprecations).
+  Output: `runtime/defects-static-20261015.txt`. A work-local uv cache and fresh
+  temporary directory avoid existing cache/tmp ACL failures.
+- `cd frontend; npm.cmd run typecheck` -> **exit 0**; independently repeated
+  `node node_modules/typescript/bin/tsc -b --noEmit` after the snapshot error
+  handler -> **exit 0**.
+- `cd frontend; npm.cmd run build` -> **exit 0**, Vite production build complete.
+- `git diff --check` -> **exit 0** (line-ending notices only).
+
+Regressions cover period-total SQL shape for eCPM/DAU; observer totals for eCPM,
+subtraction/division and NULL-aware composition; nonadditive attribution refusal;
+real FastAPI dependency rollback with SQLite persistence for 401 and 429 audits;
+memory filtering before page limit and visibility-scoped counts; latest history;
+and denied-column probes with zero schema introspection. Browser cases were
+added for fallback rerenders, idempotency headers and immutable sent scope.
+
+**Not verified:** browser runs started on isolated ports 3021/3023 but stalled
+without a final result; partial progress is not counted as passing. Shell launch
+attempts intermittently failed with `helper_unknown_error: setup refresh had errors`.
+The full-service PostgreSQL/MySQL/Doris/DataHub matrix, deployed journeys and A09
+were **not executed** for these fixes. The audit persistence regression uses local
+HTTP + SQLite, not live PostgreSQL. No deployment, commit or historical-report
+rewrite was performed. Rerun affected historical analyses for corrected reports.
+
+
+## 2026-10-15 medium defects — regression verification
+
+Confirmed and fixed: optional driver `AnalysisError` handling (both compilation
+and deterministic calculation), full-text percent escaping with AST-only bindings,
+PostgreSQL TLS-mode forwarding, MySQL/Doris socket I/O bounds, queue/resource lock
+order, explicit queue transitions, fenced publication failure, current
+query+discover result/SSE access, nonadmin datasource-summary redaction, terminal
+SSE closure and historical-analysis polling, HTTP body/map limits and bounded
+login-rate-limit storage. The backend image disables forwarded-header rewriting.
+The reported NULL eCPM breakdown conversion was already fixed by the earlier
+2026-10-15 change; a zero-impressions/NULL breakdown observer regression now
+checks that independent period totals remain usable.
+
+Independent review reproduced a cancellation/publication-failure race and idle
+cross-tab session staleness. Both were fixed before acceptance: cancellation wins
+under the authoritative row lock with the underlying error retained as a cause,
+and idle tabs refresh session state every 15 seconds. Model RPCs still retain
+the analysis task lock; reclaim now skips it rather than introducing a queue
+lock cycle. Optional driver submissions use a savepoint to prevent half-plans.
+
+Observed checks on the final source tree:
+
+- `uv --cache-dir runtime/uv-cache run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q -p no:cacheprovider --basetemp=runtime/pytest-<timestamp>`
+  -> **469 passed, 2 warnings** (existing dependency deprecations). Output:
+  `runtime/medium-static-20261015.txt`. Includes SQL/Spark/skill attack corpora.
+- `uv --cache-dir runtime/uv-cache run --project backend --frozen pytest backend/tests/unit/test_medium_api_defects.py backend/tests/integration/test_queue_executor_medium_defects.py -q -p no:cacheprovider --basetemp=runtime/pytest-<timestamp>`
+  -> **14 passed / 2 skipped**; the two PostgreSQL contention cases require
+  `AIND_DATABASE_URL`. They are not live passes.
+- `cd frontend; npm.cmd run test:unit` (equivalently
+  `node --test tests/unit/stream-events.test.cjs`) -> **7 passed**. These execute
+  transpiled hooks with mocked React effects/EventSource, covering terminal close,
+  transient reconnect/unmount and terminal polling; they are not browser E2E.
+  Output: `runtime/medium-frontend-unit-20261015.txt`.
+- From `backend`: `uv --cache-dir ../runtime/uv-cache run --frozen python -m app.openapi_export --output ../frontend/openapi.json`
+  -> **exit 0**, updated OpenAPI (189062 bytes); generated frontend API types.
+- `cd frontend; node node_modules/typescript/bin/tsc -b --noEmit` -> **exit 0**.
+- `cd frontend; npm.cmd run build` -> **exit 0**, production build (90 modules).
+- Independent general review approved the cancellation/body/SSE fixes after
+  **26 focused tests passed**.
+
+Live boundary: `docker ps --format "{{.Names}} {{.Status}}"` returned no running
+containers. The engine matrix, actual metadata-lock stalls, TLS negotiation and
+PostgreSQL contention were **not verified live**. Browser E2E was not rerun; the
+earlier stalled browser attempts do not count. Spark concurrent cancellation
+remains **suspected / pending**: pinned Impyla shares one unsynchronized RPC
+transport, but a live Spark operation/cancel race and independent-transport
+authorization were not reproduced. Spark code is unchanged. No deployment or
+commit was performed. The proxy-header launch flag takes effect when the updated
+image is built/run (native launchers must supply it explicitly).
