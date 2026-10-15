@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 test.use({ locale: "zh-CN" });
 
-async function fixture(page: Page) {
+async function fixture(page: Page, options: { startAt?: string } = {}) {
  const pageErrors: string[] = [];
  page.on('pageerror', error => pageErrors.push(error.message));
  page.on('close', () => expect(pageErrors).toEqual([]));
@@ -12,7 +12,7 @@ async function fixture(page: Page) {
   second: { id: 'second', title: 'second', context_version: 5, active_turn_id: null, resolved_context: { ...scope, metric_key: 'clicks', dimensions: ['region'] }, skill_config: {}, updated_at: '2026-10-14' },
  };
  const turns: any[] = []; const patches: any[] = [];
- const control = { rejectBinding: false, turnDelay: 0, bindingDelay: 0, rejectTurn: false, conversationalDisabled: false, rejectAnalysis: false, analysisDelay: 0 };
+ const control: { rejectBinding: boolean; turnDelay: number; bindingDelay: number; rejectTurn: boolean; conversationalDisabled: boolean; rejectAnalysis: boolean; analysisDelay: number; messages: any[] } = { rejectBinding: false, turnDelay: 0, bindingDelay: 0, rejectTurn: false, conversationalDisabled: false, rejectAnalysis: false, analysisDelay: 0, messages: [] };
  const analyses: any[] = [];
  const analysisKeys: string[] = [];
  await page.context().route('**/api/v1/**', async route => {
@@ -21,9 +21,14 @@ async function fixture(page: Page) {
   if (path.endsWith('/auth/me')) body = { username: 'test', roles: [], capabilities: [] };
   if (path.endsWith('/metrics')) body = { items: ['revenue', 'clicks'].map(metric_key => ({ metric_key, name: metric_key, allowed_dimensions: ['platform','region'] })) };
   if (path.endsWith('/skills')) body = { items: [{ id:'upload', slug:'personal', source:'upload', enabled:true, archived_at:null, latest_version:{ id:'v2', version:2 }, versions:[{id:'v1',version:1},{id:'v2',version:2}] }] };
-  if (path.endsWith('/sessions')) body = { items: Object.values(sessions) };
-  const match = path.match(/sessions\/(first|second)$/);
-  if (match) {
+  if (path.endsWith('/sessions') && route.request().method() === 'POST') {
+   const created = { id: 'created', title: route.request().postDataJSON().title, context_version: 0, active_turn_id: null, resolved_context: {}, skill_config: {}, updated_at: '2026-10-16' };
+   sessions.created = created;
+   body = created;
+  } else if (path.endsWith('/sessions')) body = { items: Object.values(sessions) };
+  if (path.endsWith('/messages')) body = { items: control.messages };
+  const match = path.match(/sessions\/([a-z-]+)$/);
+  if (match && sessions[match[1]]) {
    const session = sessions[match[1]];
    if (route.request().method() === 'PATCH' && control.bindingDelay) await new Promise(resolve => setTimeout(resolve, control.bindingDelay));
    if (route.request().method() === 'PATCH' && control.rejectBinding) { await route.fulfill({status:409,json:{error:{code:'CONTEXT_VERSION_CONFLICT',message:'会话已更新，请重试',retryable:true,details:{}}}}); return; }
@@ -49,10 +54,49 @@ async function fixture(page: Page) {
   if (path.endsWith('/events')) { await route.fulfill({ status:200, contentType:'text/event-stream', body:'' }); return; }
   await route.fulfill({ json:body });
  });
- await page.goto('/ask/first');
- await expect(page.getByTestId('scope-current-start')).toHaveValue('2026-09-08');
+ await page.goto(options.startAt ?? '/ask/first');
+ if (options.startAt !== '/ask') await expect(page.getByTestId('scope-current-start')).toHaveValue('2026-09-08');
  return { turns, patches, sessions, control, analyses, analysisKeys };
 }
+
+test('opens a conversation for the question typed on the landing page', async ({page}) => {
+ // No session in the URL: the composer used to accept text with a permanently
+ // disabled send button, so nothing could be asked at all.
+ const { turns, sessions } = await fixture(page, { startAt: '/ask' });
+ await expect(page.getByTestId('conversation-empty')).toContainText('直接提问');
+ await page.getByTestId('conversation-input').fill('ads 层都有哪些数据？');
+ await expect(page.getByTestId('conversation-send')).toBeEnabled();
+ await page.getByTestId('conversation-send').click();
+ await expect(page).toHaveURL(/\/ask\/created$/);
+ await expect.poll(() => turns.length).toBe(1);
+ expect(turns[0].text).toBe('ads 层都有哪些数据？');
+ expect(sessions.created.title).toBe('ads 层都有哪些数据？');
+ expect(turns[0].expected_context_version).toBe(0);
+});
+
+test('renders the registry a help reply carries', async ({page}) => {
+ const { control } = await fixture(page);
+ control.messages = [{
+  id: 'm1', role: 'assistant', created_at: '2026-10-16T00:00:00Z', sequence: 2, turn_id: null, content_schema_version: 1,
+  content: { kind: 'help', text: '我可以对已登记的指标做受治理的对比分析。', metrics: [{ metric_key: 'ads_revenue', name: '广告收入', unit: 'USD', dimensions: ['country', 'platform'] }] },
+ }];
+ await page.reload();
+ await expect(page.getByTestId('message-help')).toContainText('我可以对已登记的指标');
+ await expect(page.getByTestId('message-metrics').locator('li')).toHaveCount(1);
+ await expect(page.getByTestId('message-metrics')).toContainText('广告收入');
+ await expect(page.getByTestId('message-metrics')).toContainText('country');
+});
+
+test('a report without claims states why instead of showing an empty message', async ({page}) => {
+ const { control } = await fixture(page);
+ control.messages = [{
+  id: 'm2', role: 'assistant', created_at: '2026-10-16T00:00:00Z', sequence: 2, turn_id: null, content_schema_version: 1,
+  content: { kind: 'analysis_result', analysis_id: 'legacy', status: 'PARTIAL', partial: true, claims: [], limitations: ['数据完整性未验证：仅报告观测到的变化，未做归因结论'] },
+ }];
+ await page.reload();
+ await expect(page.getByTestId('result-no-claims')).toContainText('数据完整性未验证');
+ await expect(page.getByTestId('result-claims')).toHaveCount(0);
+});
 
 test('inherits asynchronously resolved scope and resets edits when switching sessions', async ({page}) => {
  const { turns } = await fixture(page);

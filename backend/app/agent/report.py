@@ -6,6 +6,12 @@ from copy import deepcopy
 from decimal import Decimal
 from typing import Any
 
+from app.constants import CompletenessState
+
+COMPLETENESS_COMPLETE = CompletenessState.COMPLETE.value
+COMPLETENESS_UNKNOWN = CompletenessState.UNKNOWN.value
+COMPLETENESS_INCOMPLETE = CompletenessState.INCOMPLETE.value
+
 
 class ReportValidationError(ValueError):
     pass
@@ -67,24 +73,41 @@ def build_comparison_report(
     metric_key: str,
     metric_version: int,
     evidence_available_until: str | None,
-    data_complete: bool = True,
+    completeness: str = COMPLETENESS_COMPLETE,
     drivers: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
     chart_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Assemble the report from the calculation; never from model prose.
+
+    `completeness` is the three-state value the design mandates (6.1), and it
+    decides what may be claimed:
+
+    * `complete`  - the full report: observed change, contributor, driver split.
+    * `unknown`   - the change itself is a governed observation, so it is still
+                    reported, but nothing may be attributed to a group or factor
+                    until the window is verified.
+    * `incomplete` - the window is known to be missing data, so even the change
+                    is withheld; only the limitation is published.
+
+    Collapsing `unknown` into `incomplete` (as the first version did) turned the
+    cautious default into an empty answer for every conversational turn.
+    """
     change = Decimal(str(calculation["change"]))
     change_pct = calculation.get("change_pct")
     material = is_material(change, calculation.get("baseline", 0))
     band = materiality_band(calculation.get("baseline", 0))
+    data_complete = completeness == COMPLETENESS_COMPLETE
+    observable = data_complete or completeness == COMPLETENESS_UNKNOWN
     claims: list[dict[str, Any]] = []
     limitations = ["统计分解描述相关变化，不能单独证明业务因果关系"]
     limitations.extend(str(item) for item in (warnings or []))
     calculations = {calculation_id: calculation}
-    if data_complete and not material:
+    if observable and not material:
         limitations.append(
             f"变化 {change} 在材料性阈值 ±{band} 内，不构成需要归因的变化"
         )
-    if data_complete:
+    if observable:
         claims.append(
             {
                 "id": "claim-1",
@@ -100,6 +123,7 @@ def build_comparison_report(
                 "metric_versions": {metric_key: metric_version},
             }
         )
+    if data_complete:
         contribution = calculation.get("contribution") or {}
         groups = list(contribution.get("groups") or [])
         if material and groups and groups[0].get("net_change_share") is not None:
@@ -150,8 +174,10 @@ def build_comparison_report(
             )
         elif material and drivers and drivers.get("status") == "undefined_impressions":
             limitations.append("目标组合在某一期间没有展示量，eCPM 未定义，未做因子拆分")
+    elif completeness == COMPLETENESS_INCOMPLETE:
+        limitations.append("数据完整性检查未通过：已知窗口数据不完整，未报告变化与归因结论")
     else:
-        limitations.append("数据完整性检查未通过，已阻止变化归因结论")
+        limitations.append("数据完整性未验证：仅报告观测到的变化，未做归因结论")
     hypotheses = [] if (not material or not data_complete) else [
         {"text": "需要结合贡献分解和业务配置进一步核查变化来源", "status": "unverified"}
     ]

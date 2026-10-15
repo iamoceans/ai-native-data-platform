@@ -632,13 +632,25 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
 .message-text { margin: 0; line-height: 1.7; }
 .message-body { display: grid; gap: 8px; }
 .claims { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.metric-catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.metric-catalog li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .quotes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .quotes li { display: flex; gap: 8px; align-items: baseline; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .composer { display: grid; gap: 8px; }
 .composer textarea { width: 100%; resize: vertical; }
 .composer-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.conversation-side { display: grid; gap: 12px; position: sticky; top: 16px; }
+.conversation-side { display: grid; gap: 12px; position: sticky; top: 16px; min-width: 0; }
+/* The right column is a fixed 320px track. A grid item's automatic minimum size
+   lets the metric <select> - sized by its longest option, e.g.
+   "归因收入（cohort 观测口径）（campaign_attributed_revenue）" - widen the column to
+   416px, which scrolls the whole page sideways at 1280px and 390px. */
+.conversation-side > * { min-width: 0; }
+/* An implicit `auto` column takes its minimum from the item's content-based
+   minimum, which a <select> reports as its widest option; minmax(0, 1fr) caps
+   the track at the panel so the rows wrap instead of pushing the page wider. */
+.conversation-side .stack { grid-template-columns: minmax(0, 1fr); }
+.conversation-side select { min-width: 0; max-width: 100%; }
 .conversation-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--surface); }
 .stack { display: grid; gap: 8px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

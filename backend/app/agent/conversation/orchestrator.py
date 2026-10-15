@@ -74,24 +74,49 @@ def clarify_reply(missing: list[str], questions: list[str] | None = None) -> dic
     }
 
 
-def help_reply(prose: str | None = None) -> dict[str, Any]:
-    return {
+def help_reply(
+    prose: str | None = None,
+    *,
+    metrics: list[dict[str, Any]] | None = None,
+    example: str | None = None,
+) -> dict[str, Any]:
+    """What the platform can do, with the registry as the honest content.
+
+    A question like "ADS 层都有哪些数据" is answerable: the registry knows every
+    metric, its unit and its allowlisted dimensions. Only the *metric* view is
+    published here - dataset grants stay with the catalog endpoints - and the
+    model's own prose is kept only when it survived the numeric guard.
+    """
+    key = str(metrics[0]["metric_key"]) if metrics else None
+    default_example = f"例如：{key} 上周相比前一周的变化" if key else None
+    content: dict[str, Any] = {
         "schema_version": 1,
         "kind": "help",
         "text": prose
         or (
-            "我可以对已登记的指标做受治理的对比分析。请提供指标、基准期间与当前期间，"
-            "例如：ads_revenue 在 2026-09-11 相比 2026-09-10 的变化。"
+            "我可以对已登记的指标做受治理的对比分析。告诉我指标、基准期间与当前期间即可。"
+            + (f"{default_example}。" if default_example else "")
         ),
     }
+    if metrics:
+        content["metrics"] = metrics
+    if example:
+        content["example"] = example
+    return content
 
 
-def unsupported_reply(reason: str | None) -> dict[str, Any]:
-    return {
+def unsupported_reply(
+    reason: str | None, *, metrics: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """A refusal still points at what the platform does hold, when there is any."""
+    content: dict[str, Any] = {
         "schema_version": 1,
         "kind": "unsupported",
         "text": reason or "这个请求超出了平台当前支持的范围。",
     }
+    if metrics:
+        content["metrics"] = metrics
+    return content
 
 
 def result_reply(
@@ -192,8 +217,13 @@ def _history(session: Session, turn: ConversationTurn) -> list[dict[str, Any]]:
     return history[-HISTORY_LIMIT:]
 
 
-def _metric_table(session: Session) -> dict[str, set[str]]:
-    """Registered metrics and their allowlisted dimensions (the validation source)."""
+def _metric_catalog(session: Session) -> list[dict[str, Any]]:
+    """The registered metrics as the platform can describe them.
+
+    This is the honest source for "what data do you have": names, units and
+    allowlisted dimensions come from the active metric definitions, never from
+    the model. A malformed definition is simply not offered.
+    """
     from sqlalchemy import select
 
     from app.metrics.registry import MetricDefinitionModel
@@ -202,14 +232,30 @@ def _metric_table(session: Session) -> dict[str, set[str]]:
     rows = session.execute(
         select(MetricDefinition).where(MetricDefinition.active.is_(True))
     ).scalars()
-    table: dict[str, set[str]] = {}
+    catalog: list[dict[str, Any]] = []
     for row in rows:
         try:
             model = MetricDefinitionModel.model_validate(row.definition)
-        except Exception:  # a malformed definition is simply not offered
+        except Exception:
             continue
-        table[row.metric_key] = set(model.allowed_dimensions or [])
-    return table
+        catalog.append(
+            {
+                "metric_key": row.metric_key,
+                "name": model.name,
+                "unit": model.unit,
+                "datasets": model.all_datasets,
+                "dimensions": sorted(model.allowed_dimensions or []),
+            }
+        )
+    catalog.sort(key=lambda item: str(item["metric_key"]))
+    return catalog
+
+
+def _metric_table(session: Session) -> dict[str, set[str]]:
+    """Registered metrics and their allowlisted dimensions (the validation source)."""
+    return {
+        str(item["metric_key"]): set(item["dimensions"]) for item in _metric_catalog(session)
+    }
 
 
 def _recent_analyses(session: Session, turn: ConversationTurn) -> list[dict[str, Any]]:
@@ -629,7 +675,15 @@ def _apply_turn(
         _close(
             session, turn,
             status=ConversationTurnStatus.WAITING_INPUT,
-            content=clarify_reply(missing, decision.clarify_questions),
+            content=clarify_reply(
+                missing,
+                list(decision.clarify_questions)
+                + (
+                    ["期间按左闭右开理解（含开始日期、不含结束日期）：只看一天请填 该日 到 次日。"]
+                    if scope.invalid_period_fields(merged)
+                    else []
+                ),
+            ),
         )
         return str(turn.status)
 
@@ -644,7 +698,9 @@ def _apply_turn(
         _close(
             session, turn,
             status=ConversationTurnStatus.COMPLETED,
-            content=unsupported_reply(decision.unsupported_reason),
+            content=unsupported_reply(
+                decision.unsupported_reason, metrics=_metric_catalog(session)
+            ),
         )
         return str(turn.status)
 
@@ -652,7 +708,7 @@ def _apply_turn(
     _close(
         session, turn,
         status=ConversationTurnStatus.COMPLETED,
-        content=help_reply(decision.reply),
+        content=help_reply(decision.reply, metrics=_metric_catalog(session)),
     )
     return str(turn.status)
 

@@ -18,12 +18,15 @@ the report keeps distinguishing "unknown" from "known incomplete".
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
-COMPLETENESS_UNKNOWN = "unknown"
-COMPLETENESS_COMPLETE = "complete"
-COMPLETENESS_INCOMPLETE = "incomplete"
-COMPLETENESS_STATES = (COMPLETENESS_UNKNOWN, COMPLETENESS_COMPLETE, COMPLETENESS_INCOMPLETE)
+from app.constants import CompletenessState
+
+COMPLETENESS_UNKNOWN = CompletenessState.UNKNOWN.value
+COMPLETENESS_COMPLETE = CompletenessState.COMPLETE.value
+COMPLETENESS_INCOMPLETE = CompletenessState.INCOMPLETE.value
+COMPLETENESS_STATES = tuple(state.value for state in CompletenessState)
 
 # Fields an analysis needs before it can be submitted (design 7.2 required_inputs).
 REQUIRED_ANALYSIS_FIELDS = (
@@ -83,9 +86,7 @@ def merge_scope_patch(
 
 def completeness_from_bool(value: bool | None, *, source: str) -> str:
     """A caller's boolean is a claim, not a verification (design 6.1)."""
-    if value is None:
-        return COMPLETENESS_UNKNOWN
-    return COMPLETENESS_COMPLETE if value else COMPLETENESS_INCOMPLETE
+    return CompletenessState.from_bool(value).value
 
 
 def bridge_data_complete(context: dict[str, Any]) -> bool:
@@ -93,8 +94,54 @@ def bridge_data_complete(context: dict[str, Any]) -> bool:
     return context.get("data_complete_state") == COMPLETENESS_COMPLETE
 
 
+def analysis_completeness(context: dict[str, Any]) -> str:
+    """The three-state value the analysis context carries (design 6.1).
+
+    Bridging to a bare boolean loses the difference between "nobody said" and
+    "known incomplete", and the report must keep them apart: unverified data
+    still reports the observed change, a known-incomplete window does not.
+    """
+    state = context.get("data_complete_state")
+    if state in COMPLETENESS_STATES:
+        return str(state)
+    return completeness_from_bool(context.get("data_complete"), source="")
+
+
+def invalid_period_fields(context: dict[str, Any]) -> list[str]:
+    """Fields whose pair cannot describe a non-empty half-open window.
+
+    The analysis contract is `[start, end)` - the direct API rejects an empty
+    range - but a model (or a person) reading the dates as inclusive produces
+    `end == start`. That query matches no rows, so the change would be published
+    as "变化 0" instead of the period never being comparable at all.
+    """
+    invalid: list[str] = []
+    for start_field, end_field in (
+        ("baseline_start", "baseline_end"),
+        ("current_start", "current_end"),
+    ):
+        start = context.get(start_field)
+        end = context.get(end_field)
+        if not start or not end:
+            continue
+        try:
+            ordered = date.fromisoformat(str(start)) < date.fromisoformat(str(end))
+        except ValueError:
+            ordered = False
+        if not ordered:
+            invalid.extend([start_field, end_field])
+    return invalid
+
+
 def missing_required_fields(context: dict[str, Any]) -> list[str]:
-    return [field for field in REQUIRED_ANALYSIS_FIELDS if context.get(field) in (None, "")]
+    """What still blocks an analysis: an absent or unusable field."""
+    missing = [
+        field for field in REQUIRED_ANALYSIS_FIELDS if context.get(field) in (None, "")
+    ]
+    for field in invalid_period_fields(context):
+        if field not in missing:
+            missing.append(field)
+    return missing
 
 
 def scope_to_analysis_context(context: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +155,7 @@ def scope_to_analysis_context(context: dict[str, Any]) -> dict[str, Any]:
         "dimensions": list(context.get("dimensions") or [])[:3],
         "filters": dict(context.get("filters") or {}),
         "data_complete": bridge_data_complete(context),
+        "completeness": analysis_completeness(context),
     }
 
 

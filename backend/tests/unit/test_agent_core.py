@@ -114,11 +114,66 @@ def test_report_requires_bound_evidence_and_avoids_forced_explanation():
         metric_key="ads_revenue",
         metric_version=1,
         evidence_available_until=None,
-        data_complete=False,
+        completeness="incomplete",
     )
     assert incomplete["status"] == "PARTIAL"
     assert incomplete["claims"] == []
     assert incomplete["hypotheses"] == []
+    assert any("已知窗口数据不完整" in item for item in incomplete["limitations"])
+
+
+def test_unverified_completeness_still_reports_the_observed_change():
+    """A conversational default (nobody verified the window) is not silence.
+
+    `unknown` keeps the change - a governed observation - and blocks only the
+    attribution, which is what collapsing `unknown` into "no claims" got wrong.
+    """
+    calculation = {
+        "baseline": "1000",
+        "current": "800",
+        "change": "-200",
+        "change_pct": "-0.2",
+        "contribution": {
+            "groups": [{"key": ["US"], "delta": "-150", "net_change_share": "0.75"}]
+        },
+    }
+    report = build_comparison_report(
+        analysis_id="a4",
+        question="why",
+        comparison={},
+        calculation_id="c4",
+        calculation=calculation,
+        query_ids=["q1"],
+        dataset_ids=["d1"],
+        metric_key="ads_revenue",
+        metric_version=1,
+        evidence_available_until=None,
+        completeness="unknown",
+    )
+    assert report["status"] == "PARTIAL"
+    assert [claim["kind"] for claim in report["claims"]] == ["observed_change"]
+    assert "-200" in report["claims"][0]["text"]
+    assert report["hypotheses"] == []
+    assert any("数据完整性未验证" in item for item in report["limitations"])
+
+    complete = build_comparison_report(
+        analysis_id="a5",
+        question="why",
+        comparison={},
+        calculation_id="c5",
+        calculation=calculation,
+        query_ids=["q1"],
+        dataset_ids=["d1"],
+        metric_key="ads_revenue",
+        metric_version=1,
+        evidence_available_until=None,
+        completeness="complete",
+    )
+    assert complete["status"] == "COMPLETED"
+    assert [claim["kind"] for claim in complete["claims"]] == [
+        "observed_change",
+        "statistical_contributor",
+    ]
 
 
 def test_report_rejects_unbound_numeric_claim():

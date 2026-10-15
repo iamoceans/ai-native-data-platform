@@ -38,6 +38,9 @@ import { StatusBadge } from "../components/StatusBadge";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 
 const ACTIVE_TURN_STATES = ["QUEUED", "RESOLVING", "ANALYZING", "RESPONDING"];
+// A conversation started from the landing page is titled with its question, so
+// the rail reads as history instead of "New conversation" rows.
+const SESSION_TITLE_LIMIT = 60;
 
 /**
  * Askdata: a conversation over the governed analysis pipeline.
@@ -201,6 +204,16 @@ export function AskPage() {
       setError(failure instanceof ApiError ? failure : null),
   });
 
+  // Landing on /ask with no session used to leave the composer typing-enabled
+  // but its send button permanently disabled, with nothing saying why. Sending
+  // a question now opens the conversation it belongs to instead.
+  const startConversation = useMutation({
+    mutationFn: (question: string) =>
+      createAgentSession(question.slice(0, SESSION_TITLE_LIMIT)),
+    onError: (failure) =>
+      setError(failure instanceof ApiError ? failure : null),
+  });
+
   type Submission = {
     sessionId: string;
     text: string;
@@ -316,28 +329,65 @@ export function AskPage() {
     },
   });
 
+  // `scopePatchFromDraft` validates the filter text and throws on malformed
+  // input, so it must be evaluated inside the caller's try/catch: escaping a
+  // React event handler turns a typo into an uncaught page error.
+  const submitTurn = (
+    question: string,
+    targetSessionId: string,
+    scope: ScopeDraft,
+    patch: ReturnType<typeof scopePatchFromDraft> | null,
+    contextVersion: number,
+  ) => {
+    send.mutate({
+      sessionId: targetSessionId,
+      text: question,
+      scope: { ...scope, dimensions: [...scope.dimensions] },
+      patch,
+      contextVersion,
+      skillSelection: { mode: skillMode, version_ids: [...pickedSkills] },
+      idempotencyKey: crypto.randomUUID(),
+    });
+  };
+
   const onSend = () => {
+    const question = text.trim();
     if (
-      !text.trim() ||
-      !sessionId ||
-      !session.data ||
+      !question ||
       activeTurnId ||
       send.isPending ||
       legacySubmit.isPending ||
-      bindSkills.isPending
+      bindSkills.isPending ||
+      startConversation.isPending
     )
       return;
     try {
+      if (!sessionId) {
+        // The URL carries no conversation yet: open one titled after the
+        // question and ask in it, so the first question of a visit is one click.
+        startConversation.mutate(question, {
+          onSuccess: (created) => {
+            navigate(`/ask/${created.id}`);
+            submitTurn(
+              question,
+              created.id,
+              draftFromContext({}),
+              null,
+              created.context_version,
+            );
+          },
+        });
+        return;
+      }
+      if (!session.data) return;
       const scope = draft ?? confirmed;
-      send.mutate({
+      submitTurn(
+        question,
         sessionId,
-        text: text.trim(),
-        scope: { ...scope, dimensions: [...scope.dimensions] },
-        patch: draft ? scopePatchFromDraft(draft, confirmed) : null,
-        contextVersion: session.data.context_version,
-        skillSelection: { mode: skillMode, version_ids: [...pickedSkills] },
-        idempotencyKey: crypto.randomUUID(),
-      });
+        scope,
+        draft ? scopePatchFromDraft(draft, confirmed) : null,
+        session.data.context_version,
+      );
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -357,7 +407,11 @@ export function AskPage() {
     Boolean(activeTurnId) ||
     send.isPending ||
     legacySubmit.isPending ||
-    bindSkills.isPending;
+    bindSkills.isPending ||
+    startConversation.isPending;
+  // A session in the URL that has not loaded yet is the only reason to hold the
+  // send button back; without a session, sending opens one (see onSend).
+  const sendBlocked = busy || !text.trim() || (Boolean(sessionId) && !session.data);
   const turn = activeTurn.data ?? null;
 
   return (
@@ -408,10 +462,12 @@ export function AskPage() {
             ))}
             {turn ? <TurnProgress turn={turn} /> : null}
             {(messages.data ?? []).length === 0 && !turn ? (
-              <p className="muted">
-                {t(
-                  "用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。",
-                )}
+              <p className="muted" data-testid="conversation-empty">
+                {sessionId
+                  ? t(
+                      "用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。",
+                    )
+                  : t("直接提问就会开启一个新对话；也可以在左侧选择已有会话。")}
               </p>
             ) : null}
           </section>
@@ -446,7 +502,7 @@ export function AskPage() {
                 type="button"
                 className="primary"
                 data-testid="conversation-send"
-                disabled={busy || !text.trim() || !sessionId}
+                disabled={sendBlocked}
                 onClick={onSend}
               >
                 {busy ? t("等待当前分析完成") : t("发送")}
@@ -511,6 +567,11 @@ function MessageRow({ message }: { message: ConversationMessage }) {
   const text = String(content.text ?? "");
   const analysisId = content.analysis_id ? String(content.analysis_id) : null;
   const isResult = kind === "analysis_result";
+  const claims =
+    (content.claims as { id: string; text: string }[] | undefined) ?? [];
+  const limitations = Array.isArray(content.limitations)
+    ? (content.limitations as string[])
+    : [];
   const analysis = useQuery({
     queryKey: ["analysis", analysisId],
     queryFn: () => getAnalysis(analysisId as string),
@@ -557,7 +618,10 @@ function MessageRow({ message }: { message: ConversationMessage }) {
       ) : null}
       {kind === "explanation" ? <ExplanationBody content={content} /> : null}
       {kind === "help" || kind === "unsupported" ? (
-        <p className="message-text">{text}</p>
+        <div className="message-body">
+          <p className="message-text">{text}</p>
+          <MetricCatalog metrics={content.metrics} />
+        </div>
       ) : null}
       {kind === "failure" ? (
         <p className="notice error">
@@ -581,19 +645,28 @@ function MessageRow({ message }: { message: ConversationMessage }) {
               </a>
             ) : null}
           </div>
-          <ul className="claims">
-            {(
-              content.claims as { id: string; text: string }[] | undefined
-            )?.map((claim) => (
-              <li key={claim.id}>{claim.text}</li>
-            ))}
-          </ul>
-          {Array.isArray(content.limitations) &&
-          (content.limitations as string[]).length ? (
+          {claims.length ? (
+            <ul className="claims" data-testid="result-claims">
+              {claims.map((claim) => (
+                <li key={claim.id}>{claim.text}</li>
+              ))}
+            </ul>
+          ) : null}
+          {!claims.length && limitations.length ? (
+            <div data-testid="result-no-claims">
+              <p className="muted small">{t("本轮没有可发布的结论，原因：")}</p>
+              <ul className="claims">
+                {limitations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {claims.length && limitations.length ? (
             <details>
               <summary>{t("限制与口径")}</summary>
               <ul>
-                {(content.limitations as string[]).map((item) => (
+                {limitations.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
@@ -612,8 +685,40 @@ function MessageRow({ message }: { message: ConversationMessage }) {
   );
 }
 
-/** Explanations quote stored claims verbatim; the prose carries no figure. */
-function ExplanationBody({ content }: { content: Record<string, unknown> }) {
+/** The registry as the platform reports it: keys, names, units, dimensions. */
+function MetricCatalog({ metrics }: { metrics?: unknown }) {
+  useLocale();
+  const items = Array.isArray(metrics)
+    ? (metrics as {
+        metric_key?: unknown;
+        name?: unknown;
+        unit?: unknown;
+        dimensions?: unknown;
+      }[])
+    : [];
+  if (!items.length) return null;
+  return (
+    <ul className="metric-catalog" data-testid="message-metrics">
+      {items.map((item) => (
+        <li key={String(item.metric_key)}>
+          <span className="tag">{String(item.metric_key)}</span>
+          <span>{String(item.name ?? "")}</span>
+          {item.unit ? (
+            <span className="muted small">{String(item.unit)}</span>
+          ) : null}
+          {Array.isArray(item.dimensions) && item.dimensions.length ? (
+            <span className="muted small">
+              {t("维度：")}
+              {(item.dimensions as string[]).join("、")}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Explanations quote stored claims verbatim; the prose carries no figure. */function ExplanationBody({ content }: { content: Record<string, unknown> }) {
   useLocale();
   const quotes =
     (content.quotes as {

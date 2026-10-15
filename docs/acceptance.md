@@ -1442,3 +1442,147 @@ real-model acceptance. The browser suite mocks API traffic, and its passing
 result does not establish backend service availability or a model's output
 language. No backend execution, permission, SQL validation or persisted evidence
 contract was changed.
+
+## 2026-10-16 Ask 自然语言可用性：三个缺陷与修复（executed）
+
+Requested from the running UI: "智能问数这里目前没有办法使用自然语言查询". Three
+separate defects sat behind that one sentence, and two of them had to be fixed
+before any natural-language question could produce a usable answer.
+
+### What was actually wrong
+
+1. **The landing page could not send.** `/` and the top-nav 智能问数 link both
+   open `/ask` with no session in the URL. The composer accepted text, but
+   发送 was `disabled={busy || !text.trim() || !sessionId}` — permanently
+   disabled, with nothing on screen saying why, and no scope panel or thread
+   either (`session.data` is undefined without a session). The screenshot the
+   report came with shows exactly that state: typed question, faded button, no
+   scope panel.
+2. **A default conversational turn produced an empty answer.** The conversational
+   scope carries completeness as three states (`unknown / complete / incomplete`,
+   design 6.1), and the bridge to the analysis boolean maps only `complete` to
+   true. Since a session starts at `unknown`, every analyze turn ran with
+   `data_complete=false`, and `report.py` emitted **no claims at all** in that
+   branch — not even the observed change. Observed live: turns ending
+   `PARTIAL` with `"claims": []` and one limitation line, i.e. an empty bubble.
+3. **The model's half-open/`inclusive` period mismatch was published as 变化 0.**
+   Given "ads_revenue 在 2026-09-11 相比 2026-09-10 的变化", the intent model
+   produced `current=[2026-09-11, 2026-09-11]` and `baseline=[2026-09-10,
+   2026-09-10]` — empty ranges, which match no rows, so the report said
+   `ads_revenue 变化 0` (`materiality.absolute_threshold` `±0.000`). The
+   platform's own contract is `[start, end)` and the direct API rejects an empty
+   range; only the conversational path bypassed that check. The same question
+   with server-built dates (`45bfadef`, a drilldown) returned three claims, which
+   is how the two runs were told apart.
+
+### Fixes (all on the committed tree, working copy)
+
+- `frontend/src/pages/AskPage.tsx`: with no session in the URL, 发送 now opens
+  the conversation the question belongs to (`POST /sessions` titled with the
+  first 60 characters, then `POST /sessions/{id}/turns`), so one click asks. The
+  empty state says so. `submitTurn` deliberately keeps `scopePatchFromDraft`
+  inside the caller's `try/catch` — it validates the filter text by throwing, and
+  a throw escaping a React event handler is an uncaught page error (the first
+  draft of this change did exactly that, and six existing regression cases
+  caught it).
+- `backend/app/agent/report.py`: `completeness` replaces the bare boolean and
+  decides what may be claimed. `complete` is unchanged; `unknown` still publishes
+  the observed change (a governed observation) and the materiality verdict but
+  attributes nothing; `incomplete` withholds even the change. The limitation text
+  distinguishes the two, which design 6.1 asked for and the code did not do.
+  `_completeness` in `runner.py` reads the tri-state from the context when
+  present and falls back to the legacy boolean (whose `false` is an explicit
+  claim of incompleteness).
+- `backend/app/agent/conversation/orchestrator.py`: `help` and `unsupported`
+  replies now carry the metric registry (key, name, unit, dimensions, datasets —
+  the same fields `GET /metrics` already returns) so "有哪些指标 / ADS 层都有哪些数据"
+  is answered with real content. `_metric_table` is derived from the same
+  `_metric_catalog`, so the validation source and the published list cannot drift.
+- `backend/app/agent/conversation/context.py`: `invalid_period_fields` treats a
+  non-positive span as blocking, and `missing_required_fields` includes it, so an
+  empty/inverted period asks instead of running an empty query. The clarify reply
+  states the convention. `intent.py` tells the model the convention (prompt rule
+  2a) and records `empty_period:...` as a patch reason for audit.
+- `frontend/src/pages/AskPage.tsx`: a result with no claims renders its
+  limitations instead of an empty bubble, and help/unsupported replies render the
+  registry list; the scope panel states the half-open convention.
+
+### Evidence
+
+- Static: `uv run --project backend --frozen pytest backend/tests/unit
+  backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp`
+  → **488 passed** (new: `tests/unit/test_ask_natural_language.py`, plus
+  completeness/period cases in `test_conversation_context.py` and
+  `test_agent_core.py`).
+- Mocked browser regressions: `cd frontend && npx playwright test
+  --config=playwright.regression.config.ts` → `ask.spec.ts` **22 passed** (3 new
+  cases: the landing-page send, the help registry list, the no-claims message);
+  the whole suite reports **51 passed / 1 failed** on this working tree. The one
+  failure is `catalog.spec.ts › labels the row and the detail panel with the
+  declared domain`, which belongs to the in-flight catalog work sharing this tree:
+  it fails identically with and without this change's stylesheet additions (A/B
+  runs of the full suite, 1.1 min each), and passes when that file is run alone —
+  a test-order dependence in that spec, not an effect of this change. Frontend
+  typecheck and production build exit 0.
+- Live, deployed stack (both images rebuilt and the four app containers
+  recreated), `runtime/verify_ask_nl.py`, real model (`deepseek-chat`):
+  - "ads 层都有哪些数据？" → `intent=help`, reply carries the 10 registered
+    metrics (`ads_revenue … total_revenue`).
+  - "现在平台上有哪些指标？" → the same list.
+  - "ads_revenue 在 2026-09-12 当天相比 2026-09-11 的变化" → `intent=analyze`,
+    scope `baseline=2026-09-11..2026-09-12 current=2026-09-12..2026-09-13`, report
+    `PARTIAL` with `claim-1 observed_change "ads_revenue 变化 -2515.294902（-5.14%）"`
+    and the limitation "数据完整性未验证：仅报告观测到的变化，未做归因结论".
+  - "ads_revenue 在 2026-09-11 相比 2026-09-10 的变化" → the same question that
+    previously produced an empty window now reports
+    `变化 41.362403（0.08%）` with "变化 41.362403 在材料性阈值 ±244.389468590 内，
+    不构成需要归因的变化".
+- Live, empty-period guard (`runtime/verify_empty_period.py`, a UI-style
+  `scope_patch` with `start == end`): turn ends `WAITING_INPUT`/`clarify`,
+  `analysis_id` is `null`, message `missing` lists all four date fields and the
+  question says "期间按左闭右开理解（含开始日期、不含结束日期）：只看一天请填 该日 到 次日。"
+- Live click-through on the deployed UI (in-app browser, zh-CN, signed in as
+  admin) — the exact path the report came from: opened `/ask` with no session,
+  typed "ads 层都有哪些数据？" → 发送 was **enabled** (in the screenshot it was the
+  faded, disabled button) → the click opened
+  `/ask/61f013b9-6f1d-4e91-8e22-a61946460d25`, titled with the question, and the
+  answer rendered the 10-row registry list (`[data-testid=message-metrics]` → 10
+  `li`; first row `ads_revenue 广告收入 USD 维度：ad_network、app_version、country、
+  platform`). Then "ads_revenue 在 2026-09-12 当天相比 2026-09-11 的变化" →
+  `部分完成 / 部分结果`, claim `ads_revenue 变化 -2515.294902（-5.14%）`, a 限制与口径
+  disclosure and the contribution chart. Console clean: no `error` events and no
+  `console.error` during a reload. Screenshot kept as
+  `runtime/acceptance/ask-nl-20261016.png`.
+
+One deployment precondition, unchanged by this work: the conversational layer is
+opt-in (`AIND_CONVERSATIONAL_ASK_ENABLED`, code default `0`). The local `.env`
+sets it to `1`; a deployment that leaves it off still refuses `POST
+/sessions/{id}/turns` with `CONVERSATIONAL_DISABLED`, and the page then falls back
+to the one-shot analysis path, which needs a scope the panel can only render once
+a session exists.
+
+### A pre-existing layout defect found by the required width check
+The §13 rule (`documentElement.scrollWidth <= innerWidth`) failed on this page at
+1280px (29px) and 390px (46px): `.conversation-side` is a fixed 320px grid track,
+and the scope panel's 指标 `<select>` reports its widest option
+("归因收入（cohort 观测口径）（campaign_attributed_revenue）") as its content-based
+minimum, which widened the column to 416px. It predates this change (neither the
+select nor the grid was touched by it) and is closed here because it sits on the
+page under repair: `min-width: 0` on the column and its children plus
+`grid-template-columns: minmax(0, 1fr)` on the panel's `.stack`, so the rows wrap
+instead of pushing the page. Re-measured on the rebuilt image: overflow **0 at
+1440 / 1280 / 1024 / 768 / 390px**, with no offending element at any of them.
+
+Not executed for this change, and not implied by the above: the service
+integration matrix and A09 were not re-run — the control DB holds the live
+conversation history, and the matrix's `clean_db` fixture wipes it, so
+`test_conversation_flow.py`, `test_conversation_intent_flow.py`,
+`test_conversation_recovery.py` and `test_analysis_flow.py` are
+read-but-not-executed against these changes (every one of them drives
+`data_complete(_state) = complete`, so the completeness change does not reach
+them, but that is reasoning rather than a run). The deployed Playwright journeys
+in `tests/e2e/` were not re-run either; the browser evidence above is the mocked
+regression suite plus the live click-through. Known and not fixed: a period that
+lies entirely outside the loaded data still reports `变化 0` rather than "该期间没有
+数据" — the calculation carries no row coverage, so telling "genuinely zero" apart
+from "no rows" needs a new evidence signal; it is recorded in `docs/todo.md`.

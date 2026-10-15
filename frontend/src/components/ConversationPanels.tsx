@@ -180,6 +180,7 @@ export function ScopePanel({
             />
             <OriginTag origin={origins.current_start} />
           </div>
+          <p className="muted small">{t("期间为左闭右开：结束日期不含当天。")}</p>
           <div className="form-row">
             <span>{t("维度")}</span>
             <div className="chips">
@@ -250,6 +251,11 @@ export function ScopePanel({
               <option value="incomplete">{t("已知不完整")}</option>
             </select>
           </div>
+          <p className="muted small">
+            {draft.dataCompleteState === "complete"
+              ? t("数据完整：可以给出变化归因。")
+              : t("未声明数据完整时只报告观测到的变化，不做归因。")}
+          </p>
           <div className="row-actions">
             <button
               type="button"

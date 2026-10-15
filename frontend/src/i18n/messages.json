@@ -511,6 +511,26 @@
     "en": "Ask a question in natural language. I will ask for the metric or periods if they are missing.",
     "zh-CN": "用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。"
   },
+  "直接提问就会开启一个新对话；也可以在左侧选择已有会话。": {
+    "en": "Asking opens a new conversation; or pick an existing one from the list.",
+    "zh-CN": "直接提问就会开启一个新对话；也可以在左侧选择已有会话。"
+  },
+  "本轮没有可发布的结论，原因：": {
+    "en": "No publishable conclusion for this turn. Reason:",
+    "zh-CN": "本轮没有可发布的结论，原因："
+  },
+  "期间为左闭右开：结束日期不含当天。": {
+    "en": "Periods are half-open: the end date is exclusive.",
+    "zh-CN": "期间为左闭右开：结束日期不含当天。"
+  },
+  "数据完整：可以给出变化归因。": {
+    "en": "Complete: the answer may attribute the change.",
+    "zh-CN": "数据完整：可以给出变化归因。"
+  },
+  "未声明数据完整时只报告观测到的变化，不做归因。": {
+    "en": "Without declaring the data complete only the observed change is reported, with no attribution.",
+    "zh-CN": "未声明数据完整时只报告观测到的变化，不做归因。"
+  },
   "例如：上周收入为什么下降？": {
     "en": "For example: Why did revenue drop last week?",
     "zh-CN": "例如：上周收入为什么下降？"

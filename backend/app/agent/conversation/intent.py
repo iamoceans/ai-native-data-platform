@@ -98,6 +98,9 @@ SYSTEM_PROMPT = (
     "2. `analyze` requires a complete scope: metric_key, baseline_start, baseline_end, "
     "current_start, current_end (ISO dates). Propose only what the user said or what the "
     "current scope already contains; put the rest in clarify_questions and use `clarify`.\n"
+    "2a. Every period is half-open [start, end): the end date is exclusive. A single day D "
+    "is start=D, end=D+1, and the day before it is start=D-1, end=D. Two equal dates describe "
+    "an empty window and are always wrong.\n"
     "3. `explain` answers from analyses that already exist: reference them by analysis_id and "
     "claim_id. Never ask for a new query, and never state a number that is not in the "
     "evidence you were given.\n"
@@ -228,6 +231,16 @@ def validate_patch(
             reasons.append(f"invalid_date:{field}")
         else:
             clean[field] = value
+    # The patch stays in the merge either way - dropping it would silently fall
+    # back to an older period - but a non-empty window is recorded as a reason so
+    # the turn itself (not the model) decides to ask (design 6.3).
+    for start_field, end_field in (
+        ("baseline_start", "baseline_end"),
+        ("current_start", "current_end"),
+    ):
+        start, end = clean.get(start_field), clean.get(end_field)
+        if start and end and not start < end:
+            reasons.append(f"empty_period:{start_field}:{end_field}")
     if patch.comparison is not None:
         clean["comparison"] = patch.comparison
     if patch.filters is not None:

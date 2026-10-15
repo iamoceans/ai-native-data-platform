@@ -959,3 +959,58 @@ however complete an earlier phase looks.
       evidence quotations is outside this interface change; they retain source text.
 - [ ] Live-stack database/model journeys: not executed for this frontend change.
       Mocked-browser checks do not count as live backend or real-model acceptance.
+
+## 2026-10-16 Ask 自然语言可用性（executed）
+
+Reported from the running UI: the Ask surface was unusable in natural language.
+Three defects, all fixed on the working copy; evidence in `docs/acceptance.md`,
+"2026-10-16 Ask 自然语言可用性".
+
+- [x] `/ask` with no session can send: 发送 opens the conversation the question
+      belongs to (`POST /sessions` + `POST /sessions/{id}/turns`) instead of
+      staying permanently disabled without explanation.
+- [x] A conversational turn no longer answers with an empty bubble:
+      `report.py` takes the three-state `completeness` (design 6.1) and still
+      publishes the observed change when the window is merely unverified, only
+      withholding attribution; `incomplete` keeps withholding the change.
+- [x] "有哪些指标 / ADS 层都有哪些数据" is answered from the metric registry
+      (help/unsupported replies carry key, name, unit, dimensions, datasets).
+- [x] An empty or inverted period (the model reading the dates as inclusive,
+      `end == start`) now asks with the half-open convention instead of running an
+      empty query and publishing `变化 0`; the prompt states the convention and the
+      scope panel shows it.
+- [x] A result with no claims renders its limitations instead of nothing.
+- [x] Pre-existing layout defect closed, found by the required width check on this
+      page: the fixed 320px side column was widened to 416px by the 指标 `<select>`'s
+      widest option, overflowing the document by 29px at 1280px and 46px at 390px.
+      Fixed with `min-width: 0` on the column and its children plus
+      `grid-template-columns: minmax(0, 1fr)` on the panel `.stack`; overflow is now
+      0 at 1440 / 1280 / 1024 / 768 / 390px with no offending element.
+- [x] Tests: static **488 passed**, `ask.spec.ts` **22 passed** (three new cases;
+      the full mocked suite reports 51 passed / 1 failed, the failure being the
+      in-flight `catalog.spec.ts` case for the peer change in this tree — it fails
+      with and without this change's CSS and passes when run alone), `npm run
+      typecheck` exit 0, two live status probes against the deployed stack
+      (`runtime/verify_ask_nl.py`, `runtime/verify_empty_period.py`) and a live
+      click-through of the reported path on the deployed UI (typed question → 发送
+      enabled → conversation opened → registry answer rendered), at
+      1440/1280/1024/768/390px with a clean console.
+- [ ] Not verified: the service integration matrix, A09 and the deployed
+      Playwright journeys were not re-run. The matrix was skipped on purpose —
+      its `clean_db` fixture wipes the control DB, which currently holds the live
+      conversation history — so `test_conversation_flow.py`,
+      `test_conversation_intent_flow.py`, `test_conversation_recovery.py` and
+      `test_analysis_flow.py` are read-but-not-executed against these changes;
+      every one of them drives `data_complete(_state) = complete` (or asserts the
+      claim-carrying shape those paths keep), so the completeness change does not
+      reach them, but that is reasoning, not a run.
+- [ ] Known and not fixed: a period that lies entirely outside the loaded data
+      reports `变化 0` instead of "该期间没有数据". The calculation carries
+      `baseline/current/change` but no row coverage, so telling "genuinely zero"
+      apart from "no rows" needs a new evidence signal in the observation (the
+      demo data ends 2026-09-12, so any relative period such as 上周 lands outside
+      it and hits this).
+- [x] The completeness trade is now stated in the UI: with `unknown` by default a
+      conversational answer reports the change but never attributes it, so the
+      scope panel says so next to the 完整性 control ("未声明数据完整时只报告观测到的
+      变化，不做归因。" / "数据完整：可以给出变化归因。").

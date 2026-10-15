@@ -42,7 +42,13 @@ from app.analysis.types import AnalysisError
 from app.charts.spec import contribution_chart
 from app.api.dto import QueryLimits, QuerySubmitRequest
 from app.config import Settings
-from app.constants import DatasetAction, ErrorCode, QueryStatus, TERMINAL_QUERY_STATUSES
+from app.constants import (
+    CompletenessState,
+    DatasetAction,
+    ErrorCode,
+    QueryStatus,
+    TERMINAL_QUERY_STATUSES,
+)
 from app.errors import ApiError
 from app.ids import utcnow
 from app.metrics.compiler import CompiledMetric, CompiledQuery, compile_metric
@@ -1032,6 +1038,20 @@ def _artifact(
     return payload
 
 
+def _completeness(context: dict[str, Any]) -> str:
+    """The three-state completeness of the window, for the report (design 6.1).
+
+    A conversation carries the tri-state; a direct API submission carries only
+    the legacy boolean, whose `false` is an explicit claim of incompleteness.
+    """
+    state = context.get("completeness")
+    if isinstance(state, str) and state in {item.value for item in CompletenessState}:
+        return state
+    return CompletenessState.from_bool(
+        bool(context["data_complete"]) if "data_complete" in context else None
+    ).value
+
+
 def _synthesizing(session, *, task) -> bool:
     state = dict(task.state or {})
     observation = dict(state.get("observations") or {})
@@ -1147,7 +1167,7 @@ def _synthesizing(session, *, task) -> bool:
         metric_key=str(state.get("metric_key")),
         metric_version=int(state.get("metric_version", 1)),
         evidence_available_until=observation.get("evidence_available_until"),
-        data_complete=bool(context.get("data_complete", True)),
+        completeness=_completeness(context),
         chart_ids=chart_ids,
         drivers=drivers_payload,
         warnings=[f"已按最新 Schema 修复查询：丢弃列 {item.get('dropped_dimension')}" for item in applied_repairs]

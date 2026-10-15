@@ -119,6 +119,26 @@ class ConversationTurnStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class CompletenessState(StrEnum):
+    """Three-state data completeness for an analysis window (design 6.1).
+
+    The platform cannot verify a user's claim, so "unverified" is its own state.
+    Only `complete` unlocks attribution; `unknown` still reports the observed
+    change, while `incomplete` withholds even that.
+    """
+
+    UNKNOWN = "unknown"
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+
+    @classmethod
+    def from_bool(cls, value: bool | None) -> "CompletenessState":
+        """The legacy `data_complete` boolean: a claim, never a verification."""
+        if value is None:
+            return cls.UNKNOWN
+        return cls.COMPLETE if value else cls.INCOMPLETE
+
+
 # WAITING_INPUT is terminal for the turn: the clarification message is committed
 # and the next user message opens a new turn.
 TERMINAL_CONVERSATION_TURN_STATUSES = frozenset(

@@ -108,8 +108,8 @@ export async function listMetrics(): Promise<MetricSummary[]> {
   return response.items;
 }
 
-export async function createAgentSession(title: string): Promise<{ id: string }> {
-  return apiFetch<{ id: string }>("/api/v1/sessions", {
+export async function createAgentSession(title: string): Promise<SessionDetail> {
+  return apiFetch<SessionDetail>("/api/v1/sessions", {
     method: "POST",
     body: { title },
   });
