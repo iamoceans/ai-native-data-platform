@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.use({ locale: "zh-CN" });
+
 /**
  * ChartSpec panel regressions. The bar is a length and the signed value is text
  * beside it: a bar used to hold its own label, so a narrow panel made the text

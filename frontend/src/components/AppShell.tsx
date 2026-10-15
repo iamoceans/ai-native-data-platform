@@ -1,8 +1,11 @@
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { t, useLocale } from "../i18n";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logout, me } from "../api/endpoints";
 
 export function AppShell() {
+  useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
@@ -11,10 +14,11 @@ export function AppShell() {
     return (
       <div className="auth-gate">
         <div className="card auth-card">
-          <h1>Session required</h1>
-          <p className="muted">Sign in to use the workspace.</p>
+          <LanguageSwitcher />
+          <h1>{t("Session required")}</h1>
+          <p className="muted">{t("Sign in to use the workspace.")}</p>
           <button className="primary" onClick={() => navigate("/login")}>
-            Go to sign in
+            {t("Go to sign in")}
           </button>
         </div>
       </div>
@@ -26,48 +30,75 @@ export function AppShell() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          <span>AI-Native Data Platform</span>
+          <span>{t("AI-Native Data Platform")}</span>
         </div>
         <nav className="nav">
-          <NavLink to="/ask" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            Ask data
+          <NavLink
+            to="/ask"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            {t("Ask data")}
           </NavLink>
-          <NavLink to="/sql" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            SQL workspace
+          <NavLink
+            to="/sql"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            {t("SQL workspace")}
           </NavLink>
-          <NavLink to="/catalog" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            Catalog
+          <NavLink
+            to="/catalog"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            {t("Catalog")}
           </NavLink>
-          <NavLink to="/history" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            History
+          <NavLink
+            to="/history"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            {t("History")}
           </NavLink>
           <NavLink
             to="/skills"
             data-testid="nav-skills"
-            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
           >
-            Skills
+            {t("Skills")}
           </NavLink>
           {profile.data?.capabilities.includes("admin.manage") ? (
             <>
               <NavLink
                 to="/admin/datasources"
                 data-testid="nav-admin-datasources"
-                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+                className={({ isActive }) =>
+                  isActive ? "nav-link active" : "nav-link"
+                }
               >
-                Datasources
+                {t("Datasources")}
               </NavLink>
               <NavLink
                 to="/admin/permissions"
                 data-testid="nav-admin-permissions"
-                className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+                className={({ isActive }) =>
+                  isActive ? "nav-link active" : "nav-link"
+                }
               >
-                Permissions
+                {t("Permissions")}
               </NavLink>
             </>
           ) : null}
         </nav>
         <div className="topbar-right">
+          <LanguageSwitcher />
           {profile.data ? (
             <>
               <span className="muted small">
@@ -84,11 +115,11 @@ export function AppShell() {
                   navigate("/login");
                 }}
               >
-                Sign out
+                {t("Sign out")}
               </button>
             </>
           ) : (
-            <span className="muted small">loading…</span>
+            <span className="muted small">{t("loading…")}</span>
           )}
         </div>
       </header>

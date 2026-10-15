@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import type { ColumnInfo } from "../api/endpoints";
 
 interface Props {
@@ -13,14 +14,17 @@ function renderCell(value: unknown): string {
 }
 
 export function ResultTable({ columns, rows, truncated }: Props) {
+  useLocale();
   if (columns.length === 0) {
-    return <p className="muted">No result columns.</p>;
+    return <p className="muted">{t("No result columns.")}</p>;
   }
   return (
     <div className="result-wrap">
       {truncated ? (
         <p className="notice warn">
-          Result was truncated at the row or byte limit. Do not use it for exact totals.
+          {t(
+            "Result was truncated at the row or byte limit. Do not use it for exact totals.",
+          )}
         </p>
       ) : null}
       <div className="table-scroll">
@@ -48,7 +52,9 @@ export function ResultTable({ columns, rows, truncated }: Props) {
           </tbody>
         </table>
       </div>
-      {rows.length === 0 ? <p className="muted">No rows returned.</p> : null}
+      {rows.length === 0 ? (
+        <p className="muted">{t("No rows returned.")}</p>
+      ) : null}
     </div>
   );
 }

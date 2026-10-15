@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.use({ locale: "zh-CN" });
+
 /**
  * Skills page regressions: every control on it must be the workspace's own.
  * A file picker is the one place where the browser's native control can leak

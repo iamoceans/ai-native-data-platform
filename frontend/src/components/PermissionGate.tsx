@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { me } from "../api/endpoints";
@@ -16,12 +17,13 @@ export function PermissionGate({
   capability: string;
   children: ReactNode;
 }) {
+  useLocale();
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
 
   if (profile.isLoading) {
     return (
       <section className="card">
-        <p className="muted">Checking your permissions…</p>
+        <p className="muted">{t("Checking your permissions…")}</p>
       </section>
     );
   }
@@ -30,11 +32,14 @@ export function PermissionGate({
     return (
       <section className="card" data-testid="permission-gate">
         <div className="card-head">
-          <h2>Administrator capability required</h2>
+          <h2>{t("Administrator capability required")}</h2>
         </div>
         <p className="notice">
-          这个页面需要 <code>{capability}</code> 能力；当前账号（
-          {profile.data?.username ?? "unknown"}）拥有：{capabilities.join(", ") || "无"}。
+          {t("permission.required", {
+            capability,
+            username: profile.data?.username ?? t("unknown"),
+            capabilities: capabilities.join(", ") || t("无"),
+          })}
         </p>
       </section>
     );

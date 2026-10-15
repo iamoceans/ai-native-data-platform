@@ -1,4 +1,13 @@
+import { t, useLocale } from "../i18n";
 const LABELS: Record<string, string> = {
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  RESOLVING: "Resolving",
+  ANALYZING: "Analyzing",
+  RESPONDING: "Responding",
+  WAITING_INPUT: "Waiting for input",
+  UNKNOWN: "unknown",
+  DEGRADED: "Degraded",
   QUEUED: "Queued",
   RUNNING: "Running",
   SUCCEEDED: "Succeeded",
@@ -14,7 +23,7 @@ const LABELS: Record<string, string> = {
   HEALTHY: "Healthy",
   UNAVAILABLE: "Unavailable",
   // Analysis states (spec 19): the raw code stays visible in the badge title.
-  CREATED: "Created",
+  CREATED: "status.created",
   UNDERSTANDING: "Understanding",
   RETRIEVING: "Retrieving",
   PLANNING: "Planning",
@@ -47,7 +56,16 @@ const TONE: Record<string, string> = {
   SYNTHESIZING: "run",
 };
 
+export function statusLabel(status: string): string {
+  return t(LABELS[status] ?? status);
+}
+
 export function StatusBadge({ status }: { status: string }) {
+  useLocale();
   const tone = TONE[status] ?? "muted";
-  return <span className={`badge ${tone}`} title={status}>{LABELS[status] ?? status}</span>;
+  return (
+    <span className={`badge ${tone}`} title={status}>
+      {statusLabel(status)}
+    </span>
+  );
 }

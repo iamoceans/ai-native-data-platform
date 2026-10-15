@@ -1,3 +1,4 @@
+import { getLocale } from "../i18n";
 /** Typed API client: session cookie + CSRF header + unified error envelope. */
 
 let csrfToken: string | null = readCookie("ainative_csrf");
@@ -49,9 +50,16 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const method = options.method ?? "GET";
-  const headers: Record<string, string> = { Accept: "application/json", ...options.headers };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Accept-Language": getLocale(),
+    ...options.headers,
+  };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (csrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     headers["X-CSRF-Token"] = csrfToken;
@@ -75,7 +83,10 @@ export async function apiUpload<T>(
   form: FormData,
   options: { signal?: AbortSignal } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Accept-Language": getLocale(),
+  };
   if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   const response = await fetch(path, {
     method: "POST",
@@ -95,7 +106,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
       authListeners.forEach((listener) => listener());
     }
     const envelope = (payload ?? {}) as {
-      error?: { code?: string; message?: string; retryable?: boolean; details?: Record<string, unknown> };
+      error?: {
+        code?: string;
+        message?: string;
+        retryable?: boolean;
+        details?: Record<string, unknown>;
+      };
     };
     throw new ApiError(
       response.status,

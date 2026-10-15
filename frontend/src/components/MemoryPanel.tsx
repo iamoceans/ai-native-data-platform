@@ -1,7 +1,14 @@
+import { t, useLocale } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { confirmMemory, listMemory, me, rejectMemory, type MemoryItem } from "../api/endpoints";
+import {
+  confirmMemory,
+  listMemory,
+  me,
+  rejectMemory,
+  type MemoryItem,
+} from "../api/endpoints";
 
 /**
  * The learned half of the platform, made visible.
@@ -37,27 +44,38 @@ function MemoryRow({
   busy: boolean;
   onCurate: (status: "confirmed" | "rejected") => void;
 }) {
+  useLocale();
   return (
     <li className="memory-row" data-testid={`memory-${item.id}`}>
       <div className="memory-statement">
-        <span className="tag">{KIND_LABELS[item.kind] ?? item.kind}</span>
-        <span className={item.status === "rejected" ? "memory-text rejected" : "memory-text"}>
+        <span className="tag">{t(KIND_LABELS[item.kind] ?? item.kind)}</span>
+        <span
+          className={
+            item.status === "rejected" ? "memory-text rejected" : "memory-text"
+          }
+        >
           {item.statement}
         </span>
       </div>
       <div className="memory-meta">
         <span className={`tag ${item.status === "proposed" ? "warn" : ""}`}>
-          {STATUS_LABELS[item.status] ?? item.status}
+          {t(STATUS_LABELS[item.status] ?? item.status)}
         </span>
         {(item.scope_dimensions ?? []).length ? (
-          <span className="muted small">维度：{(item.scope_dimensions ?? []).join(" · ")}</span>
+          <span className="muted small">
+            {t("维度：")}
+            {(item.scope_dimensions ?? []).join(" · ")}
+          </span>
         ) : null}
         <span className="muted small">
-          被调用 {item.reuse_count} 次 · 重复学到 {Math.max(0, item.seen_count - 1)} 次
+          {t("memory.reused", {
+            reuse: item.reuse_count,
+            seen: Math.max(0, item.seen_count - 1),
+          })}
         </span>
         {item.analysis_id ? (
           <Link className="muted small" to={`/analyses/${item.analysis_id}`}>
-            来源分析 {item.analysis_id.slice(0, 8)}
+            {t("来源分析")} {item.analysis_id.slice(0, 8)}
           </Link>
         ) : null}
         {canCurate && item.status !== "rejected" ? (
@@ -69,7 +87,7 @@ function MemoryRow({
                 data-testid={`memory-confirm-${item.id}`}
                 onClick={() => onCurate("confirmed")}
               >
-                确认
+                {t("确认")}
               </button>
             ) : null}
             <button
@@ -78,7 +96,7 @@ function MemoryRow({
               data-testid={`memory-reject-${item.id}`}
               onClick={() => onCurate("rejected")}
             >
-              否决
+              {t("否决")}
             </button>
           </span>
         ) : null}
@@ -88,6 +106,7 @@ function MemoryRow({
 }
 
 export function MemoryPanel({ metricKey }: { metricKey: string }) {
+  useLocale();
   const queryClient = useQueryClient();
   const [showRejected, setShowRejected] = useState(false);
   const memory = useQuery({
@@ -98,9 +117,15 @@ export function MemoryPanel({ metricKey }: { metricKey: string }) {
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
   const canCurate = (profile.data?.capabilities ?? []).includes("admin.manage");
   const curate = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "confirmed" | "rejected" }) =>
-      status === "confirmed" ? confirmMemory(id) : rejectMemory(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["memory", metricKey] }),
+    mutationFn: ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: "confirmed" | "rejected";
+    }) => (status === "confirmed" ? confirmMemory(id) : rejectMemory(id)),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["memory", metricKey] }),
   });
 
   const items = memory.data?.items ?? [];
@@ -117,15 +142,16 @@ export function MemoryPanel({ metricKey }: { metricKey: string }) {
   return (
     <div className="memory-panel" data-testid="memory-panel">
       <div className="card-head">
-        <h3>业务记忆</h3>
+        <h3>{t("业务记忆")}</h3>
         <span className="muted small" data-testid="memory-counts">
-          已确认 {confirmed} · 待确认 {proposed}
-          {rejectedTotal ? ` · 已否决 ${rejectedTotal}` : ""}
+          {t("memory.counts", { confirmed, proposed })}
+          {rejectedTotal ? t(" · 已否决 {0}", { 0: rejectedTotal }) : ""}
         </span>
       </div>
       <p className="muted small">
-        每次分析结束后，模型只从该次分析已验证的结论里提炼语句（不含任何数字，且必须点名出现过的分组取值），
-        下次提问时作为选维度的提示。待确认项可被否决，否决后不再使用，也不会被再学一遍。
+        {t(
+          "每次分析结束后，模型只从该次分析已验证的结论里提炼语句（不含任何数字，且必须点名出现过的分组取值）， 下次提问时作为选维度的提示。待确认项可被否决，否决后不再使用，也不会被再学一遍。",
+        )}
       </p>
       {visible.length ? (
         <ul className="memory-list">
@@ -141,7 +167,11 @@ export function MemoryPanel({ metricKey }: { metricKey: string }) {
         </ul>
       ) : (
         <p className="muted small">
-          {memory.isLoading ? "读取中…" : "这个指标还没有学到任何东西——完成一次分析后，这里会出现它的第一条业务知识。"}
+          {memory.isLoading
+            ? t("读取中…")
+            : t(
+                "这个指标还没有学到任何东西——完成一次分析后，这里会出现它的第一条业务知识。",
+              )}
         </p>
       )}
       {rejected.length ? (
@@ -150,7 +180,9 @@ export function MemoryPanel({ metricKey }: { metricKey: string }) {
           data-testid="memory-toggle-rejected"
           onClick={() => setShowRejected((current) => !current)}
         >
-          {showRejected ? "隐藏已否决" : `显示已否决（${rejectedTotal}）`}
+          {showRejected
+            ? t("隐藏已否决")
+            : t("显示已否决（{0}）", { 0: rejectedTotal })}
         </button>
       ) : null}
     </div>

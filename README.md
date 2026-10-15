@@ -86,6 +86,21 @@ source authorization and browser E2E still open.
   (charts, table-equivalent view, drilldown) and the datasource and permission
   administration screens.
 
+## Interface language
+
+The login page and workspace header have a **简体中文 / English** selector.
+It switches the entire interface immediately, retaining form drafts and active
+queries. The browser language supplies the initial choice (Chinese for `zh-*`,
+English otherwise); an explicit choice is saved in `localStorage` and synchronized
+across tabs. Dates and chart numbers follow the selected locale.
+
+Interface labels, statuses, validation and API error guidance are translated.
+SQL, query results, catalog descriptions, user-authored content, model prose and
+stored report/evidence quotations keep their original text. This is interface
+localization; it does not translate or regenerate analysis evidence. Original API
+diagnostics remain available through the error's **Original error** control.
+See [the observed checks](docs/acceptance.md#2026-10-15--chineseenglish-interface-localization).
+
 ## Quick start (core profile)
 
 Requirements: Docker Desktop (WSL2 backend on Windows) with roughly 6-8 GiB of

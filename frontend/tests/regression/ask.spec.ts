@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
+test.use({ locale: "zh-CN" });
+
 async function fixture(page: Page) {
  const pageErrors: string[] = [];
  page.on('pageerror', error => pageErrors.push(error.message));

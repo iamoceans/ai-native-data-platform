@@ -1,0 +1,1846 @@
+{
+  "Administration": {
+    "en": "Administration",
+    "zh-CN": "管理"
+  },
+  "Datasources": {
+    "en": "Datasources",
+    "zh-CN": "数据源"
+  },
+  "凭据只以 secret_ref 引用，不下发到前端": {
+    "en": "Credentials are referenced by secret_ref and never sent to the browser",
+    "zh-CN": "凭据只以 secret_ref 引用，不下发到前端"
+  },
+  "连接测试与目录刷新是管理员操作；注册目标的 host 仍需匹配管理员配置的网络白名单。": {
+    "en": "Connection tests and catalog refreshes require administrator access. The host must match the configured network allowlist.",
+    "zh-CN": "连接测试与目录刷新是管理员操作；注册目标的 host 仍需匹配管理员配置的网络白名单。"
+  },
+  "名称": {
+    "en": "Name",
+    "zh-CN": "名称"
+  },
+  "类型": {
+    "en": "Type",
+    "zh-CN": "类型"
+  },
+  "目标": {
+    "en": "Target",
+    "zh-CN": "目标"
+  },
+  "健康": {
+    "en": "Health",
+    "zh-CN": "健康"
+  },
+  "能力": {
+    "en": "Capabilities",
+    "zh-CN": "能力"
+  },
+  "操作": {
+    "en": "Actions",
+    "zh-CN": "操作"
+  },
+  "disabled": {
+    "en": "disabled",
+    "zh-CN": "已停用"
+  },
+  "测试连接": {
+    "en": "Test connection",
+    "zh-CN": "测试连接"
+  },
+  "刷新目录": {
+    "en": "Refresh catalog",
+    "zh-CN": "刷新目录"
+  },
+  "同步元数据": {
+    "en": "Sync metadata",
+    "zh-CN": "同步元数据"
+  },
+  "注册": {
+    "en": "Register",
+    "zh-CN": "注册"
+  },
+  "· 更新": {
+    "en": "· updated",
+    "zh-CN": "· 更新"
+  },
+  "· 下线": {
+    "en": "· retired",
+    "zh-CN": "· 下线"
+  },
+  "· 跳过": {
+    "en": "· skipped",
+    "zh-CN": "· 跳过"
+  },
+  "采集": {
+    "en": "Ingestion",
+    "zh-CN": "采集"
+  },
+  "已提交": {
+    "en": "Submitted",
+    "zh-CN": "已提交"
+  },
+  "目录刷新参数": {
+    "en": "Catalog refresh settings",
+    "zh-CN": "目录刷新参数"
+  },
+  "secure_views 需管理员确认无敏感列后才可暴露": {
+    "en": "Expose secure_views only after an administrator confirms they contain no sensitive columns",
+    "zh-CN": "secure_views 需管理员确认无敏感列后才可暴露"
+  },
+  "schemas（逗号分隔）": {
+    "en": "Schemas (comma-separated)",
+    "zh-CN": "schemas（逗号分隔）"
+  },
+  "secure views（逗号分隔，可空）": {
+    "en": "Secure views (comma-separated, optional)",
+    "zh-CN": "secure views（逗号分隔，可空）"
+  },
+  "注册数据源": {
+    "en": "Register data source",
+    "zh-CN": "注册数据源"
+  },
+  "密码由挂载密钥文件提供，不在此填写": {
+    "en": "Passwords come from mounted secret files",
+    "zh-CN": "密码由挂载密钥文件提供，不在此填写"
+  },
+  "Hive Metastore host": {
+    "en": "Hive Metastore host",
+    "zh-CN": "Hive Metastore 主机"
+  },
+  "Hive Metastore port": {
+    "en": "Hive Metastore port",
+    "zh-CN": "Hive Metastore 端口"
+  },
+  "host": {
+    "en": "host",
+    "zh-CN": "主机"
+  },
+  "port": {
+    "en": "port",
+    "zh-CN": "端口"
+  },
+  "database": {
+    "en": "database",
+    "zh-CN": "数据库"
+  },
+  "secret_ref": {
+    "en": "secret_ref",
+    "zh-CN": "密钥引用"
+  },
+  "注册中…": {
+    "en": "Registering…",
+    "zh-CN": "注册中…"
+  },
+  "已创建用户 {0}（初始密码不会写入日志）": {
+    "en": "Created user {0} (the initial password is never logged)",
+    "zh-CN": "已创建用户 {0}（初始密码不会写入日志）"
+  },
+  "已更新 {0} 的角色；策略 revision 已递增": {
+    "en": "Updated roles for {0}; policy revision increased",
+    "zh-CN": "已更新 {0} 的角色；策略 revision 已递增"
+  },
+  "已创建角色 {0}（能力来自角色名映射）": {
+    "en": "Created role {0} (capabilities are mapped from the role name)",
+    "zh-CN": "已创建角色 {0}（能力来自角色名映射）"
+  },
+  "已创建真实授权（默认拒绝之外的白名单）": {
+    "en": "Created a grant (an explicit exception to default-deny access)",
+    "zh-CN": "已创建真实授权（默认拒绝之外的白名单）"
+  },
+  "已撤回授权；相关活动查询会被取消": {
+    "en": "Revoked the grant; related active queries will be cancelled",
+    "zh-CN": "已撤回授权；相关活动查询会被取消"
+  },
+  "申请 {0} 已批准，并创建了真实授权（{1}）—— 策略 revision 已递增": {
+    "en": "Approved request {0} and created a grant ({1}); policy revision increased",
+    "zh-CN": "申请 {0} 已批准，并创建了真实授权（{1}）—— 策略 revision 已递增"
+  },
+  "管理员拒绝": {
+    "en": "Rejected by administrator",
+    "zh-CN": "管理员拒绝"
+  },
+  "申请 {0} 已拒绝 —— 未创建任何授权": {
+    "en": "Rejected request {0}; no grant was created",
+    "zh-CN": "申请 {0} 已拒绝 —— 未创建任何授权"
+  },
+  "申请 {0} 已标记 {1} —— 这是 Mock 状态，未创建任何授权": {
+    "en": "Marked request {0} as {1}; this is a mock status and creates no grant",
+    "zh-CN": "申请 {0} 已标记 {1} —— 这是 Mock 状态，未创建任何授权"
+  },
+  "Permissions": {
+    "en": "Permissions",
+    "zh-CN": "权限管理"
+  },
+  "真实授权": {
+    "en": "Active grants",
+    "zh-CN": "真实授权"
+  },
+  "条 · 申请队列": {
+    "en": "· requests",
+    "zh-CN": "条 · 申请队列"
+  },
+  "条": {
+    "en": "items",
+    "zh-CN": "条"
+  },
+  "访问申请队列": {
+    "en": "Access requests",
+    "zh-CN": "访问申请队列"
+  },
+  "状态": {
+    "en": "Status",
+    "zh-CN": "状态"
+  },
+  "全部": {
+    "en": "All",
+    "zh-CN": "全部"
+  },
+  "批准时授予的角色": {
+    "en": "Role to grant on approval",
+    "zh-CN": "批准时授予的角色"
+  },
+  "选择角色…": {
+    "en": "Choose a role…",
+    "zh-CN": "选择角色…"
+  },
+  "动作": {
+    "en": "Action",
+    "zh-CN": "动作"
+  },
+  "query（含 discover）": {
+    "en": "query (includes discover)",
+    "zh-CN": "query（含 discover）"
+  },
+  "「批准并授权」创建真实授权；「标记 Mock」只改状态，不授权": {
+    "en": "“Approve and grant” creates a real grant; “Mark mock” only changes the status",
+    "zh-CN": "「批准并授权」创建真实授权；「标记 Mock」只改状态，不授权"
+  },
+  "申请人": {
+    "en": "Requester",
+    "zh-CN": "申请人"
+  },
+  "数据集": {
+    "en": "Dataset",
+    "zh-CN": "数据集"
+  },
+  "理由": {
+    "en": "Reason",
+    "zh-CN": "理由"
+  },
+  "Mock 标记，未授权": {
+    "en": "Mock status; no access granted",
+    "zh-CN": "Mock 标记，未授权"
+  },
+  "已创建真实授权": {
+    "en": "Grant created",
+    "zh-CN": "已创建真实授权"
+  },
+  "批准并授权": {
+    "en": "Approve and grant",
+    "zh-CN": "批准并授权"
+  },
+  "拒绝": {
+    "en": "Reject",
+    "zh-CN": "拒绝"
+  },
+  "标记 Mock（不授权）": {
+    "en": "Mark mock (no grant)",
+    "zh-CN": "标记 Mock（不授权）"
+  },
+  "当前筛选下没有申请。": {
+    "en": "No requests match this filter.",
+    "zh-CN": "当前筛选下没有申请。"
+  },
+  "角色授权（默认拒绝）": {
+    "en": "Role grants (default deny)",
+    "zh-CN": "角色授权（默认拒绝）"
+  },
+  "授权变更会递增 policy revision": {
+    "en": "Grant changes increase the policy revision",
+    "zh-CN": "授权变更会递增 policy revision"
+  },
+  "角色": {
+    "en": "Role",
+    "zh-CN": "角色"
+  },
+  "选择数据集…": {
+    "en": "Choose a dataset…",
+    "zh-CN": "选择数据集…"
+  },
+  "创建授权": {
+    "en": "Create grant",
+    "zh-CN": "创建授权"
+  },
+  "到期": {
+    "en": "Expires",
+    "zh-CN": "到期"
+  },
+  "撤回": {
+    "en": "Revoke",
+    "zh-CN": "撤回"
+  },
+  "用户与角色": {
+    "en": "Users and roles",
+    "zh-CN": "用户与角色"
+  },
+  "初始密码仅在此提交，不会写入日志": {
+    "en": "The initial password is submitted here and never logged",
+    "zh-CN": "初始密码仅在此提交，不会写入日志"
+  },
+  "用户名": {
+    "en": "Username",
+    "zh-CN": "用户名"
+  },
+  "初始密码": {
+    "en": "Initial password",
+    "zh-CN": "初始密码"
+  },
+  "创建用户": {
+    "en": "Create user",
+    "zh-CN": "创建用户"
+  },
+  "用户": {
+    "en": "User",
+    "zh-CN": "用户"
+  },
+  "调整角色": {
+    "en": "Update roles",
+    "zh-CN": "调整角色"
+  },
+  "新角色名（小写字母开头）": {
+    "en": "New role name (starts with a lowercase letter)",
+    "zh-CN": "新角色名（小写字母开头）"
+  },
+  "创建角色": {
+    "en": "Create role",
+    "zh-CN": "创建角色"
+  },
+  "审计（脱敏）": {
+    "en": "Audit (redacted)",
+    "zh-CN": "审计（脱敏）"
+  },
+  "登录、授权、管理与取消操作": {
+    "en": "Sign-in, grants, administration and cancellations",
+    "zh-CN": "登录、授权、管理与取消操作"
+  },
+  "时间": {
+    "en": "Time",
+    "zh-CN": "时间"
+  },
+  "对象": {
+    "en": "Object",
+    "zh-CN": "对象"
+  },
+  "结果": {
+    "en": "Result",
+    "zh-CN": "结果"
+  },
+  "trace": {
+    "en": "trace",
+    "zh-CN": "追踪标识"
+  },
+  "过于笼统，未点名具体分组取值": {
+    "en": "Too general; no specific segment value named",
+    "zh-CN": "过于笼统，未点名具体分组取值"
+  },
+  "与既有知识重复": {
+    "en": "Duplicates existing knowledge",
+    "zh-CN": "与既有知识重复"
+  },
+  "出现百分比": {
+    "en": "Contains a percentage",
+    "zh-CN": "出现百分比"
+  },
+  "出现金额": {
+    "en": "Contains an amount",
+    "zh-CN": "出现金额"
+  },
+  "过短": {
+    "en": "Too short",
+    "zh-CN": "过短"
+  },
+  "过长": {
+    "en": "Too long",
+    "zh-CN": "过长"
+  },
+  "数字 {0} 无法核验": {
+    "en": "Figure {0} cannot be verified",
+    "zh-CN": "数字 {0} 无法核验"
+  },
+  "Loading analysis…": {
+    "en": "Loading analysis…",
+    "zh-CN": "正在加载分析…"
+  },
+  "Analysis is unavailable.": {
+    "en": "Analysis is unavailable.",
+    "zh-CN": "分析不可用。"
+  },
+  "Analysis": {
+    "en": "Analysis",
+    "zh-CN": "分析"
+  },
+  "Checkpoint": {
+    "en": "Checkpoint",
+    "zh-CN": "检查点"
+  },
+  "· policy revision": {
+    "en": "· policy revision",
+    "zh-CN": "· 策略版本"
+  },
+  "Cancel analysis": {
+    "en": "Cancel analysis",
+    "zh-CN": "取消分析"
+  },
+  "Evidence-backed findings": {
+    "en": "Evidence-backed findings",
+    "zh-CN": "有证据支持的结论"
+  },
+  "No numeric conclusion was issued because the evidence was incomplete.": {
+    "en": "No numeric conclusion was issued because the evidence was incomplete.",
+    "zh-CN": "证据不完整，未给出数值结论。"
+  },
+  "Load evidence": {
+    "en": "Load evidence",
+    "zh-CN": "加载证据"
+  },
+  "SQL and calculations": {
+    "en": "SQL and calculations",
+    "zh-CN": "SQL 与计算过程"
+  },
+  "Execution steps": {
+    "en": "Execution steps",
+    "zh-CN": "执行步骤"
+  },
+  "Query Gateway only": {
+    "en": "Query Gateway only",
+    "zh-CN": "仅通过查询网关"
+  },
+  "业务记忆": {
+    "en": "Business memory",
+    "zh-CN": "业务记忆"
+  },
+  "本次由 {0} 提炼": {
+    "en": "Extracted by {0}",
+    "zh-CN": "本次由 {0} 提炼"
+  },
+  "本次未提炼：{0}": {
+    "en": "Not extracted: {0}",
+    "zh-CN": "本次未提炼：{0}"
+  },
+  "尚未提炼（分析结束后由 agent worker 处理）": {
+    "en": "Not yet extracted (processed by the agent worker after analysis)",
+    "zh-CN": "尚未提炼（分析结束后由 agent worker 处理）"
+  },
+  "规划这次分析时参考了": {
+    "en": "Planning used",
+    "zh-CN": "规划这次分析时参考了"
+  },
+  "条已有知识：": {
+    "en": "existing knowledge items:",
+    "zh-CN": "条已有知识："
+  },
+  "已确认": {
+    "en": "Confirmed",
+    "zh-CN": "已确认"
+  },
+  "待确认": {
+    "en": "Proposed",
+    "zh-CN": "待确认"
+  },
+  "规划时还没有可参考的知识（这可能是该指标的第一次分析）。": {
+    "en": "No knowledge was available during planning (this may be the first analysis for this metric).",
+    "zh-CN": "规划时还没有可参考的知识（这可能是该指标的第一次分析）。"
+  },
+  "这次新学到": {
+    "en": "Newly learned",
+    "zh-CN": "这次新学到"
+  },
+  "条：": {
+    "en": "items:",
+    "zh-CN": "条："
+  },
+  "另有": {
+    "en": "Another",
+    "zh-CN": "另有"
+  },
+  "条与既有知识重复，已记为再次印证（不新增条目）。": {
+    "en": "items matched existing knowledge and were recorded as reinforcement.",
+    "zh-CN": "条与既有知识重复，已记为再次印证（不新增条目）。"
+  },
+  "被拒绝的候选": {
+    "en": "Rejected candidates",
+    "zh-CN": "被拒绝的候选"
+  },
+  "新对话": {
+    "en": "New conversation",
+    "zh-CN": "新对话"
+  },
+  "对话": {
+    "en": "Conversation",
+    "zh-CN": "对话"
+  },
+  "实时更新已连接": {
+    "en": "Live updates connected",
+    "zh-CN": "实时更新已连接"
+  },
+  "实时更新不可用，按轮询刷新": {
+    "en": "Live updates unavailable; refreshing by polling",
+    "zh-CN": "实时更新不可用，按轮询刷新"
+  },
+  " · 本轮：{0}": {
+    "en": " · This turn: {0}",
+    "zh-CN": " · 本轮：{0}"
+  },
+  "解析中": {
+    "en": "Resolving",
+    "zh-CN": "解析中"
+  },
+  "显示范围面板": {
+    "en": "Show scope panel",
+    "zh-CN": "显示范围面板"
+  },
+  "隐藏范围面板": {
+    "en": "Hide scope panel",
+    "zh-CN": "隐藏范围面板"
+  },
+  "消息": {
+    "en": "Messages",
+    "zh-CN": "消息"
+  },
+  "用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。": {
+    "en": "Ask a question in natural language. I will ask for the metric or periods if they are missing.",
+    "zh-CN": "用自然语言提问。缺少指标或期间时我会先问清楚，不会替你默认。"
+  },
+  "例如：上周收入为什么下降？": {
+    "en": "For example: Why did revenue drop last week?",
+    "zh-CN": "例如：上周收入为什么下降？"
+  },
+  "停止本轮": {
+    "en": "Stop this turn",
+    "zh-CN": "停止本轮"
+  },
+  "等待当前分析完成": {
+    "en": "Waiting for the current analysis",
+    "zh-CN": "等待当前分析完成"
+  },
+  "发送": {
+    "en": "Send",
+    "zh-CN": "发送"
+  },
+  "你": {
+    "en": "You",
+    "zh-CN": "你"
+  },
+  "平台": {
+    "en": "Platform",
+    "zh-CN": "平台"
+  },
+  "缺少：": {
+    "en": "Missing:",
+    "zh-CN": "缺少："
+  },
+  "部分结果": {
+    "en": "Partial results",
+    "zh-CN": "部分结果"
+  },
+  "查看完整报告": {
+    "en": "View full report",
+    "zh-CN": "查看完整报告"
+  },
+  "限制与口径": {
+    "en": "Limitations and definitions",
+    "zh-CN": "限制与口径"
+  },
+  "（历史消息，按兼容格式显示）": {
+    "en": "(Historical message displayed in a compatible format)",
+    "zh-CN": "（历史消息，按兼容格式显示）"
+  },
+  "引用的证据当前不可用，无法展示具体数字。": {
+    "en": "The referenced evidence is currently unavailable; figures cannot be shown.",
+    "zh-CN": "引用的证据当前不可用，无法展示具体数字。"
+  },
+  "已跳过": {
+    "en": "Skipped",
+    "zh-CN": "已跳过"
+  },
+  "条不可用引用。": {
+    "en": "unavailable references.",
+    "zh-CN": "条不可用引用。"
+  },
+  "意图：{0}": {
+    "en": "Intent: {0}",
+    "zh-CN": "意图：{0}"
+  },
+  "解析中…": {
+    "en": "Resolving…",
+    "zh-CN": "解析中…"
+  },
+  "可以停止本轮；完成后结果会作为一条消息出现。": {
+    "en": "You can stop this turn. When finished, its result will appear as a message.",
+    "zh-CN": "可以停止本轮；完成后结果会作为一条消息出现。"
+  },
+  "未使用": {
+    "en": "Not used",
+    "zh-CN": "未使用"
+  },
+  "无匹配": {
+    "en": "No match",
+    "zh-CN": "无匹配"
+  },
+  "技能：": {
+    "en": "Skills:",
+    "zh-CN": "技能："
+  },
+  "申请已记录（REQUESTED）。管理员在 Permissions 页处理；批准后会创建真实授权。": {
+    "en": "Request recorded (REQUESTED). An administrator can approve it on the Permissions page to create a grant.",
+    "zh-CN": "申请已记录（REQUESTED）。管理员在 Permissions 页处理；批准后会创建真实授权。"
+  },
+  "Catalog": {
+    "en": "Catalog",
+    "zh-CN": "数据目录"
+  },
+  "Only datasets you are authorized to discover are listed.": {
+    "en": "Only datasets you are authorized to discover are listed.",
+    "zh-CN": "仅列出您有发现权限的数据集。"
+  },
+  "Search tables…": {
+    "en": "Search tables…",
+    "zh-CN": "搜索数据表…"
+  },
+  "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.": {
+    "en": "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.",
+    "zh-CN": "没有可见的数据集。请管理员注册数据源、刷新目录，并向您的角色授予发现权限。"
+  },
+  "schema hash": {
+    "en": "schema hash",
+    "zh-CN": "结构哈希"
+  },
+  "· source": {
+    "en": "· source",
+    "zh-CN": "· 来源"
+  },
+  "语义维度（grain）": {
+    "en": "Semantic dimensions (grain)",
+    "zh-CN": "语义维度（grain）"
+  },
+  "来自 metadata/semantic，是可下钻维度的登记表": {
+    "en": "Registered in metadata/semantic; defines the available drilldown dimensions",
+    "zh-CN": "来自 metadata/semantic，是可下钻维度的登记表"
+  },
+  "业务时区": {
+    "en": "Business timezone",
+    "zh-CN": "业务时区"
+  },
+  "币种": {
+    "en": "Currency",
+    "zh-CN": "币种"
+  },
+  "已声明指标：": {
+    "en": "Declared metrics:",
+    "zh-CN": "已声明指标："
+  },
+  "去 Ask data 使用": {
+    "en": "Use in Ask data",
+    "zh-CN": "去 Ask data 使用"
+  },
+  "这张表还没有声明指标，因此它在 Ask data 里不可选；要按它的维度做分析，先在治理侧声明指标口径。": {
+    "en": "This table has no declared metrics and cannot be selected in Ask data. Declare a governed metric definition to analyze its dimensions.",
+    "zh-CN": "这张表还没有声明指标，因此它在 Ask data 里不可选；要按它的维度做分析，先在治理侧声明指标口径。"
+  },
+  "Join keys：": {
+    "en": "Join keys：",
+    "zh-CN": "Join keys:"
+  },
+  "（跨源关联只走白名单 relation）": {
+    "en": "(cross-source joins require allowlisted relations)",
+    "zh-CN": "（跨源关联只走白名单 relation）"
+  },
+  "Column": {
+    "en": "Column",
+    "zh-CN": "字段"
+  },
+  "Type": {
+    "en": "Type",
+    "zh-CN": "类型"
+  },
+  "Nullable": {
+    "en": "Nullable",
+    "zh-CN": "可为空"
+  },
+  "分析角色": {
+    "en": "Analysis role",
+    "zh-CN": "分析角色"
+  },
+  "维度": {
+    "en": "Dimension",
+    "zh-CN": "维度"
+  },
+  " · 时间列": {
+    "en": " · Time column",
+    "zh-CN": " · 时间列"
+  },
+  "非维度列": {
+    "en": "Non-dimension column",
+    "zh-CN": "非维度列"
+  },
+  "Loading schema…": {
+    "en": "Loading schema…",
+    "zh-CN": "正在加载结构…"
+  },
+  "Lineage（upstream, depth 2）": {
+    "en": "Lineage（upstream, depth 2）",
+    "zh-CN": "数据血缘（上游，深度 2）"
+  },
+  " · 边标签：{0}": {
+    "en": " · Edge labels: {0}",
+    "zh-CN": " · 边标签：{0}"
+  },
+  " · 权限过滤 {0} 个节点": {
+    "en": " · {0} nodes hidden by permissions",
+    "zh-CN": " · 权限过滤 {0} 个节点"
+  },
+  " · 已映射": {
+    "en": " · Mapped",
+    "zh-CN": " · 已映射"
+  },
+  " · 未映射": {
+    "en": " · Unmapped",
+    "zh-CN": " · 未映射"
+  },
+  "没有可见的上游节点（状态已如实说明，未做模拟）。": {
+    "en": "No visible upstream nodes (the reported status reflects actual availability).",
+    "zh-CN": "没有可见的上游节点（状态已如实说明，未做模拟）。"
+  },
+  "Loading lineage…": {
+    "en": "Loading lineage…",
+    "zh-CN": "正在加载血缘…"
+  },
+  "申请查询权限": {
+    "en": "Request query access",
+    "zh-CN": "申请查询权限"
+  },
+  "申请进入管理员队列，Mock 批准不等于授权": {
+    "en": "Requests enter the administrator queue; mock approval does not grant access",
+    "zh-CN": "申请进入管理员队列，Mock 批准不等于授权"
+  },
+  "提交申请": {
+    "en": "Submit request",
+    "zh-CN": "提交申请"
+  },
+  "我的申请": {
+    "en": "My requests",
+    "zh-CN": "我的申请"
+  },
+  "只有你自己看得到；批准即创建真实授权": {
+    "en": "Visible only to you; approval creates a real grant",
+    "zh-CN": "只有你自己看得到；批准即创建真实授权"
+  },
+  "本数据集": {
+    "en": "This dataset",
+    "zh-CN": "本数据集"
+  },
+  "未授权": {
+    "en": "No access granted",
+    "zh-CN": "未授权"
+  },
+  "还没有提交过申请。": {
+    "en": "No requests submitted yet.",
+    "zh-CN": "还没有提交过申请。"
+  },
+  "Query history": {
+    "en": "Query history",
+    "zh-CN": "查询历史"
+  },
+  "Status": {
+    "en": "Status",
+    "zh-CN": "状态"
+  },
+  "Loading…": {
+    "en": "Loading…",
+    "zh-CN": "正在加载…"
+  },
+  "Created": {
+    "en": "Created",
+    "zh-CN": "创建时间"
+  },
+  "Rows": {
+    "en": "Rows",
+    "zh-CN": "行数"
+  },
+  "Open": {
+    "en": "Open",
+    "zh-CN": "打开"
+  },
+  "sign in failed": {
+    "en": "sign in failed",
+    "zh-CN": "登录失败"
+  },
+  "Sign in": {
+    "en": "Sign in",
+    "zh-CN": "登录"
+  },
+  "Local account. Sessions expire after 8 hours.": {
+    "en": "Local account. Sessions expire after 8 hours.",
+    "zh-CN": "使用本地账号登录，会话将在 8 小时后过期。"
+  },
+  "Username": {
+    "en": "Username",
+    "zh-CN": "用户名"
+  },
+  "Password": {
+    "en": "Password",
+    "zh-CN": "密码"
+  },
+  "Signing in…": {
+    "en": "Signing in…",
+    "zh-CN": "正在登录…"
+  },
+  "已保存 {0} v{1}": {
+    "en": "Saved {0} v{1}",
+    "zh-CN": "已保存 {0} v{1}"
+  },
+  "已新增版本 v{0}": {
+    "en": "Added version v{0}",
+    "zh-CN": "已新增版本 v{0}"
+  },
+  "Skills": {
+    "en": "Skills",
+    "zh-CN": "技能"
+  },
+  "上传分析方法包（SKILL.md 或包含 SKILL.md 的 ZIP）。保存的版本不可修改， 启用后才会参与会话匹配；内置技能只读。": {
+    "en": "Upload an analysis package (SKILL.md or a ZIP containing SKILL.md). Saved versions are immutable. Enable a skill to include it in session matching; built-in skills are read-only.",
+    "zh-CN": "上传分析方法包（SKILL.md 或包含 SKILL.md 的 ZIP）。保存的版本不可修改， 启用后才会参与会话匹配；内置技能只读。"
+  },
+  "上传": {
+    "en": "Upload",
+    "zh-CN": "上传"
+  },
+  "先预览校验结果，再确认保存": {
+    "en": "Preview validation results before saving",
+    "zh-CN": "先预览校验结果，再确认保存"
+  },
+  "选择文件": {
+    "en": "Choose file",
+    "zh-CN": "选择文件"
+  },
+  "未选择文件": {
+    "en": "No file selected",
+    "zh-CN": "未选择文件"
+  },
+  "校验中…": {
+    "en": "Validating…",
+    "zh-CN": "校验中…"
+  },
+  "重新校验": {
+    "en": "Validate again",
+    "zh-CN": "重新校验"
+  },
+  "说明": {
+    "en": "Description",
+    "zh-CN": "说明"
+  },
+  "适用性": {
+    "en": "Compatibility",
+    "zh-CN": "适用性"
+  },
+  "适用于当前环境": {
+    "en": "Compatible with this environment",
+    "zh-CN": "适用于当前环境"
+  },
+  "当前环境不适用": {
+    "en": "Not compatible with this environment",
+    "zh-CN": "当前环境不适用"
+  },
+  "（未知指标：{0}）": {
+    "en": "(Unknown metrics: {0})",
+    "zh-CN": "（未知指标：{0}）"
+  },
+  "（{0} 不支持的维度：{1}）": {
+    "en": "(Unsupported dimensions for {0}: {1})",
+    "zh-CN": "（{0} 不支持的维度：{1}）"
+  },
+  "内容哈希": {
+    "en": "Content hash",
+    "zh-CN": "内容哈希"
+  },
+  "文件": {
+    "en": "Files",
+    "zh-CN": "文件"
+  },
+  "（预览截断，保存后完整保留）": {
+    "en": "(Preview truncated; the full content is saved)",
+    "zh-CN": "（预览截断，保存后完整保留）"
+  },
+  "保存中…": {
+    "en": "Saving…",
+    "zh-CN": "保存中…"
+  },
+  "保存为新技能": {
+    "en": "Save as new skill",
+    "zh-CN": "保存为新技能"
+  },
+  "技能库": {
+    "en": "Skill library",
+    "zh-CN": "技能库"
+  },
+  "显示已归档": {
+    "en": "Show archived",
+    "zh-CN": "显示已归档"
+  },
+  "加载中…": {
+    "en": "Loading…",
+    "zh-CN": "加载中…"
+  },
+  "还没有技能。": {
+    "en": "No skills yet.",
+    "zh-CN": "还没有技能。"
+  },
+  "内置": {
+    "en": "Built-in",
+    "zh-CN": "内置"
+  },
+  "自建": {
+    "en": "Custom",
+    "zh-CN": "自建"
+  },
+  "已启用": {
+    "en": "Enabled",
+    "zh-CN": "已启用"
+  },
+  "已停用": {
+    "en": "Disabled",
+    "zh-CN": "已停用"
+  },
+  "已归档": {
+    "en": "Archived",
+    "zh-CN": "已归档"
+  },
+  "当前环境缺少声明的指标或维度": {
+    "en": "This environment is missing declared metrics or dimensions",
+    "zh-CN": "当前环境缺少声明的指标或维度"
+  },
+  "不适用": {
+    "en": "Not applicable",
+    "zh-CN": "不适用"
+  },
+  "个版本": {
+    "en": "versions",
+    "zh-CN": "个版本"
+  },
+  " · 最新 v{0}": {
+    "en": " · Latest v{0}",
+    "zh-CN": " · 最新 v{0}"
+  },
+  "停用": {
+    "en": "Disable",
+    "zh-CN": "停用"
+  },
+  "启用": {
+    "en": "Enable",
+    "zh-CN": "启用"
+  },
+  "恢复": {
+    "en": "Restore",
+    "zh-CN": "恢复"
+  },
+  "归档": {
+    "en": "Archive",
+    "zh-CN": "归档"
+  },
+  "新版本": {
+    "en": "New version",
+    "zh-CN": "新版本"
+  },
+  "内置技能由仓库维护，只读": {
+    "en": "Built-in skills are maintained in the repository and are read-only",
+    "zh-CN": "内置技能由仓库维护，只读"
+  },
+  "SQL workspace": {
+    "en": "SQL workspace",
+    "zh-CN": "SQL 工作台"
+  },
+  "SELECT only · one statement · server-enforced timeouts and row limits": {
+    "en": "SELECT only · one statement · server-enforced timeouts and row limits",
+    "zh-CN": "仅限单条 SELECT · 超时与行数限制由服务器强制执行"
+  },
+  "Data source": {
+    "en": "Data source",
+    "zh-CN": "数据源"
+  },
+  "Choose a data source…": {
+    "en": "Choose a data source…",
+    "zh-CN": "选择数据源…"
+  },
+  "Max rows": {
+    "en": "Max rows",
+    "zh-CN": "最大行数"
+  },
+  "Timeout (s)": {
+    "en": "Timeout (s)",
+    "zh-CN": "超时（秒）"
+  },
+  "Submitting…": {
+    "en": "Submitting…",
+    "zh-CN": "正在提交…"
+  },
+  "Run query": {
+    "en": "Run query",
+    "zh-CN": "运行查询"
+  },
+  "Idempotency-Key is applied per submission.": {
+    "en": "Idempotency-Key is applied per submission.",
+    "zh-CN": "每次提交均使用幂等键。"
+  },
+  "Query": {
+    "en": "Query",
+    "zh-CN": "查询"
+  },
+  "created": {
+    "en": "created",
+    "zh-CN": "创建于"
+  },
+  "· attempt": {
+    "en": "· attempt",
+    "zh-CN": "· 尝试次数"
+  },
+  "Validated SQL (what the engine executed)": {
+    "en": "Validated SQL (what the engine executed)",
+    "zh-CN": "校验后的 SQL（引擎实际执行的语句）"
+  },
+  "Load more (": {
+    "en": "Load more (",
+    "zh-CN": "加载更多（"
+  },
+  "rows shown)": {
+    "en": "rows shown)",
+    "zh-CN": "行已显示）"
+  },
+  "Session required": {
+    "en": "Session required",
+    "zh-CN": "需要登录"
+  },
+  "Sign in to use the workspace.": {
+    "en": "Sign in to use the workspace.",
+    "zh-CN": "请登录后使用工作台。"
+  },
+  "Go to sign in": {
+    "en": "Go to sign in",
+    "zh-CN": "前往登录"
+  },
+  "AI-Native Data Platform": {
+    "en": "AI-Native Data Platform",
+    "zh-CN": "AI 原生数据平台"
+  },
+  "Ask data": {
+    "en": "Ask data",
+    "zh-CN": "智能问数"
+  },
+  "History": {
+    "en": "History",
+    "zh-CN": "历史记录"
+  },
+  "Sign out": {
+    "en": "Sign out",
+    "zh-CN": "退出登录"
+  },
+  "loading…": {
+    "en": "loading…",
+    "zh-CN": "正在加载…"
+  },
+  "显示图表": {
+    "en": "Show chart",
+    "zh-CN": "显示图表"
+  },
+  "显示表格": {
+    "en": "Show table",
+    "zh-CN": "显示表格"
+  },
+  "，单位": {
+    "en": ", unit",
+    "zh-CN": "，单位"
+  },
+  "按指标契约": {
+    "en": "Per metric contract",
+    "zh-CN": "按指标契约"
+  },
+  "净变化占比": {
+    "en": "Share of net change",
+    "zh-CN": "净变化占比"
+  },
+  "基准为零，无法计算占比": {
+    "en": "Share unavailable: the baseline is zero",
+    "zh-CN": "基准为零，无法计算占比"
+  },
+  "下钻": {
+    "en": "Drill down",
+    "zh-CN": "下钻"
+  },
+  "按变化量从大到小只显示前 {0} 个分组，另有 {1} 个未显示": {
+    "en": "Showing the top {0} groups by change; {1} additional groups are not shown",
+    "zh-CN": "按变化量从大到小只显示前 {0} 个分组，另有 {1} 个未显示"
+  },
+  "存储图表时已丢弃 {0} 个分组": {
+    "en": "{0} groups were dropped when the chart was stored",
+    "zh-CN": "存储图表时已丢弃 {0} 个分组"
+  },
+  "（未合并、未补零）。": {
+    "en": "(No merging or zero filling.)",
+    "zh-CN": "（未合并、未补零）。"
+  },
+  "单位 {0} · ": {
+    "en": "Unit {0} · ",
+    "zh-CN": "单位 {0} · "
+  },
+  "证据": {
+    "en": "Evidence",
+    "zh-CN": "证据"
+  },
+  "条 · 数据引用": {
+    "en": "items · Data reference",
+    "zh-CN": "条 · 数据引用"
+  },
+  "· 图表": {
+    "en": "· Chart",
+    "zh-CN": "· 图表"
+  },
+  "/ 共": {
+    "en": "/ total",
+    "zh-CN": "/ 共"
+  },
+  "点 · 数值按显示精度取整，精确值见悬停或表格视图": {
+    "en": "points · Values are rounded for display; exact values are in tooltips and the table",
+    "zh-CN": "点 · 数值按显示精度取整，精确值见悬停或表格视图"
+  },
+  "会话列表": {
+    "en": "Conversations",
+    "zh-CN": "会话列表"
+  },
+  "未命名会话": {
+    "en": "Untitled conversation",
+    "zh-CN": "未命名会话"
+  },
+  " · 进行中": {
+    "en": " · In progress",
+    "zh-CN": " · 进行中"
+  },
+  "还没有会话。": {
+    "en": "No conversations yet.",
+    "zh-CN": "还没有会话。"
+  },
+  "分析范围": {
+    "en": "Analysis scope",
+    "zh-CN": "分析范围"
+  },
+  "展开": {
+    "en": "Expand",
+    "zh-CN": "展开"
+  },
+  "收起": {
+    "en": "Collapse",
+    "zh-CN": "收起"
+  },
+  "未选指标": {
+    "en": "No metric selected",
+    "zh-CN": "未选指标"
+  },
+  "指标": {
+    "en": "Metric",
+    "zh-CN": "指标"
+  },
+  "（继承/未选）": {
+    "en": "(Inherit / not selected)",
+    "zh-CN": "（继承/未选）"
+  },
+  "基准": {
+    "en": "Baseline",
+    "zh-CN": "基准"
+  },
+  "当前": {
+    "en": "Current",
+    "zh-CN": "当前"
+  },
+  "先选指标": {
+    "en": "Select a metric first",
+    "zh-CN": "先选指标"
+  },
+  "筛选": {
+    "en": "Filters",
+    "zh-CN": "筛选"
+  },
+  "platform=android（留空表示清除）": {
+    "en": "platform=android (leave empty to clear)",
+    "zh-CN": "platform=android（留空表示清除）"
+  },
+  "完整性": {
+    "en": "Completeness",
+    "zh-CN": "完整性"
+  },
+  "未知": {
+    "en": "Unknown",
+    "zh-CN": "未知"
+  },
+  "完整": {
+    "en": "Complete",
+    "zh-CN": "完整"
+  },
+  "已知不完整": {
+    "en": "Known to be incomplete",
+    "zh-CN": "已知不完整"
+  },
+  "恢复已确认范围": {
+    "en": "Restore confirmed scope",
+    "zh-CN": "恢复已确认范围"
+  },
+  "这里的选择会作为本轮补丁提交；留空表示继承上一轮，筛选留空表示清除。": {
+    "en": "These choices are submitted as a patch for this turn. Empty fields inherit the previous scope; an empty filter clears the filters.",
+    "zh-CN": "这里的选择会作为本轮补丁提交；留空表示继承上一轮，筛选留空表示清除。"
+  },
+  "本轮指定": {
+    "en": "Specified this turn",
+    "zh-CN": "本轮指定"
+  },
+  "模型解析": {
+    "en": "Resolved by model",
+    "zh-CN": "模型解析"
+  },
+  "继承": {
+    "en": "Inherited",
+    "zh-CN": "继承"
+  },
+  "筛选格式应为 key=value，多个条件用逗号分隔；留空表示清除。": {
+    "en": "Use key=value filters separated by commas; leave empty to clear.",
+    "zh-CN": "筛选格式应为 key=value，多个条件用逗号分隔；留空表示清除。"
+  },
+  "筛选条件不能重复指定同一个字段。": {
+    "en": "A filter field cannot be specified more than once.",
+    "zh-CN": "筛选条件不能重复指定同一个字段。"
+  },
+  "技能": {
+    "en": "Skills",
+    "zh-CN": "技能"
+  },
+  "自动匹配": {
+    "en": "Automatic matching",
+    "zh-CN": "自动匹配"
+  },
+  "手动选择": {
+    "en": "Manual selection",
+    "zh-CN": "手动选择"
+  },
+  "不使用": {
+    "en": "Off",
+    "zh-CN": "不使用"
+  },
+  " · 自建": {
+    "en": " · Custom",
+    "zh-CN": " · 自建"
+  },
+  "最多选择 3 个固定版本；新版本不会自动替换已绑定版本。": {
+    "en": "Select up to 3 pinned versions; new versions never replace bound versions automatically.",
+    "zh-CN": "最多选择 3 个固定版本；新版本不会自动替换已绑定版本。"
+  },
+  "本轮不加载任何技能。": {
+    "en": "No skills will be loaded for this turn.",
+    "zh-CN": "本轮不加载任何技能。"
+  },
+  "自动匹配内置技能及已保存到本会话的自建版本。选择后点击保存，让自建技能进入后续匹配。": {
+    "en": "Automatically matches built-in skills and custom versions saved to this session. Save your selection to include custom skills in future matching.",
+    "zh-CN": "自动匹配内置技能及已保存到本会话的自建版本。选择后点击保存，让自建技能进入后续匹配。"
+  },
+  "所选版本直接用于本轮；保存后可在后续对话继续使用。": {
+    "en": "Selected versions are used for this turn. Save them to reuse in future turns.",
+    "zh-CN": "所选版本直接用于本轮；保存后可在后续对话继续使用。"
+  },
+  "保存到本会话": {
+    "en": "Save to this session",
+    "zh-CN": "保存到本会话"
+  },
+  "分组": {
+    "en": "Segment",
+    "zh-CN": "分组"
+  },
+  "口径/限制": {
+    "en": "Definition / limitation",
+    "zh-CN": "口径/限制"
+  },
+  "定义": {
+    "en": "Definition",
+    "zh-CN": "定义"
+  },
+  "待追查": {
+    "en": "Follow-up",
+    "zh-CN": "待追查"
+  },
+  "已否决": {
+    "en": "Rejected",
+    "zh-CN": "已否决"
+  },
+  "维度：": {
+    "en": "Dimensions:",
+    "zh-CN": "维度："
+  },
+  "被调用": {
+    "en": "Reused",
+    "zh-CN": "被调用"
+  },
+  "次 · 重复学到": {
+    "en": "times · Learned again",
+    "zh-CN": "次 · 重复学到"
+  },
+  "次": {
+    "en": "times",
+    "zh-CN": "次"
+  },
+  "来源分析": {
+    "en": "Source analysis",
+    "zh-CN": "来源分析"
+  },
+  "确认": {
+    "en": "Confirm",
+    "zh-CN": "确认"
+  },
+  "否决": {
+    "en": "Reject",
+    "zh-CN": "否决"
+  },
+  "· 待确认": {
+    "en": "· Proposed",
+    "zh-CN": "· 待确认"
+  },
+  " · 已否决 {0}": {
+    "en": " · Rejected {0}",
+    "zh-CN": " · 已否决 {0}"
+  },
+  "每次分析结束后，模型只从该次分析已验证的结论里提炼语句（不含任何数字，且必须点名出现过的分组取值）， 下次提问时作为选维度的提示。待确认项可被否决，否决后不再使用，也不会被再学一遍。": {
+    "en": "After each analysis, the model extracts statements only from verified findings, without figures and naming observed segment values. They guide dimension selection for future questions. Rejected statements are never used or learned again.",
+    "zh-CN": "每次分析结束后，模型只从该次分析已验证的结论里提炼语句（不含任何数字，且必须点名出现过的分组取值）， 下次提问时作为选维度的提示。待确认项可被否决，否决后不再使用，也不会被再学一遍。"
+  },
+  "读取中…": {
+    "en": "Loading…",
+    "zh-CN": "读取中…"
+  },
+  "这个指标还没有学到任何东西——完成一次分析后，这里会出现它的第一条业务知识。": {
+    "en": "No knowledge has been learned for this metric yet. Complete an analysis to create its first knowledge item.",
+    "zh-CN": "这个指标还没有学到任何东西——完成一次分析后，这里会出现它的第一条业务知识。"
+  },
+  "隐藏已否决": {
+    "en": "Hide rejected",
+    "zh-CN": "隐藏已否决"
+  },
+  "显示已否决（{0}）": {
+    "en": "Show rejected ({0})",
+    "zh-CN": "显示已否决（{0}）"
+  },
+  "Checking your permissions…": {
+    "en": "Checking your permissions…",
+    "zh-CN": "正在检查权限…"
+  },
+  "Administrator capability required": {
+    "en": "Administrator capability required",
+    "zh-CN": "需要管理员权限"
+  },
+  "这个页面需要": {
+    "en": "This page requires",
+    "zh-CN": "这个页面需要"
+  },
+  "能力；当前账号（": {
+    "en": "capability; the current account (",
+    "zh-CN": "能力；当前账号（"
+  },
+  "）拥有：": {
+    "en": ") has:",
+    "zh-CN": "）拥有："
+  },
+  "无": {
+    "en": "None",
+    "zh-CN": "无"
+  },
+  "No result columns.": {
+    "en": "No result columns.",
+    "zh-CN": "没有结果字段。"
+  },
+  "Result was truncated at the row or byte limit. Do not use it for exact totals.": {
+    "en": "Result was truncated at the row or byte limit. Do not use it for exact totals.",
+    "zh-CN": "结果已因行数或字节数限制被截断，请勿用其计算精确总计。"
+  },
+  "No rows returned.": {
+    "en": "No rows returned.",
+    "zh-CN": "没有返回数据行。"
+  },
+  "Queued": {
+    "en": "Queued",
+    "zh-CN": "排队中"
+  },
+  "Running": {
+    "en": "Running",
+    "zh-CN": "运行中"
+  },
+  "Succeeded": {
+    "en": "Succeeded",
+    "zh-CN": "成功"
+  },
+  "Failed": {
+    "en": "Failed",
+    "zh-CN": "失败"
+  },
+  "Cancelling": {
+    "en": "Cancelling",
+    "zh-CN": "正在取消"
+  },
+  "Cancelled": {
+    "en": "Cancelled",
+    "zh-CN": "已取消"
+  },
+  "Timed out": {
+    "en": "Timed out",
+    "zh-CN": "已超时"
+  },
+  "Lost": {
+    "en": "Lost",
+    "zh-CN": "已丢失"
+  },
+  "Requested": {
+    "en": "Requested",
+    "zh-CN": "已申请"
+  },
+  "Mock approved": {
+    "en": "Mock approved",
+    "zh-CN": "模拟批准"
+  },
+  "Synced": {
+    "en": "Synced",
+    "zh-CN": "已同步"
+  },
+  "Pending": {
+    "en": "Pending",
+    "zh-CN": "待处理"
+  },
+  "Healthy": {
+    "en": "Healthy",
+    "zh-CN": "健康"
+  },
+  "Unavailable": {
+    "en": "Unavailable",
+    "zh-CN": "不可用"
+  },
+  "Understanding": {
+    "en": "Understanding",
+    "zh-CN": "理解中"
+  },
+  "Retrieving": {
+    "en": "Retrieving",
+    "zh-CN": "检索中"
+  },
+  "Planning": {
+    "en": "Planning",
+    "zh-CN": "规划中"
+  },
+  "Executing": {
+    "en": "Executing",
+    "zh-CN": "执行中"
+  },
+  "Observing": {
+    "en": "Observing",
+    "zh-CN": "观察中"
+  },
+  "Synthesizing": {
+    "en": "Synthesizing",
+    "zh-CN": "综合中"
+  },
+  "Completed": {
+    "en": "Completed",
+    "zh-CN": "已完成"
+  },
+  "Partial": {
+    "en": "Partial",
+    "zh-CN": "部分完成"
+  },
+  "all": {
+    "zh-CN": "全部",
+    "en": "all"
+  },
+  "yes": {
+    "zh-CN": "是",
+    "en": "yes"
+  },
+  "no": {
+    "zh-CN": "否",
+    "en": "no"
+  },
+  "unknown": {
+    "zh-CN": "未知",
+    "en": "unknown"
+  },
+  "Dataset": {
+    "zh-CN": "数据集",
+    "en": "Dataset"
+  },
+  "Cancel": {
+    "zh-CN": "取消",
+    "en": "Cancel"
+  },
+  "Cancel (finished)": {
+    "zh-CN": "取消（已结束）",
+    "en": "Cancel (finished)"
+  },
+  "result loading failed": {
+    "zh-CN": "结果加载失败",
+    "en": "result loading failed"
+  },
+  "submit failed": {
+    "zh-CN": "提交失败",
+    "en": "submit failed"
+  },
+  "observed_change": {
+    "zh-CN": "观测变化",
+    "en": "observed_change"
+  },
+  "statistical_contributor": {
+    "zh-CN": "统计贡献",
+    "en": "statistical_contributor"
+  },
+  "analyze": {
+    "zh-CN": "分析",
+    "en": "analyze"
+  },
+  "explain": {
+    "zh-CN": "解释",
+    "en": "explain"
+  },
+  "clarify": {
+    "zh-CN": "澄清",
+    "en": "clarify"
+  },
+  "help": {
+    "zh-CN": "帮助",
+    "en": "help"
+  },
+  "unsupported": {
+    "zh-CN": "暂不支持",
+    "en": "unsupported"
+  },
+  "metric_key": {
+    "zh-CN": "指标",
+    "en": "metric_key"
+  },
+  "baseline_start": {
+    "zh-CN": "基准开始日期",
+    "en": "baseline_start"
+  },
+  "baseline_end": {
+    "zh-CN": "基准结束日期",
+    "en": "baseline_end"
+  },
+  "current_start": {
+    "zh-CN": "当前开始日期",
+    "en": "current_start"
+  },
+  "current_end": {
+    "zh-CN": "当前结束日期",
+    "en": "current_end"
+  },
+  "data_complete_state": {
+    "zh-CN": "数据完整性",
+    "en": "data_complete_state"
+  },
+  "dimensions": {
+    "zh-CN": "维度",
+    "en": "dimensions"
+  },
+  "discover": {
+    "zh-CN": "发现",
+    "en": "discover"
+  },
+  "query": {
+    "zh-CN": "查询",
+    "en": "query"
+  },
+  "permission.required": {
+    "zh-CN": "此页面需要 {capability} 权限。当前账号（{username}）拥有：{capabilities}。",
+    "en": "This page requires {capability}. Account {username} has: {capabilities}."
+  },
+  "memory.reused": {
+    "zh-CN": "被调用 {reuse} 次 · 重复学到 {seen} 次",
+    "en": "Reused {reuse} times · Learned again {seen} times"
+  },
+  "memory.counts": {
+    "zh-CN": "已确认 {confirmed} · 待确认 {proposed}",
+    "en": "Confirmed {confirmed} · Proposed {proposed}"
+  },
+  "memory.used": {
+    "zh-CN": "规划这次分析时参考了 {count} 条已有知识：",
+    "en": "Planning used {count} existing knowledge items:"
+  },
+  "memory.learned": {
+    "zh-CN": "这次新学到 {count} 条：",
+    "en": "Newly learned {count} items:"
+  },
+  "memory.reinforced": {
+    "zh-CN": "另有 {count} 条与既有知识重复，已记为再次印证（不新增条目）。",
+    "en": "Another {count} items reinforced existing knowledge without creating duplicates."
+  },
+  "memory.refused": {
+    "zh-CN": "被拒绝的候选 {count} 条：{reasons}",
+    "en": "Rejected {count} candidates: {reasons}"
+  },
+  "references.skipped": {
+    "zh-CN": "已跳过 {count} 条不可用引用。",
+    "en": "Skipped {count} unavailable references."
+  },
+  "skills.versions": {
+    "zh-CN": "{count} 个版本",
+    "en": "{count} versions"
+  },
+  "sql.loadMore": {
+    "zh-CN": "加载更多（已显示 {count} 行）",
+    "en": "Load more ({count} rows shown)"
+  },
+  "chart.footer": {
+    "zh-CN": "证据 {evidence} 条 · 数据引用 {type}:{id} · 图表 {shown} / 共 {total} 点 · 数值按显示精度取整，精确值见悬停或表格视图",
+    "en": "Evidence: {evidence} items · Data reference {type}:{id} · Chart {shown} / {total} points · Rounded for display; exact values are in tooltips and the table"
+  },
+  "Approved": {
+    "zh-CN": "已批准",
+    "en": "Approved"
+  },
+  "Rejected": {
+    "zh-CN": "已拒绝",
+    "en": "Rejected"
+  },
+  "Resolving": {
+    "zh-CN": "解析中",
+    "en": "Resolving"
+  },
+  "Analyzing": {
+    "zh-CN": "分析中",
+    "en": "Analyzing"
+  },
+  "Responding": {
+    "zh-CN": "回复中",
+    "en": "Responding"
+  },
+  "Waiting for input": {
+    "zh-CN": "等待补充信息",
+    "en": "Waiting for input"
+  },
+  "error.UNAUTHENTICATED": {
+    "zh-CN": "请重新登录后继续。",
+    "en": "Please sign in to continue."
+  },
+  "error.FORBIDDEN": {
+    "zh-CN": "当前账号没有执行此操作的权限。",
+    "en": "Your account cannot perform this action."
+  },
+  "error.PERMISSION_DENIED": {
+    "zh-CN": "数据集访问权限不足，请联系管理员。",
+    "en": "Dataset access denied. Contact an administrator."
+  },
+  "error.CSRF_INVALID": {
+    "zh-CN": "会话校验失败，请刷新页面后重试。",
+    "en": "Session verification failed. Refresh the page and try again."
+  },
+  "error.RATE_LIMITED": {
+    "zh-CN": "请求过于频繁，请稍后重试。",
+    "en": "Too many requests. Please try again later."
+  },
+  "error.NOT_FOUND": {
+    "zh-CN": "资源不存在或当前不可见。",
+    "en": "The resource was not found or is not visible."
+  },
+  "error.VALIDATION_ERROR": {
+    "zh-CN": "输入参数无效，请检查后重试。",
+    "en": "Invalid input. Check the values and try again."
+  },
+  "error.CONFLICT": {
+    "zh-CN": "操作发生冲突，请刷新后重试。",
+    "en": "The operation conflicts with the current state. Refresh and try again."
+  },
+  "error.IDEMPOTENCY_CONFLICT": {
+    "zh-CN": "该幂等键已用于其他请求，请重新提交。",
+    "en": "This idempotency key was used for another request. Submit again."
+  },
+  "error.SQL_SYNTAX_ERROR": {
+    "zh-CN": "SQL 语法错误，请检查语句。",
+    "en": "SQL syntax error. Check the statement."
+  },
+  "error.SQL_FORBIDDEN": {
+    "zh-CN": "此 SQL 不符合只读安全策略。",
+    "en": "This SQL statement violates the read-only policy."
+  },
+  "error.SQL_UNSUPPORTED": {
+    "zh-CN": "暂不支持此 SQL 语法。",
+    "en": "This SQL syntax is not supported."
+  },
+  "error.QUERY_TOO_LARGE": {
+    "zh-CN": "查询超出大小限制。",
+    "en": "The query exceeds the size limit."
+  },
+  "error.REQUEST_TOO_LARGE": {
+    "zh-CN": "请求超出大小限制。",
+    "en": "The request exceeds the size limit."
+  },
+  "error.DATASET_NOT_REGISTERED": {
+    "zh-CN": "数据集尚未注册。",
+    "en": "The dataset has not been registered."
+  },
+  "error.AMBIGUOUS_TABLE_REFERENCE": {
+    "zh-CN": "表名存在歧义，请使用完整限定名。",
+    "en": "The table reference is ambiguous. Use a qualified name."
+  },
+  "error.SCHEMA_CHANGED": {
+    "zh-CN": "数据结构已发生变化，请刷新后重试。",
+    "en": "The schema has changed. Refresh and try again."
+  },
+  "error.LIMIT_INVALID": {
+    "zh-CN": "行数或超时限制无效。",
+    "en": "The row or timeout limit is invalid."
+  },
+  "error.DATASOURCE_UNAVAILABLE": {
+    "zh-CN": "数据源暂时不可用。",
+    "en": "The data source is temporarily unavailable."
+  },
+  "error.DATASOURCE_UNSUPPORTED": {
+    "zh-CN": "暂不支持此数据源。",
+    "en": "This data source is not supported."
+  },
+  "error.METADATA_UNAVAILABLE": {
+    "zh-CN": "元数据服务暂时不可用。",
+    "en": "The metadata service is temporarily unavailable."
+  },
+  "error.METADATA_SYNC_NOT_AVAILABLE": {
+    "zh-CN": "元数据同步暂不可用。",
+    "en": "Metadata synchronization is unavailable."
+  },
+  "error.NOT_IMPLEMENTED": {
+    "zh-CN": "该功能尚未实现。",
+    "en": "This feature has not been implemented."
+  },
+  "error.INTERNAL_ERROR": {
+    "zh-CN": "服务内部错误，请稍后重试。",
+    "en": "An internal error occurred. Please try again later."
+  },
+  "error.SERVICE_NOT_READY": {
+    "zh-CN": "服务尚未就绪，请稍后重试。",
+    "en": "The service is not ready. Please try again later."
+  },
+  "error.STORAGE_UNAVAILABLE": {
+    "zh-CN": "存储服务暂时不可用。",
+    "en": "Storage is temporarily unavailable."
+  },
+  "error.RESULT_UNAVAILABLE": {
+    "zh-CN": "查询结果已不可用，请重新运行。",
+    "en": "The result is unavailable. Run the query again."
+  },
+  "error.RESULT_EXPIRED": {
+    "zh-CN": "查询结果已过期，请重新运行。",
+    "en": "The result has expired. Run the query again."
+  },
+  "error.EVENT_CURSOR_EXPIRED": {
+    "zh-CN": "实时更新游标已过期，请刷新页面。",
+    "en": "The event cursor has expired. Refresh the page."
+  },
+  "error.LLM_UNAVAILABLE": {
+    "zh-CN": "模型服务暂时不可用。",
+    "en": "The model service is temporarily unavailable."
+  },
+  "error.CONVERSATIONAL_DISABLED": {
+    "zh-CN": "对话功能尚未启用。",
+    "en": "Conversational analysis is disabled."
+  },
+  "error.SESSION_BUSY": {
+    "zh-CN": "当前会话正在处理请求，请等待本轮完成。",
+    "en": "This session is busy. Wait for the current turn to finish."
+  },
+  "error.CONTEXT_VERSION_CONFLICT": {
+    "zh-CN": "会话范围已更新，请刷新后重试。",
+    "en": "The session scope has changed. Refresh and try again."
+  },
+  "error.SKILL_TOO_LARGE": {
+    "zh-CN": "技能包超出大小限制。",
+    "en": "The skill package exceeds the size limit."
+  },
+  "error.SKILL_INVALID": {
+    "zh-CN": "技能包校验失败，请检查格式。",
+    "en": "Skill validation failed. Check the package format."
+  },
+  "error.SKILL_UNSUPPORTED": {
+    "zh-CN": "暂不支持此技能包。",
+    "en": "This skill package is not supported."
+  },
+  "error.EXECUTION_ERROR": {
+    "zh-CN": "查询执行失败，请查看原始错误。",
+    "en": "Query execution failed. See the original error."
+  },
+  "error.INVALID_SCOPE": {
+    "zh-CN": "分析范围无效，请检查指标、期间和筛选条件。",
+    "en": "The analysis scope is invalid. Check the metric, periods and filters."
+  },
+  "Original error": {
+    "zh-CN": "原始错误",
+    "en": "Original error"
+  },
+  "error.QUERY_TIMEOUT": {
+    "zh-CN": "查询执行超时。",
+    "en": "The query timed out."
+  },
+  "error.QUERY_CANCELLED": {
+    "zh-CN": "查询已取消。",
+    "en": "The query was cancelled."
+  },
+  "error.QUEUE_TIMEOUT": {
+    "zh-CN": "查询排队超时。",
+    "en": "The query timed out in the queue."
+  },
+  "error.QUERY_LOST": {
+    "zh-CN": "查询执行状态丢失，请重新运行。",
+    "en": "The query was lost. Run it again."
+  },
+  "error.RESULT_TRUNCATED": {
+    "zh-CN": "结果已因限制被截断。",
+    "en": "The result was truncated at the configured limit."
+  },
+  "error.ANALYSIS_EXECUTION_ERROR": {
+    "zh-CN": "分析执行失败，请查看原始错误。",
+    "en": "Analysis execution failed. See the original error."
+  },
+  "status.created": {
+    "zh-CN": "已创建",
+    "en": "Created"
+  },
+  "Degraded": {
+    "zh-CN": "降级",
+    "en": "Degraded"
+  },
+  "not_ingested": {
+    "zh-CN": "未采集",
+    "en": "Not ingested"
+  },
+  "unavailable": {
+    "zh-CN": "不可用",
+    "en": "Unavailable"
+  },
+  "available": {
+    "zh-CN": "可用",
+    "en": "Available"
+  },
+  "extracted": {
+    "zh-CN": "已提取",
+    "en": "Extracted"
+  },
+  "declared_by_demo_pipeline": {
+    "zh-CN": "演示流水线声明",
+    "en": "Declared by demo pipeline"
+  },
+  " · cancel": {
+    "zh-CN": " · 可取消",
+    "en": " · cancellation"
+  },
+  " · timeout": {
+    "zh-CN": " · 超时控制",
+    "en": " · timeout"
+  },
+  " · read-only": {
+    "zh-CN": " · 只读",
+    "en": " · read-only"
+  }
+}

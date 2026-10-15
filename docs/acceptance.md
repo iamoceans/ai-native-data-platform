@@ -1394,3 +1394,51 @@ image carries this tree's content (built from the working copy before this
 change was committed). The chart's own `truncated`/`dropped_points` path was
 exercised only against the mocked payload, not against a stored chart that hit
 the 1000-point cap.
+
+## 2026-10-15 — Chinese/English interface localization
+
+Started from a clean worktree at `7df6326`; fetched `origin` and fast-forwarded
+`work` to `origin/main` at `00bee00` before implementing this change.
+
+Delivered: the login and unauthenticated gate plus all workspace routes use a
+shared Chinese/English catalog (`frontend/src/i18n/messages.json`, 461 entries).
+The selector switches labels, statuses, notices, validation and error guidance
+without clearing drafts. Browser language detection, persistent selection,
+cross-tab updates and storage-disabled fallback are implemented. Document
+language/title, dates and chart display formatting follow the locale. API and
+multipart requests send `Accept-Language`; raw backend error details remain
+inspectable with an accessible “Original error” button. Source SQL, data, user
+content, metadata, model prose and stored report/evidence quotes are retained.
+The server does not negotiate or regenerate model output in response to that
+header; this change is interface localization, not automatic content translation.
+
+Observed checks in the Linux cloud workspace:
+
+- `npm --prefix frontend run typecheck` -> **passed** (OpenAPI generation and
+  TypeScript compilation, no errors).
+- `npm --prefix frontend run build` -> **passed**; Vite transformed 94 modules
+  and built the production bundle. JS 427.77 kB (129.64 kB gzip), CSS 14.94 kB
+  (3.60 kB gzip).
+- `npm --prefix frontend run test:unit` -> **11 passed, 0 failed**. The four new
+  localization checks cover translation/placeholder completeness, literal UI
+  and status-label keys, coverage of every backend ErrorCode, unknown-key
+  fallback, single-pass interpolation and preservation of user values.
+- `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm --prefix frontend run test:regression`
+  -> **42 passed**: the existing 29 Ask/chart/Skills regressions plus 13 new
+  localization cases. Existing tests now explicitly request Chinese, removing
+  their dependency on the host's browser locale. The new cases switch both
+  languages on Ask, SQL, catalog, history, Skills, datasource administration,
+  permission administration and analysis; exercise login errors and input
+  retention, SQL/error retention, localized request headers, reload/navigation
+  persistence, cross-tab changes, Chinese browser detection with disabled
+  storage, and the 390px layout in both languages.
+- The 390px screenshot `/tmp/platform-i18n-mobile.png` was visually inspected:
+  navigation wraps within the viewport, the selector remains visible, SQL
+  controls fit their card, and the page has no horizontal overflow.
+- `git diff --check` -> **passed**.
+
+Not executed: deployed-stack browser journeys, database integration suites and
+real-model acceptance. The browser suite mocks API traffic, and its passing
+result does not establish backend service availability or a model's output
+language. No backend execution, permission, SQL validation or persisted evidence
+contract was changed.

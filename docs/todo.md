@@ -936,3 +936,26 @@ however complete an earlier phase looks.
       *auto* skill mode's model choice under a large candidate pool is not
       recorded (the pool is at most three builtins today); no load/soak run of
       concurrent sessions beyond the single-active-turn constraint.
+
+
+## 2026-10-15 — Chinese/English interface localization
+
+- [x] Fast-forward local work to `origin/main` at `00bee00` before implementing.
+- [x] Central Chinese/English catalog and live language selection on login,
+      unauthenticated gate and the workspace header; browser detection, persistent
+      preference, cross-tab synchronization and storage-disabled fallback.
+- [x] Login, Ask and conversation/scope/skill panels, SQL, catalog and lineage
+      labels, query history, analysis controls, business memory, skills, datasource
+      administration and permissions administration use localized interface text.
+- [x] Status labels retain protocol values; date/chart formatting follows locale;
+      errors offer localized guidance plus inspectable original diagnostics.
+- [x] Browser regressions cover both languages on all routes, preference
+      persistence, input retention, auth/query errors, cross-tab updates and
+      the 390px layout. Observed: **42 passed** (29 existing + 13 localization).
+- [x] Unit checks cover catalog/placeholder parity, missing UI keys, all backend
+      error codes and interpolation preserving user values. Observed: **11
+      passed**; typecheck and production build also passed.
+- [ ] Automatic translation of metadata, user/model prose and existing report or
+      evidence quotations is outside this interface change; they retain source text.
+- [ ] Live-stack database/model journeys: not executed for this frontend change.
+      Mocked-browser checks do not count as live backend or real-model acceptance.

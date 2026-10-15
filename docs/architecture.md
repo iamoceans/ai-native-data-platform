@@ -353,6 +353,36 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   with it off the turn write API answers 503 `CONVERSATIONAL_DISABLED` and the
   UI falls back to the one-shot analysis path.
 
+## Interface localization
+
+`frontend/src/i18n/` owns the Chinese (`zh-CN`) and English (`en`) interface
+catalog and the shared locale store. Components subscribe with `useLocale()` and
+resolve labels with `t()`; stateful notices store message keys and parameters so
+an already-visible notice changes language too. Interpolation is a single pass
+and React renders its output as text. No HTML is injected by translations.
+
+The language selector is available at login, at the unauthenticated gate and in
+the workspace header. Preference order is a supported `ainative.locale` value
+in localStorage, then the browser's first preferred language (`zh-*` -> Chinese,
+otherwise English). Storage failures fall back to an in-memory selection; storage
+events synchronize other tabs. Locale changes update document language/title and
+rerender subscribed components without remounting routes, clearing the query
+cache, resubmitting work or resetting drafts. Date/time formatting uses the
+selected locale and the browser's timezone; chart display formatting uses Intl,
+with exact audited Decimal strings retained in table values and tooltips.
+
+API requests and multipart uploads include `Accept-Language`. Existing backend
+contracts, error codes and stored records are unchanged. `ErrorMessage` provides
+localized guidance for the backend's stable error codes and exposes the original
+diagnostic with a keyboard- and touch-accessible button. Unknown error codes
+fall back to their original message. SQL, identifiers, result cells, catalog
+metadata, user/model prose and stored report/evidence quotations retain their
+source text; automatic content translation and model response-language control
+are outside this interface change. No database migration is needed.
+
+Observed verification is recorded in `docs/acceptance.md` under the 2026-10-15
+Chinese/English interface entry.
+
 ## Not built
 
 - Model-driven plan and tool selection. The planning call may only choose up to

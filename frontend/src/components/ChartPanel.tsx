@@ -1,3 +1,4 @@
+import { t, useLocale, formatNumber } from "../i18n";
 import { useState } from "react";
 import type { ChartView } from "../api/endpoints";
 
@@ -19,7 +20,7 @@ import type { ChartView } from "../api/endpoints";
 function formatAmount(raw: string): string {
   const value = Number(raw);
   if (!Number.isFinite(value)) return raw;
-  const rounded = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+  const rounded = formatNumber(value, { maximumFractionDigits: 2 });
   return `${value < 0 ? "▼" : "▲"} ${rounded}`;
 }
 
@@ -27,7 +28,7 @@ function formatShare(raw: string | null): string | null {
   if (!raw) return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return raw;
-  return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(value);
+  return formatNumber(value, { style: "percent", maximumFractionDigits: 1 });
 }
 
 export function ChartPanel({
@@ -39,14 +40,21 @@ export function ChartPanel({
   onDrilldown?: (dimension: string, value: string) => void;
   busy?: boolean;
 }) {
+  useLocale();
   const [showTable, setShowTable] = useState(false);
   const { spec, data } = chart;
   const unit = spec.encoding.y.unit ?? "";
 
   if (!data.length) {
     return (
-      <section className="card" aria-label={spec.title} data-testid="chart-panel">
-        <div className="card-head"><h2>{spec.title}</h2></div>
+      <section
+        className="card"
+        aria-label={spec.title}
+        data-testid="chart-panel"
+      >
+        <div className="card-head">
+          <h2>{spec.title}</h2>
+        </div>
         <p className="notice">{chart.empty_state || spec.empty_state}</p>
       </section>
     );
@@ -65,20 +73,25 @@ export function ChartPanel({
     <section className="card" aria-label={spec.title} data-testid="chart-panel">
       <div className="card-head">
         <h2>{spec.title}</h2>
-        <button className="ghost" data-testid="chart-toggle-table" onClick={() => setShowTable((value) => !value)}>
-          {showTable ? "显示图表" : "显示表格"}
+        <button
+          className="ghost"
+          data-testid="chart-toggle-table"
+          onClick={() => setShowTable((value) => !value)}
+        >
+          {showTable ? t("显示图表") : t("显示表格")}
         </button>
       </div>
       {showTable ? (
         <table className="chart-table" data-testid="chart-table">
           <caption className="muted small">
-            {spec.encoding.x.field} → {spec.encoding.y.field}，单位 {unit || "按指标契约"}
+            {spec.encoding.x.field} → {spec.encoding.y.field}
+            {t("，单位")} {unit || t("按指标契约")}
           </caption>
           <thead>
             <tr>
               <th scope="col">{spec.encoding.x.field}</th>
               <th scope="col">{spec.encoding.y.field}</th>
-              <th scope="col">净变化占比</th>
+              <th scope="col">{t("净变化占比")}</th>
             </tr>
           </thead>
           <tbody>
@@ -91,7 +104,9 @@ export function ChartPanel({
                     {formatAmount(row.delta)}
                     {unit ? ` ${unit}` : ""}
                   </td>
-                  <td title={row.net_change_share ?? undefined}>{share ?? "—"}</td>
+                  <td title={row.net_change_share ?? undefined}>
+                    {share ?? "—"}
+                  </td>
                 </tr>
               );
             })}
@@ -101,31 +116,45 @@ export function ChartPanel({
         <ul className="chart-bars" data-testid="chart-bars">
           {data.map((row) => {
             const value = Number(row.delta);
-            const width = Math.max(2, Math.round((Math.abs(value) / extent) * 100));
+            const width = Math.max(
+              2,
+              Math.round((Math.abs(value) / extent) * 100),
+            );
             const share = formatShare(row.net_change_share);
             return (
               <li key={row.key}>
                 <div className="chart-row-head">
                   <span className="chart-label">{row.key}</span>
-                  <span className="chart-value" title={`${row.delta}${unit ? ` ${unit}` : ""}`}>
+                  <span
+                    className="chart-value"
+                    title={`${row.delta}${unit ? ` ${unit}` : ""}`}
+                  >
                     {formatAmount(row.delta)}
                     {unit ? ` ${unit}` : ""}
                   </span>
                   {share ? (
-                    <span className="chart-share muted small" title={row.net_change_share ?? undefined}>
-                      净变化占比 {share}
+                    <span
+                      className="chart-share muted small"
+                      title={row.net_change_share ?? undefined}
+                    >
+                      {t("净变化占比")} {share}
                     </span>
                   ) : (
-                    <span className="muted small">基准为零，无法计算占比</span>
+                    <span className="muted small">
+                      {t("基准为零，无法计算占比")}
+                    </span>
                   )}
                   {onDrilldown && drill.length ? (
                     <button
                       className="ghost small"
                       data-testid="chart-drilldown"
                       disabled={busy}
-                      onClick={() => row.dimension_values[0] != null && onDrilldown(drill[0], String(row.dimension_values[0]))}
+                      onClick={() =>
+                        row.dimension_values[0] != null &&
+                        onDrilldown(drill[0], String(row.dimension_values[0]))
+                      }
                     >
-                      下钻 {drill[0]}
+                      {t("下钻")} {drill[0]}
                     </button>
                   ) : null}
                 </div>
@@ -142,17 +171,30 @@ export function ChartPanel({
       {notShown || droppedByCap ? (
         <p className="notice warn">
           {[
-            notShown ? `按变化量从大到小只显示前 ${data.length} 个分组，另有 ${notShown} 个未显示` : null,
-            droppedByCap ? `存储图表时已丢弃 ${droppedByCap} 个分组` : null,
+            notShown
+              ? t("按变化量从大到小只显示前 {0} 个分组，另有 {1} 个未显示", {
+                  0: data.length,
+                  1: notShown,
+                })
+              : null,
+            droppedByCap
+              ? t("存储图表时已丢弃 {0} 个分组", { 0: droppedByCap })
+              : null,
           ]
             .filter(Boolean)
             .join("；")}
-          （未合并、未补零）。
+          {t("（未合并、未补零）。")}
         </p>
       ) : null}
       <p className="muted small">
-        {unit ? `单位 ${unit} · ` : ""}证据 {spec.evidence_ids.length} 条 · 数据引用 {spec.data_ref.type}:{spec.data_ref.id.slice(0, 8)} · 图表 {data.length} / 共 {chart.total_points} 点
-        · 数值按显示精度取整，精确值见悬停或表格视图
+        {unit ? t("单位 {0} · ", { 0: unit }) : ""}
+        {t("chart.footer", {
+          evidence: spec.evidence_ids.length,
+          type: spec.data_ref.type,
+          id: spec.data_ref.id.slice(0, 8),
+          shown: data.length,
+          total: chart.total_points,
+        })}
       </p>
     </section>
   );

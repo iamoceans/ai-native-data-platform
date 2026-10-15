@@ -655,3 +655,14 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
   .conversation { grid-template-columns: minmax(0, 1fr); }
   .conversation-rail { position: static; }
 }
+
+.language-switcher { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; white-space: nowrap; }
+.language-switcher select { width: auto; min-width: 6.5rem; padding: .35rem .5rem; }
+.auth-card > .language-switcher { align-self: flex-end; }
+.topbar-right { flex-wrap: wrap; }
+html[lang="zh-CN"] body { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
+.original-error { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1200px) {
+  .topbar { flex-wrap: wrap; gap: 12px; }
+  .nav { flex-wrap: wrap; }
+}

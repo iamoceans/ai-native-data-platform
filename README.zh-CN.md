@@ -22,6 +22,18 @@
 - **目录与血缘**：DataHub（默认关闭）提供检索、上下文与血缘；真实 `extracted` 边与声明式 demo 流水线血缘分开标注。
 - **界面**：React SPA —— SQL 工作台、数据目录、查询历史、Ask/Analysis（图表、等价的表格视图、下钻），以及数据源与权限管理页。
 
+## 界面语言
+
+登录页和工作区顶栏可选择 **简体中文 / English**，即时切换整个平台界面，
+保留表单草稿和正在运行的查询。首次进入时按浏览器首选语言选择（`zh-*` 使用中文，
+其余使用英文）；手动选择保存在 `localStorage`，刷新后保留，并在标签页之间同步。
+日期和图表数字随所选语言格式化。
+
+页面文案、状态、校验和 API 错误说明均已适配。SQL、查询结果、目录描述、用户内容、
+模型生成文本和已存储的报告／证据引文保留原文，不因切换语言被翻译或重新生成。
+错误旁的「原始错误」按钮可展开服务端诊断详情。
+验收记录见 [docs/acceptance.md](docs/acceptance.md#2026-10-15--chineseenglish-interface-localization)。
+
 ## 快速开始（core profile）
 
 前置：Docker Desktop（Windows 用 WSL2 后端）并为它预留约 6–8 GiB 内存、[uv](https://docs.astral.sh/uv/)、Node.js 20+。WSL2/Linux 用 `make`，Windows PowerShell 用 `.\scripts\dev.ps1`（target 同名）。
