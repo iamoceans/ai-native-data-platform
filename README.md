@@ -24,9 +24,9 @@ source authorization and browser E2E still open.
   deployed. The conversational Ask workspace and skill packages were accepted on
   2026-10-13 (a real-model multi-turn conversation plus the full regression; see
   `docs/acceptance.md`).
-- **Open**: the specification's `/datasets/:id` deep link is served by the catalog
-  detail panel instead of its own route, and analysis steps are extended by rule
-  rather than by the model choosing steps and tools.
+- **Open**: analysis steps are extended by rule rather than by the model choosing
+  steps and tools. Dataset details have a shareable `/datasets/:id` route,
+  accessible directly or from the catalog, with the existing permission checks.
 - Per-milestone checklists and executed evidence live in
   [docs/todo.md](docs/todo.md) and [docs/acceptance.md](docs/acceptance.md);
   anything not executed is marked `not executed` and never counted as passing.
@@ -167,9 +167,11 @@ schema locally. Use `json_schema` only for a provider that implements strict
 structured outputs - DeepSeek answers HTTP 400 for it. Per analysis the budget is
 60,000 input / 12,000 output tokens, 20 tool calls, 12 queries, 2 SQL repairs and
 180 s of wall clock; exhausting it produces `PARTIAL`, not a fabricated answer. The
-key is read from the mounted file only - never from `.env`, a request field or the
-browser - and endpoint, model and key path are administrator configuration that a
-user question cannot override.
+key comes from a mounted file or the redacted `AIND_LLM_API_KEY` environment
+secret (which takes precedence). Bind it through cloud environment secrets rather
+than committing credentials. Endpoint, model and credentials are administrator
+configuration that a user question cannot override. Cloud access requires
+`api.deepseek.com`; verify the endpoint-reported model before claiming a version.
 
 The second 2026-10-15 review also fixes driver-error skipping, driver percent
 escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock
@@ -251,16 +253,21 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   lineage, read-only source authorization and browser E2E coverage still need
   live acceptance. See the
   [Spark/Hive runbook](docs/runbook.md#spark--hive-shared-metastore-preview).
+- Analysis comparisons require matching rows in both periods for every required
+  source. Empty input yields a PARTIAL report explaining the affected period;
+  observed zero values remain valid. Row presence does not establish full window
+  completeness. Older in-flight analyses without row-coverage evidence require
+  resubmission; completed historical reports are unchanged.
 - The analysis runner extends its plan by rule; letting the model choose steps or
   iterate over tools is not implemented.
 - Business memory is ranked text, not embeddings, and is platform-wide rather
-  than per-team; extraction runs inline in the agent worker, so several workers
-  would need a claim before the loop scales past one.
+  than per-team. Extraction uses a bounded per-analysis claim and fenced writes;
+  network calls run outside transactions but occupy a worker until their timeout.
+  Broader multi-worker throughput and cross-analysis paraphrase races need testing.
 - Plan replies are validated against a closed schema locally, and a reply that does
   not validate fails that analysis loudly - there is no format-repair loop, only
   the SQL repair budget.
-- The specification's `/datasets/:id` deep link is served by the catalog detail
-  panel; the shared/dashboard screens are not part of the V1 specification and were
+- The shared/dashboard screens are not part of the V1 specification and were
   not invented.
 - Doris runs the local single-BE profile only; multi-BE topologies, workload groups
   and external catalogs are out of V1 scope.

@@ -119,9 +119,9 @@ def test_ecpm_null_breakdown_does_not_crash_observer(monkeypatch):
     for period, total in [("baseline", "5"), ("current", "4")]:
         for is_total in [False, True]:
             id = uuid.uuid4()
-            descriptors.append(dict(query_id=str(id), metric_alias="ecpm", period=period, period_total=is_total, dataset_id=str(uuid.uuid4()), role="primary"))
+            descriptors.append(dict(query_id=str(id), metric_alias="ecpm", period=period, period_total=is_total, dataset_id=str(uuid.uuid4()), role="primary", source_row_count_alias="__aind_source_rows"))
             jobs[id] = NS(id=id, status="SUCCEEDED")
-            payloads[str(id)] = {"columns": [{"name": "country"}, {"name": "ecpm"}], "rows": [["all", total]] if is_total else [["zero-impressions", None], ["other", "10"]]}
+            payloads[str(id)] = {"columns": [{"name": "country"}, {"name": "ecpm"}, {"name": "__aind_source_rows"}], "rows": [["all", total, 2]] if is_total else [["zero-impressions", None, 1], ["other", "10", 1]]}
     results = iter(NS(storage_key=d["query_id"], expires_at=None) for d in descriptors)
     db = NS(execute=lambda *args: NS(scalar_one=lambda: next(results)))
     monkeypatch.setattr(runner, "get_result_store", lambda: NS(read_json=lambda key: payloads[key]))

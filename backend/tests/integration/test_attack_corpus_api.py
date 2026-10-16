@@ -31,7 +31,7 @@ ATTACKS = [
     ("SHOW PROCESSLIST", "SQL_FORBIDDEN"),
     ("SET @x = 1", "SQL_FORBIDDEN"),
     ("SELECT * FROM any_table INTO OUTFILE '/tmp/leak'", "SQL_SYNTAX_ERROR"),
-    ("SELECT * FROM information_schema.tables", "DATASET_NOT_REGISTERED"),
+    ("SELECT * FROM information_schema.tables", "PERMISSION_DENIED"),
 ]
 
 

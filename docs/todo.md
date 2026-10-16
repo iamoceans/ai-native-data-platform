@@ -2,8 +2,8 @@
 
 Project: AI-Native Data Platform (spec v1.0)
 Scope currently delivered: **M0-M6**. Open items are listed per milestone below:
-model-driven step/tool selection (M5), and the specification's `/datasets/:id`
-route, which the catalog detail panel serves instead (M6).
+model-driven step/tool selection (M5). The M6 `/datasets/:id` route is now
+implemented; see the 2026-10-16 dataset deep-link record below.
 Rule followed: a stage counts as done only when its gate ran on real services; tests
 that were not executed are marked "not executed" and never counted as passed.
 
@@ -21,12 +21,15 @@ Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` 
       connection configuration/secret refs; request bodies/maps and limiter bounded.
 - [x] Terminal SSE and history polling stop; idle cross-tab context refresh retained.
       Frontend resource tests 7 passed; generated API types and production build pass.
-- [ ] PostgreSQL contention tests: 2 skipped; no configured live control database.
-- [ ] Engine stalls, TLS negotiation, deployed/browser journeys: not verified live.
+- [x] PostgreSQL contention tests: both executed against an isolated live control
+      database on 2026-10-16; see the priority-workflows acceptance record.
+- [x] MySQL/Doris connection stalls, PostgreSQL TLS negotiation and live browser
+      journeys verified on 2026-10-16. Full Doris/DataHub acceptance remains open.
 - [ ] Spark shared-socket cancellation race: suspected; live reproduction required
       before choosing a transport-isolation change. Spark implementation unchanged.
-- [ ] Moving model calls outside the task-lock transaction with fenced writes:
-      not implemented; reclaim skips the task lock safely.
+- [x] Analysis planning and memory extraction call the model outside database
+      sessions. Post-call writes validate ownership, expiry and fencing; late
+      success/failure cannot change a cancelled or reclaimed analysis.
 
 Acceptance: static **469 passed**, frontend resource tests **7 passed**.
 See the medium-defects section in `docs/acceptance.md`.
@@ -41,8 +44,10 @@ See the medium-defects section in `docs/acceptance.md`.
 - [x] Memory HTTP list/counts/curation require source grants; unauthorized query
       resolution cannot reach schema introspection.
 - [x] Model history selects the latest twelve messages in chronological order.
-- [ ] Browser regressions: added, but runs stalled without a final result.
-- [ ] Full-service matrix, deployed journeys and A09: not executed for these fixes.
+- [x] Browser regressions completed on 2026-10-16: 54 cases repeated twice,
+      **108 passed**, including the Skills keyboard file chooser.
+- [~] PostgreSQL/MySQL matrix and local live-service journeys rerun on 2026-10-16.
+      Doris/DataHub and real-model A09 remain pending; see the latest record.
 - [ ] Rerun affected historical reports; stored artifacts are not rewritten.
       Obsolete in-flight calculation checkpoints require resubmission.
 
@@ -699,9 +704,10 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       statements that name the analysis window are refused as
       `unverifiable_figure` because the date is not in `evidence_identifiers` -
       the window is deliberately not quotable.
-- [ ] Remaining: the spec's `/datasets/:id` route is served by the catalog detail
-      panel rather than its own page. Real-model A09 is no longer outstanding - it
-      passed on 2026-09-27 (see the M5 section).
+- [x] The spec's `/datasets/:id` route now opens the governed catalog detail
+      directly, including schema, semantic context, lineage and access requests.
+      See the 2026-10-16 dataset deep-link record. Real-model A09 passed on
+      2026-09-27 (see the M5 section).
 
 ---
 
@@ -823,10 +829,8 @@ however complete an earlier phase looks.
 - [x] UI: `/skills` page (file picker -> preview -> save, version list, enable /
       disable / archive, builtin read-only) behind `PermissionGate`, with the
       nav entry, regenerated `openapi.json`/types and `data-testid`s.
-- [ ] Not done in P2: the session-side skill pool and loading (off/manual/auto,
-      candidate -> body -> references layering, 24 KiB per turn) is P3; the
-      per-user (50) and per-skill (20) quotas are enforced in code but not
-      covered by a test.
+- [x] Session-side pool and layered loading are delivered in P3 below.
+- [ ] Per-user (50) and per-skill (20) quotas are enforced but lack dedicated tests.
 
 ### P3 - conversation orchestration
 
@@ -863,12 +867,13 @@ however complete an earlier phase looks.
       `Last-Event-ID` resume; the client merges by event id.
 - [x] Worker wiring: `run_turn` claims a turn, and `reconcile_turn` closes it once
       its analysis settles; `requeue_stale_turns` recovers a lost lease.
-- [ ] Not done in P3: the model's *skill choice* is honoured, but auto-mode
-      description ranking is "the pool in maintained order" (no similarity
-      ranking); conflict handling between two skills' required inputs is not
-      implemented; `explain` does not yet interpolate numbers into a template (the
-      quotes carry them verbatim); session SSE has no dedicated contract test
-      beyond the integration case.
+- [x] Auto candidates rank by question/description lexical similarity (English
+      words and Chinese bigrams), metric and dimension relevance, within the
+      existing pinned-before-builtin tiers. Selected versions are revalidated
+      against final scope; conflicting metric requirements or missing required
+      inputs produce clarification without overwriting explicit UI values.
+- [ ] `explain` does not interpolate numbers into a template (quotes carry them
+      verbatim); session SSE lacks a dedicated contract test beyond integration.
 
 ### P4 - the conversational UI
 
@@ -899,10 +904,12 @@ however complete an earlier phase looks.
 - [x] Playwright journey (`frontend/tests/e2e/conversation.spec.ts`) plus a
       rewritten analysis journey: the full suite is **7 passed** against the
       deployed stack.
-- [ ] Not done in P4: the analysis range panel is a fixed side column rather than
-      a drawer on narrow screens; there is no "retry this turn" button (the user
-      re-sends); message pagination beyond 100 items is not wired; the
-      per-analysis diagnostics (tokens, budget) live on the analysis page only.
+- [x] Narrow-screen scope drawer uses a native modal dialog with focus/Escape
+      handling; drafts survive closing/resizing. Failed/cancelled turns can be
+      retried with frozen original scope/skills and an idempotent new turn.
+- [x] Transcript loads the latest 40 messages and pages backward with signed
+      sequence cursors; history beyond 100 messages is reachable. Per-message
+      analysis diagnostics display tokens, queries, tools, repairs and deadline.
 
 ### P5 - regression and acceptance
 
@@ -1004,13 +1011,80 @@ Three defects, all fixed on the working copy; evidence in `docs/acceptance.md`,
       every one of them drives `data_complete(_state) = complete` (or asserts the
       claim-carrying shape those paths keep), so the completeness change does not
       reach them, but that is reasoning, not a run.
-- [ ] Known and not fixed: a period that lies entirely outside the loaded data
-      reports `变化 0` instead of "该期间没有数据". The calculation carries
-      `baseline/current/change` but no row coverage, so telling "genuinely zero"
-      apart from "no rows" needs a new evidence signal in the observation (the
-      demo data ends 2026-09-12, so any relative period such as 上周 lands outside
-      it and hits this).
+- [x] Empty-period reporting fixed on 2026-10-16: source-row evidence now
+      distinguishes missing data from genuine zero. Either period lacking rows
+      in any required source yields PARTIAL with a dated limitation and no change
+      or attribution. See the source-coverage record below for verification limits.
 - [x] The completeness trade is now stated in the UI: with `unknown` by default a
       conversational answer reports the change but never attributes it, so the
       scope panel says so next to the 完整性 control ("未声明数据完整时只报告观测到的
       变化，不做归因。" / "数据完整：可以给出变化归因。").
+
+## 2026-10-16 Dataset deep links
+
+- [x] `/datasets/:id` opens schema, semantic context, upstream lineage and the
+      access-request workflow directly. Catalog entries are real links; reload,
+      browser back/forward and returning to the catalog preserve URL semantics.
+- [x] Dataset-specific request drafts and notices reset on ID changes; requests
+      target the current dataset. Missing/denied context renders an error, hides
+      the form and prevents secondary schema/lineage reads. Read failures are
+      shown rather than leaving permanent loading text.
+- [x] Five new mocked catalog browser cases passed. Frontend typecheck and
+      production build exit 0; frontend unit checks: **11 passed**.
+- [x] Full mocked browser suite now passes: **108 passed** (54 cases repeated
+      twice). Keyboard activation targets the new-version button directly,
+      atomically restoring focus after preceding browser interactions.
+- [~] Local live-service journeys and PostgreSQL/MySQL matrix rerun in the
+      priority-workflows record below; real-model A09 remains pending.
+
+## 2026-10-16 Empty-period source coverage
+
+- [x] Every compiled metric query carries a collision-safe `COUNT(*)` evidence
+      column under the same period and filters; no additional query is submitted.
+- [x] The observer records per-period/per-source row evidence and its query IDs.
+      Missing required input suppresses comparison, contribution, driver extension
+      and charts; an explicit completeness flag cannot override missing rows.
+      Rows whose metric is truly zero still produce the observed zero change.
+- [x] Empty nonadditive periods and missing composition inputs produce honest
+      PARTIAL reports rather than invented zeros; populated undefined formulas
+      retain their existing failure behavior.
+- [x] Coverage is retained in the period-comparison artifact (calculation version
+      3). Older in-flight queries/checkpoints without coverage require resubmission.
+      Completed historical reports are not rewritten.
+- [x] Backend unit/security/contract suite: **509 passed**, including **30** new
+      coverage regressions with SQLite aggregate execution and runner/report
+      checks. `git diff --check` exits 0.
+- [~] PostgreSQL/MySQL matrix and local live-service Ask journeys rerun in the
+      priority-workflows record below. Doris, Spark and real-model A09 were not
+      rerun. Row presence does not verify date-by-date data completeness.
+
+## 2026-10-16 High/medium priority workflows
+
+- [x] Analysis planning: short prepare/reserve transaction, session-free model
+      request and fenced apply. Cancellation remains responsive during a model
+      stall; reclaimed workers retain prior budget charges and reject old replies.
+- [x] Business-memory extraction: bounded claim/expiry and at most three attempts;
+      extraction and catch-up no longer hold task locks across network requests.
+- [x] Skills description ranking and required-input reconciliation, including
+      explicit clears and incompatible metric requirements. Current applicability
+      and offered IDs are checked again before applying model decisions.
+- [x] Backward transcript pagination (latest 40, signed sequence cursors), retry
+      of failed/cancelled turns, native mobile scope drawer and message diagnostics.
+- [x] Skills file chooser keyboard regression stabilized without sleeps or reduced
+      assertions. Mocked browser regression: **108 passed**, 54 cases repeated twice.
+- [x] Frontend unit tests **11 passed**, production build exit 0; backend static
+      suite **515 passed**. Real protocol stalls/TLS focused suite **3 passed**.
+- [x] Model adapter accepts redacted `AIND_LLM_API_KEY` cloud proxy credentials
+      while retaining mounted-file compatibility. Credential precedence, redaction,
+      request isolation and endpoint-reported model identity are unit-tested.
+- [x] Local live-service browser journeys: **7 passed**, deterministic provider.
+- [~] Real PostgreSQL/MySQL integration matrix: **97 passed / 14 skipped /
+      25 deselected**, including socket/TLS cases. Thirteen skips need Doris and
+      one needs deployed DataHub; Spark was not rerun.
+- [ ] Requested DeepSeek v4.1 flash integration and real-model A09 were explicitly
+      deferred by the user until later. No usable credential is bound and current proxy policy excludes `api.deepseek.com`.
+      A minimal environment draft now declares that destination and a
+      `DEEPSEEK_API_KEY` -> `AIND_LLM_API_KEY` secret binding. Saving the draft did
+      not apply/publish it. The configured `deepseek-chat` alias has not been
+      verified as the requested model version. Historical A09 passes above do not
+      count as this revision's acceptance.

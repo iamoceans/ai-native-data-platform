@@ -136,6 +136,7 @@ test.describe("Analysis and charts", () => {
  * (E2E_DATASOURCE_NAME) and at least one dataset visible to the viewer role.
  */
 test.describe("Administration", () => {
+  test.use({ locale: "zh-CN" });
   test.skip(!enabled, "set E2E_BASE_URL to run the end-to-end journey");
 
   test("datasource health, catalog refresh, grants and the request queue", async ({ page }) => {
@@ -145,7 +146,7 @@ test.describe("Administration", () => {
     await expect(page.getByTestId("datasource-select")).toBeVisible();
 
     // The catalog offers the access request that feeds the administrator queue.
-    await page.getByRole("link", { name: "Catalog" }).click();
+    await page.getByRole("link", { name: "数据目录" }).click();
     await page.getByTestId("catalog-search").fill("fixture_metrics");
     await page.locator(".dataset-list .dataset").first().click();
     await page.getByTestId("request-reason").fill("E2E: revenue for the weekly report");
@@ -156,7 +157,7 @@ test.describe("Administration", () => {
     await page.getByTestId("nav-admin-datasources").click();
     await expect(page.getByTestId("admin-datasources")).toBeVisible();
     await page.getByTestId(`test-${datasourceName}`).click();
-    await expect(page.getByTestId("datasource-test-result")).toContainText("HEALTHY");
+    await expect(page.getByTestId("datasource-test-result")).toContainText("健康");
     await page.getByTestId("refresh-secure-views").fill("");
     await page.getByTestId(`refresh-${datasourceName}`).click();
     await expect(page.getByTestId("catalog-refresh-result")).toContainText("注册");
@@ -174,7 +175,7 @@ test.describe("Administration", () => {
     if (await approveButton.isEnabled()) {
       await approveButton.click();
       await expect(page.getByTestId("admin-notice")).toContainText("已批准");
-      await expect(requestRow).toContainText("APPROVED");
+      await expect(requestRow).toContainText("已批准");
       await expect(requestRow).toContainText("已创建真实授权");
     }
 

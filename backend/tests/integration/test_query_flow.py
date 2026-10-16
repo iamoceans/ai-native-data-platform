@@ -76,7 +76,8 @@ def test_full_query_loop_recomputes_numbers(admin_client, source, source_url):
         ).fetchall()
     with psycopg.connect(source_dsn(source_url)) as conn:
         source_reader = conn.execute("SELECT current_user").fetchone()[0]
-    assert source_reader == "source_admin"
+    from tests.helpers import parse_url
+    assert source_reader == parse_url(source_url)["user"]
 
     assert len(expected) == len(rows)
     for api_row, db_row in zip(rows, expected):

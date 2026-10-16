@@ -152,16 +152,14 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
                     session, worker_id=worker_id, settings=settings
                 )
             if claim is not None:
-                with session_scope() as session:
-                    analysis_runner.execute_claim(session, claim=claim, settings=settings)
+                analysis_runner.run_claim(get_session_factory(), claim=claim, settings=settings)
                 # Learning runs after the analysis is published and in its own
                 # transaction, so a model failure here cannot change an outcome,
                 # and a failure in it cannot stall the rest of the pass.
                 try:
-                    with session_scope() as session:
-                        learned = business_memory.remember_completed(
-                            session, analysis_id=claim.analysis_id, settings=settings
-                        )
+                    learned = business_memory.run_extraction(
+                        get_session_factory(), analysis_id=claim.analysis_id, settings=settings
+                    )
                     if learned.get("status") == "extracted":
                         logger.info(
                             "business memory learned",
@@ -179,8 +177,7 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
             # Self-healing: an analysis that finished while this worker was down
             # (or while the model endpoint was unavailable) still gets learned.
             try:
-                with session_scope() as session:
-                    business_memory.catch_up(session, settings=settings)
+                business_memory.run_catch_up(get_session_factory(), settings=settings)
             except Exception:
                 logger.exception("business memory catch-up failed")
             interesting = {k: v for k, v in summary.items() if _has_activity(v)}

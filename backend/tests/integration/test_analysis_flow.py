@@ -351,7 +351,8 @@ def test_analysis_repairs_a_dropped_dimension_within_budget(admin_client, integr
         assert detail["budget"]["queries"] == 4
         statuses = {step["key"]: step["status"] for step in detail["steps"]}
         assert statuses["baseline_0"] == "SKIPPED"
-        assert statuses["baseline_repair_0"] == "SUCCEEDED"
+        repaired_steps = [status for key, status in statuses.items() if key.startswith("baseline_repair_")]
+        assert repaired_steps == ["SUCCEEDED"]
         report = admin_client.get(f"/api/v1/analyses/{analysis_id}/report").json()
         assert report["status"] == "COMPLETED"
         assert any("丢弃列 legacy_dim" in item for item in report["limitations"])

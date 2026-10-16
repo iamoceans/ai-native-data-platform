@@ -376,6 +376,7 @@ class AgentMessageResponse(BaseModel):
     sequence: int = 0
     turn_id: uuid.UUID | None = None
     content_schema_version: int = 1
+    turn_status: str | None = None
 
 
 class AgentMessageListResponse(BaseModel):

@@ -46,6 +46,7 @@ from app.constants import (
 )
 from app.ids import utcnow
 from app.models.orm import AgentMessage, AnalysisTask, ConversationTurn
+from app.skills.frontmatter import SkillError
 from app.repositories import analyses as analyses_repo
 from app.repositories import conversation as conversation_repo
 from app.repositories import events as events_repo
@@ -486,9 +487,8 @@ def _prepare_turn(
     turn.budget = budget.as_dict()
     session.flush()
 
-    metric_hint = (turn.context_before or {}).get("metric_key") or (
-        user_content.get("scope_patch") or {}
-    ).get("metric_key")
+    effective, _ = resolve_scope_patch(turn.context_before or {}, user_content, None)
+    metric_hint = effective.get("metric_key")
     try:
         skill_block, skill_record = skill_loader.load_for_turn(
             session,
@@ -498,6 +498,7 @@ def _prepare_turn(
             metric_key=metric_hint,
             user_selection=user_content.get("skill_selection"),
             model_choice=None,
+            question=str(user_content.get("text") or ""),
         )
     except Exception as exc:
         from app.skills.frontmatter import SkillError
@@ -613,8 +614,9 @@ def _apply_turn(
     # them with an empty record would silently drop what was already loaded.
     skill_block = preparation.skill_block
     skill_snapshot = dict(preparation.skill_snapshot)
-    model_choice = [str(item) for item in decision.skill_version_ids]
-    if model_choice:
+    offered = set(preparation.skill_snapshot.get("candidates") or [])
+    model_choice = [str(item) for item in decision.skill_version_ids if str(item) in offered]
+    if model_choice or skill_snapshot.get("mode") == "manual":
         try:
             skill_block, skill_record = skill_loader.load_for_turn(
                 session,
@@ -624,10 +626,12 @@ def _apply_turn(
                 metric_key=preparation.metric_hint,
                 user_selection=user_content.get("skill_selection"),
                 model_choice=model_choice,
+                question=preparation.question,
             )
             skill_snapshot = skill_record.as_snapshot()
-        except Exception:  # pragma: no cover - auto mode never raises for capacity
-            logger.warning("skill reload failed", exc_info=True)
+        except SkillError as exc:
+            _fail(session, turn, code=exc.code, message=exc.message)
+            return str(turn.status)
 
     allowed_identifiers = _evidence_identifiers(session, turn, session_row)
     prose_reasons = intent_layer.validate_prose(decision, allowed_identifiers=allowed_identifiers)
@@ -640,6 +644,24 @@ def _apply_turn(
     merged, missing = resolve_scope_patch(
         preparation.context_before, user_content, resolution.model_patch
     )
+    if skill_snapshot.get("mode") == "auto" and merged.get("metric_key"):
+        previous = list(skill_snapshot.get("loaded") or [])
+        permitted = list(skill_snapshot.get("selected") or [])
+        skill_block, skill_record = skill_loader.load_for_turn(
+            session, settings=settings, session_row=session_row, owner_user_id=turn.user_id,
+            metric_key=merged["metric_key"], user_selection=user_content.get("skill_selection"),
+            model_choice=permitted, question=preparation.question, allowed_version_ids=permitted,
+        )
+        loaded_ids = {item["version_id"] for item in skill_record.loaded}
+        for item in previous:
+            if item["version_id"] not in loaded_ids and item.get("metric_keys") and merged["metric_key"] not in item["metric_keys"]:
+                skill_record.skipped.append({"version_id": item["version_id"], "reason": "metric_not_applicable"})
+        skill_snapshot = skill_record.as_snapshot()
+        skill_snapshot["candidates"] = preparation.skill_snapshot.get("candidates", [])
+    skill_missing, skill_questions = skill_loader.required_input_issues(
+        skill_snapshot, merged, user_content.get("scope_patch"),
+    )
+    missing = sorted(set(missing) | set(skill_missing))
     intent = str(decision.intent)
     if resolution.patch_reasons:
         _turn_event(session, turn, "turn.patch.adjusted", {"reasons": resolution.patch_reasons})
@@ -678,6 +700,7 @@ def _apply_turn(
             content=clarify_reply(
                 missing,
                 list(decision.clarify_questions)
+                + skill_questions
                 + (
                     ["期间按左闭右开理解（含开始日期、不含结束日期）：只看一天请填 该日 到 次日。"]
                     if scope.invalid_period_fields(merged)
@@ -803,6 +826,6 @@ def reconcile_turn(session: Session, turn_id: uuid.UUID) -> str:
     error = {"code": ErrorCode.EXECUTION_ERROR, "message": f"analysis ended {analysis.status}"}
     _close(
         session, turn, status=ConversationTurnStatus.FAILED,
-        content=failure_reply(error), error=error,
+        content={**failure_reply(error), "analysis_id": str(analysis.id)}, error=error,
     )
     return str(turn.status)

@@ -1,8 +1,8 @@
 """Application settings (spec sections 4, 27, 28).
 
 All process configuration comes from environment variables with the AIND_
-prefix (or .env for local runs). Secrets are never read from this object:
-provider credentials live behind the SecretResolver.
+prefix (or .env for local runs). Datasource credentials live behind the
+SecretResolver. The optional LLM proxy credential is a redacted SecretStr.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import secrets
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://127.0.0.1:11434/v1"
     llm_model: str = ""
     llm_api_key_file: Path | None = None
+    llm_api_key: SecretStr | None = Field(default=None, repr=False)
     llm_timeout_seconds: float = 30.0
     # "json_object" is the portable mode (DeepSeek and most OpenAI-compatible
     # servers reject "json_schema"; the schema then travels in the prompt and the

@@ -94,3 +94,49 @@ def test_explicit_empty_manual_selection_does_not_inherit_bound_versions(monkeyp
         user_selection={"mode": "manual", "version_ids": []}, model_choice=None)
     assert block == ""
     assert record.selected == []
+
+
+@pytest.mark.parametrize("question,descriptions,expected", [
+    ("which channel explains revenue", ["compare retention cohorts", "channel revenue contribution"], 1),
+    ("分析渠道贡献", ["留存用户规模", "分析渠道贡献与抵消"], 1),
+])
+def test_auto_ranks_descriptions_without_reading_unselected_bodies(monkeypatch, question, descriptions, expected):
+    identities = [skill("builtin") for _ in descriptions]
+    versions = [version(identity) for identity in identities]
+    for index, (identity, stored, description) in enumerate(zip(identities, versions, descriptions, strict=True)):
+        identity.slug = f"method-{index}"
+        stored.manifest["description"] = description
+    arrange(monkeypatch, identities, versions)
+    candidates = loader.candidate_pool(None, session_row=NS(skill_config={}), owner_user_id=uuid.uuid4(), metric_key=None, question=question)
+    assert candidates[0]["version_id"] == str(versions[expected].id)
+
+
+def test_required_inputs_combine_without_overriding_explicit_scope():
+    import copy
+    snapshot = {"loaded": [
+        {"slug": "dimension-method", "required_inputs": ["dimensions"], "metric_keys": ["revenue"]},
+        {"slug": "filtered-method", "required_inputs": ["filters", "baseline_period"], "metric_keys": ["revenue"]},
+    ]}
+    scope = {"metric_key": "revenue", "dimensions": [], "filters": {}, "baseline_start": "2026-09-01"}
+    before = copy.deepcopy(scope)
+    missing, questions = loader.required_input_issues(snapshot, scope, {"clear": ["dimensions", "filters"]})
+    assert set(missing) == {"dimensions", "filters", "baseline_end"}
+    assert any("明确清空" in question for question in questions)
+    assert scope == before
+
+
+def test_incompatible_skill_requirements_require_a_choice():
+    snapshot = {"loaded": [
+        {"slug": "ad-only", "metric_keys": ["ads"]},
+        {"slug": "iap-only", "metric_keys": ["iap"]},
+    ]}
+    missing, questions = loader.required_input_issues(snapshot, {"metric_key": "ads"}, {})
+    assert missing == ["skill_selection"]
+    assert any("互斥" in question for question in questions)
+
+
+def test_satisfied_skill_requirements_do_not_force_clarification():
+    snapshot = {"loaded": [{"slug": "method", "required_inputs": ["metric_key", "dimensions", "filters", "baseline_period", "current_period"]}]}
+    complete = {"metric_key": "revenue", "dimensions": ["country"], "filters": {"country": "US"},
+        "baseline_start": "2026-09-01", "baseline_end": "2026-09-02", "current_start": "2026-09-02", "current_end": "2026-09-03"}
+    assert loader.required_input_issues(snapshot, complete, {}) == ([], [])

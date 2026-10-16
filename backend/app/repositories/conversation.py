@@ -179,3 +179,11 @@ def save_checkpoint(session: Session, turn: ConversationTurn, checkpoint: dict[s
     turn.checkpoint_version = int(turn.checkpoint_version) + 1
     turn.updated_at = utcnow()
     session.flush()
+
+
+def turn_statuses(session, turn_ids):
+    if not turn_ids:
+        return {}
+    return dict(session.execute(
+        select(ConversationTurn.id, ConversationTurn.status).where(ConversationTurn.id.in_(turn_ids))
+    ).all())

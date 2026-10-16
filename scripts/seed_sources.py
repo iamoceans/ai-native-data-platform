@@ -371,7 +371,10 @@ def main() -> int:
     parser.add_argument("--doris-port", type=int, default=int(read_env("DORIS_FE_SQL_PORT", "19030")))
     parser.add_argument("--pg-host", default=read_env("PG_SEED_HOST", "127.0.0.1"))
     parser.add_argument("--pg-port", type=int, default=int(read_env("SOURCE_DB_PORT", "55433")))
+    parser.add_argument("--engine", action="append", choices=("postgres", "mysql", "doris"),
+                        help="seed only the named engine(s); default: all three")
     args = parser.parse_args()
+    engines = set(args.engine or ("postgres", "mysql", "doris"))
 
     mysql_user = read_env("MYSQL_ADMIN_USER", "source_admin")
     mysql_password = read_env("MYSQL_ADMIN_PASSWORD")
@@ -379,28 +382,30 @@ def main() -> int:
     doris_user = read_env("DORIS_ADMIN_USER", "doris_admin")
     doris_password = read_env("DORIS_ADMIN_PASSWORD")
 
-    if not mysql_password or not doris_password:
+    if ("mysql" in engines and not mysql_password) or ("doris" in engines and not doris_password):
         print("missing passwords in .env; run scripts/setup_secrets.py first", file=sys.stderr)
         return 2
 
     pg_user = read_env("SOURCE_BOOTSTRAP_USER", "source_admin")
     pg_password = read_env("SOURCE_BOOTSTRAP_PASSWORD")
     pg_db = read_env("SOURCE_DB_NAME", "ainative_source")
-    if pg_password:
+    if "postgres" in engines and pg_password:
         pg_counts = seed_postgres(args.pg_host, args.pg_port, pg_user, pg_password, pg_db)
         for table, count in sorted(pg_counts.items()):
             print(f"postgres public.{table}: {count} rows")
-    else:
+    elif "postgres" in engines:
         print("postgres fixture seed skipped: SOURCE_BOOTSTRAP_PASSWORD is not set", file=sys.stderr)
 
-    mysql_rows = seed_mysql(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
-    print(f"mysql app_release_config: {mysql_rows} rows")
-    heavy_rows = seed_mysql_heavy_rows(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
-    print(f"mysql m2_heavy: {heavy_rows} rows")
+    if "mysql" in engines:
+        mysql_rows = seed_mysql(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
+        print(f"mysql app_release_config: {mysql_rows} rows")
+        heavy_rows = seed_mysql_heavy_rows(args.mysql_host, args.mysql_port, mysql_user, mysql_password, mysql_db)
+        print(f"mysql m2_heavy: {heavy_rows} rows")
 
-    doris_counts = seed_doris(args.doris_host, args.doris_port, doris_user, doris_password, "demo")
-    for table, count in sorted(doris_counts.items()):
-        print(f"doris demo.{table}: {count} rows")
+    if "doris" in engines:
+        doris_counts = seed_doris(args.doris_host, args.doris_port, doris_user, doris_password, "demo")
+        for table, count in sorted(doris_counts.items()):
+            print(f"doris demo.{table}: {count} rows")
     print("seed complete")
     return 0
 

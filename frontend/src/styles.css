@@ -404,6 +404,9 @@ button.ghost:hover:not(:disabled) {
 }
 
 .dataset {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
   width: 100%;
   display: flex;
   justify-content: space-between;
@@ -641,6 +644,10 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
 .composer textarea { width: 100%; resize: vertical; }
 .composer-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .conversation-side { display: grid; gap: 12px; position: sticky; top: 16px; min-width: 0; }
+.scope-drawer { width: min(480px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); background: var(--surface); }
+.scope-drawer::backdrop { background: rgb(0 0 0 / 35%); }
+.scope-drawer > .card-head { margin-bottom: 12px; }
+.scope-drawer .conversation-side { position: static; }
 /* The right column is a fixed 320px track. A grid item's automatic minimum size
    lets the metric <select> - sized by its longest option, e.g.
    "归因收入（cohort 观测口径）（campaign_attributed_revenue）" - widen the column to

@@ -117,7 +117,8 @@ class OpenAICompatibleProvider:
         *,
         base_url: str,
         model: str,
-        api_key_file: Path,
+        api_key_file: Path | None = None,
+        api_key: str | None = None,
         timeout_seconds: float = 30.0,
         response_format: str = "json_object",
     ) -> None:
@@ -129,7 +130,8 @@ class OpenAICompatibleProvider:
             )
         self._base_url = base_url.rstrip("/")
         self._model = model
-        self._api_key_file = Path(api_key_file)
+        self._api_key_file = Path(api_key_file) if api_key_file is not None else None
+        self._api_key = api_key
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
 
@@ -164,10 +166,12 @@ class OpenAICompatibleProvider:
         request_messages = self._request_messages(messages=messages, schema=schema)
         estimated = sum(len(message.get("content", "")) for message in request_messages) // 4 + 1
         budget.reserve_model_call(estimated_input=estimated, max_output=max_output_tokens)
-        api_key = read_api_key(self._api_key_file)
+        api_key = self._api_key or (
+            read_api_key(self._api_key_file) if self._api_key_file is not None else None
+        )
         if not api_key:
             raise RuntimeError(
-                f"no API key in {self._api_key_file}; paste one (see infra/local-secrets/llm_api_key)"
+                "no LLM credential configured; bind AIND_LLM_API_KEY or a mounted key file"
             )
         response = httpx.post(
             f"{self._base_url}/chat/completions",
@@ -226,15 +230,18 @@ def resolve_provider(settings) -> ProviderResolution:
             ),
         )
     key_file = settings.llm_api_key_file
-    if key_file is None:
+    secret = getattr(settings, "llm_api_key", None)
+    api_key = secret.get_secret_value() if secret is not None else None
+    if key_file is None and not api_key:
         return ProviderResolution(
             provider=None,
             warning=(
-                "AIND_LLM_PROVIDER=openai-compatible but AIND_LLM_API_KEY_FILE is unset; "
+                "AIND_LLM_PROVIDER=openai-compatible but AIND_LLM_API_KEY and "
+                "AIND_LLM_API_KEY_FILE are unset; "
                 "using the deterministic template"
             ),
         )
-    if read_api_key(key_file) is None:
+    if not api_key and read_api_key(key_file) is None:
         return ProviderResolution(
             provider=None,
             warning=(
@@ -247,6 +254,7 @@ def resolve_provider(settings) -> ProviderResolution:
             base_url=settings.llm_base_url,
             model=settings.llm_model,
             api_key_file=key_file,
+            api_key=api_key,
             timeout_seconds=settings.llm_timeout_seconds,
             response_format=settings.llm_response_format,
         )

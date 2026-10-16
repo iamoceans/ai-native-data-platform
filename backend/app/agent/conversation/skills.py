@@ -14,6 +14,8 @@ the audit show; it never claims to measure what the model did with the text.
 from __future__ import annotations
 
 import uuid
+import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,6 +74,7 @@ def candidate_pool(
     session: Session, *, session_row, owner_user_id: uuid.UUID,
     metric_key: str | None, limit: int = DEFAULT_POOL_LIMIT,
     pinned_version_ids: list[str] | None = None,
+    question: str = "",
 ) -> list[dict[str, Any]]:
     """Exact pinned versions first, followed by maintained builtin candidates.
 
@@ -96,15 +99,36 @@ def candidate_pool(
         candidate = _candidate(skill, version)
         if all(item["version_id"] != candidate["version_id"] for item in candidates):
             candidates.append(candidate)
+    candidates.sort(key=lambda item: -match_score(item, question, metric_key))
     pinned_skill_ids = {item["skill_id"] for item in candidates}
+    builtin_candidates = []
     for skill in skills_repo.list_visible(session, user_id=owner_user_id):
         if (skill.source != SkillSource.BUILTIN or not skill.enabled
                 or skill.archived_at is not None or str(skill.id) in pinned_skill_ids):
             continue
         version = skills_repo.latest_version(session, skill.id)
         if version is not None and _applicable(version, metric_key):
-            candidates.append(_candidate(skill, version))
+            builtin_candidates.append(_candidate(skill, version))
+    builtin_candidates.sort(key=lambda item: (-match_score(item, question, metric_key), item["slug"], item["version_id"]))
+    candidates.extend(builtin_candidates)
     return candidates[:limit]
+
+
+def _terms(text: str) -> set[str]:
+    tokens = set(re.findall(r"[a-z0-9]+", text.lower()))
+    for phrase in re.findall(r"[\u3400-\u9fff]+", text):
+        tokens.update(phrase[index:index + 2] for index in range(max(1, len(phrase) - 1)))
+    return tokens
+
+
+def match_score(candidate: dict, question: str, metric_key: str | None) -> float:
+    """Bounded lexical matching in English/Chinese; never reads skill bodies."""
+    query = _terms(question)
+    description = _terms(f"{candidate['slug']} {candidate['description']}")
+    overlap = len(query & description) / math.sqrt(max(1, len(query) * len(description)))
+    metric_match = 1.0 if metric_key and metric_key in candidate.get("metric_keys", []) else 0.0
+    dimensions = _terms(" ".join(candidate.get("preferred_dimensions", [])))
+    return overlap + metric_match + len(query & dimensions) / max(1, len(query))
 
 
 def _candidate(skill, version) -> dict[str, Any]:
@@ -118,6 +142,7 @@ def _candidate(skill, version) -> dict[str, Any]:
         "description": str(manifest.get("description") or ""),
         "metric_keys": [str(item) for item in manifest.get("metric_keys") or []],
         "preferred_dimensions": [str(item) for item in manifest.get("preferred_dimensions") or []],
+        "required_inputs": [str(item) for item in manifest.get("required_inputs") or []],
     }
 
 
@@ -147,6 +172,8 @@ def load_for_turn(
     metric_key: str | None,
     user_selection: dict[str, Any] | None,
     model_choice: list[str] | None,
+    question: str = "",
+    allowed_version_ids: list[str] | None = None,
 ) -> tuple[str, SkillLoadRecord]:
     """Return the labelled skill block for this turn and its honest record."""
     config = _session_config(session_row)
@@ -166,7 +193,10 @@ def load_for_turn(
     pool = candidate_pool(
         session, session_row=session_row, owner_user_id=owner_user_id, metric_key=metric_key,
         pinned_version_ids=manual_versions if mode == MODE_MANUAL else None,
+        question=question,
     )
+    if allowed_version_ids is not None:
+        pool = [candidate for candidate in pool if candidate["version_id"] in allowed_version_ids]
     record.candidates = pool
     by_id = {item["version_id"]: item for item in pool}
 
@@ -189,9 +219,10 @@ def load_for_turn(
             )
         selected = wanted
     else:  # auto
-        wanted = [str(item) for item in (model_choice or []) if str(item) in by_id][:MAX_SELECTED]
+        wanted = list(dict.fromkeys(str(item) for item in (model_choice or []) if str(item) in by_id))[:MAX_SELECTED]
         if not wanted:
-            # No model choice (rule path): take the pool in its maintained order.
+            # No model choice: deterministic description ranking within the
+            # explicit personal pins and then the maintained builtins.
             wanted = [item["version_id"] for item in pool[:MAX_SELECTED]]
         selected = wanted
     record.selected = selected
@@ -221,6 +252,8 @@ def load_for_turn(
                 "content_hash": version.content_hash,
                 "files": paths,
                 "bytes": size,
+                "required_inputs": candidate.get("required_inputs", []),
+                "metric_keys": candidate.get("metric_keys", []),
             }
         )
         blocks.append(
@@ -236,3 +269,37 @@ def load_for_turn(
         "numbers.\n" + "\n".join(blocks)
     )
     return block, record
+
+
+def required_input_issues(snapshot: dict, resolved_scope: dict, user_patch: dict | None) -> tuple[list[str], list[str]]:
+    """Merge declared requirements; explicit user values always win.
+
+    The format expresses required field names and applicable metric sets. It
+    does not express arbitrary values or constraints hidden in advisory prose.
+    """
+    missing, questions = set(), []
+    metric_sets = []
+    patch = user_patch or {}
+    for skill in snapshot.get("loaded", []):
+        metrics = set(skill.get("metric_keys") or [])
+        if metrics:
+            metric_sets.append(metrics)
+            metric = resolved_scope.get("metric_key")
+            if metric and metric not in metrics:
+                missing.add("skill_selection")
+                questions.append(f"技能 {skill['slug']} 不适用于指标 {metric}，请更换或关闭该技能；当前指标保持不变。")
+        for name in skill.get("required_inputs", []):
+            fields = {
+                "baseline_period": ["baseline_start", "baseline_end"],
+                "current_period": ["current_start", "current_end"],
+            }.get(name, [name])
+            absent = [field for field in fields if not resolved_scope.get(field)]
+            if absent:
+                missing.update(absent)
+                cleared = name in patch.get("clear", []) or (name in patch and not patch[name])
+                note = "本轮已明确清空该字段；请补充输入或取消该技能。" if cleared else "请补充输入或取消该技能。"
+                questions.append(f"技能 {skill['slug']} 需要 {name}。{note}")
+    if metric_sets and not set.intersection(*metric_sets):
+        missing.add("skill_selection")
+        questions.append("所选技能的适用指标互斥，请调整技能选择后再分析。")
+    return sorted(missing), list(dict.fromkeys(questions))

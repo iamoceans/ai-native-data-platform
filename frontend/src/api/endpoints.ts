@@ -52,11 +52,11 @@ export async function listDatasets(query?: string): Promise<DatasetSummary[]> {
 }
 
 export async function getDatasetContext(datasetId: string): Promise<DatasetContext> {
-  return apiFetch<DatasetContext>(`/api/v1/datasets/${datasetId}`);
+  return apiFetch<DatasetContext>(`/api/v1/datasets/${encodeURIComponent(datasetId)}`);
 }
 
 export async function getDatasetSchema(datasetId: string): Promise<DatasetSchemaResponse> {
-  return apiFetch<DatasetSchemaResponse>(`/api/v1/datasets/${datasetId}/schema`);
+  return apiFetch<DatasetSchemaResponse>(`/api/v1/datasets/${encodeURIComponent(datasetId)}/schema`);
 }
 
 export interface SubmitQueryInput {
@@ -451,7 +451,7 @@ export async function getDatasetLineage(
   direction: "upstream" | "downstream" = "upstream",
   depth = 2,
 ): Promise<LineageResponse> {
-  return apiFetch(`/api/v1/datasets/${datasetId}/lineage?direction=${direction}&depth=${depth}`);
+  return apiFetch(`/api/v1/datasets/${encodeURIComponent(datasetId)}/lineage?direction=${direction}&depth=${depth}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +576,7 @@ export interface ConversationMessage {
   sequence: number;
   turn_id: string | null;
   content_schema_version: number;
+  turn_status?: string | null;
 }
 
 export interface TurnScopePatch {
@@ -649,6 +650,23 @@ export async function listSessionMessages(
     `/api/v1/sessions/${sessionId}/messages?limit=${limit}`,
   );
   return response.items;
+}
+
+export interface MessagePage {
+  items: ConversationMessage[];
+  next_cursor?: string | null;
+}
+
+export async function listSessionMessagePage(sessionId: string, cursor?: string): Promise<MessagePage> {
+  const params = new URLSearchParams({ limit: "40", direction: "backward" });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/messages?${params}`);
+}
+
+export async function retryTurn(sessionId: string, turnId: string, idempotencyKey: string): Promise<TurnDetail> {
+  return apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/retry`, {
+    method: "POST", headers: { "Idempotency-Key": idempotencyKey },
+  });
 }
 
 export async function createTurn(

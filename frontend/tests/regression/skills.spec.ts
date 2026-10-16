@@ -88,7 +88,9 @@ test('renders per-skill actions as buttons sharing one style, reachable by keybo
  await newVersion.focus();
  await expect(newVersion).toBeFocused();
  const chooser = page.waitForEvent('filechooser');
- await page.keyboard.press('Enter');
+ // Targeting the locator re-establishes focus before the trusted key action,
+ // including after earlier multi-tab tests moved the browser's active page.
+ await newVersion.press('Enter');
  await (await chooser).setFiles(demoFile('revenue-watch.zip'));
  await expect.poll(() => versionPosts.length).toBe(1);
  await expect(page.getByTestId('skill-notice')).toContainText('已新增版本 v2');

@@ -19,6 +19,7 @@ export default defineConfig({
   use: {
     baseURL: baseURL ?? "http://127.0.0.1:3000",
     headless: true,
+    launchOptions: { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH },
     trace: "retain-on-failure",
     storageState: process.env.E2E_BASE_URL ? "tests/e2e/.auth/admin.json" : undefined,
   },

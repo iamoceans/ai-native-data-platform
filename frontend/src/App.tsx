@@ -39,6 +39,7 @@ export function App() {
             <Route path="/sql" element={<SqlWorkspacePage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/datasets/:id" element={<CatalogPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/admin/datasources" element={<AdminDatasourcesPage />} />
             <Route path="/admin/permissions" element={<AdminPermissionsPage />} />

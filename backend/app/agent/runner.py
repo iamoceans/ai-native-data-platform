@@ -17,12 +17,13 @@ import hashlib
 import json
 import logging
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from app.agent.budget import AnalysisBudget
+from app.agent.budget import AnalysisBudget, BudgetExceeded
 from app.agent.llm import resolve_provider
 from app.agent.memory import planner_brief
 from app.agent.planner import (
@@ -203,6 +204,7 @@ def _submit_compiled(
             "metric_alias": query.metric_alias,
             "post_aggregation": query.post_aggregation,
             "period_total": query.period_total,
+            "source_row_count_alias": query.source_row_count_alias,
             "composition": compiled.composition,
             "aggregation_kind": compiled.aggregation_kind,
             "group_by": list(query.group_by),
@@ -246,7 +248,7 @@ def _compile_period(
 # ---------------------------------------------------------------------------
 # PLANNING / first submission
 # ---------------------------------------------------------------------------
-def _prepare(session, *, task, settings: Settings) -> None:
+def _planning_input(session, *, task, settings: Settings) -> dict:
     _set_status(session, task, AnalysisStatus.UNDERSTANDING)
     context = dict(task.context or {})
     metric_key = str(context["metric_key"])
@@ -261,6 +263,8 @@ def _prepare(session, *, task, settings: Settings) -> None:
         # A half-configured model endpoint is recorded, never hidden.
         logger.warning("llm provider degraded: %s", resolution.warning)
         _event(session, task, "analysis.llm.degraded", reason=resolution.warning)
+    budget = None
+    messages = []
     if provider is not None:
         consumed = dict(task.budget or {})
         # Limits may be persisted: a conversation turn hands the analysis its
@@ -333,24 +337,29 @@ def _prepare(session, *, task, settings: Settings) -> None:
                     ),
                 }
             )
-        generated = _call_provider(
-            provider,
-            task=task,
-            messages=messages,
-            schema=PlanningSelection,
-            budget=budget,
-            max_output_tokens=500,
-        )
-        budget = budget.record_model_usage(
-            input_tokens=generated.usage.input_tokens,
-            output_tokens=generated.usage.output_tokens,
-        )
+    return {
+        "definition": definition, "metric_version": int(metric_row.version),
+        "context": context, "metric_key": metric_key, "dimensions": dimensions,
+        "model_id": model_id, "prompt_version": prompt_version,
+        "brief_ids": brief_ids, "warning": resolution.warning,
+        "budget": budget, "messages": messages,
+    }
+
+
+def _prepare(session, *, task, settings: Settings, planning: dict | None = None, generated=None) -> None:
+    """Apply a bounded plan; network-backed callers must use run_claim()."""
+    planning = planning or _planning_input(session, task=task, settings=settings)
+    if planning["budget"] is not None and generated is None:
+        raise AnalysisExecutionError("model-backed planning requires run_claim")
+    definition = planning["definition"]
+    context, metric_key = planning["context"], planning["metric_key"]
+    dimensions = planning["dimensions"]
+    brief_ids = planning["brief_ids"]
+    model_id, prompt_version = planning["model_id"], planning["prompt_version"]
+    if generated is not None:
         dimensions = list(generated.value.dimensions)
-        task.budget = budget.as_dict()
         model_id = generated.model_id
         if brief_ids:
-            # Counted where they were actually put in front of the model, so the
-            # store's ranking reflects use rather than age.
             memory_repo.mark_used(session, brief_ids)
     plan = comparison_plan(question=task.question, metric_key=metric_key, dimensions=dimensions)
     validate_plan(
@@ -366,10 +375,15 @@ def _prepare(session, *, task, settings: Settings) -> None:
     )
     current = _compile_period(definition, context=context, period="current", dimensions=dimensions)
     query_count = len(baseline.queries) + len(current.queries)
-    if query_count > settings.agent_max_queries:
+    consumed = task.budget or {}
+    max_queries = int(consumed.get("max_queries", settings.agent_max_queries))
+    max_tools = int(consumed.get("max_tool_calls", settings.agent_max_tool_calls))
+    if query_count + int(consumed.get("queries", 0)) > max_queries:
         raise AnalysisExecutionError(
-            f"compiled plan needs {query_count} queries; budget allows {settings.agent_max_queries}"
+            f"compiled plan needs {query_count} queries; budget allows {max_queries}"
         )
+    if query_count + int(consumed.get("tool_calls", 0)) > max_tools:
+        raise BudgetExceeded("tool_calls")
     submitted = _submit_compiled(
         session, task=task, auth=auth, compiled=baseline, period="baseline", settings=settings
     ) + _submit_compiled(
@@ -379,7 +393,7 @@ def _prepare(session, *, task, settings: Settings) -> None:
     task.state = {
         **(task.state or {}),
         "metric_key": metric_key,
-        "metric_version": int(metric_row.version),
+        "metric_version": planning["metric_version"],
         # Snapshot of the contract this run was planned against: later analyses
         # (and the memory extractor) must read what was true here, not a
         # re-versioned definition.
@@ -393,7 +407,7 @@ def _prepare(session, *, task, settings: Settings) -> None:
             "datasets": list(definition.all_datasets),
             "notes": definition.notes,
         },
-        "llm_warning": resolution.warning,
+        "llm_warning": planning["warning"],
         "dimensions": dimensions,
         "memory_used_ids": [str(item) for item in brief_ids],
         "queries": submitted,
@@ -448,6 +462,24 @@ def _scalar_from_result(result_payload: dict, alias: str, *, post_aggregation: s
 def _active(descriptors: list[dict]) -> list[dict]:
     """Descriptors that were not replaced by a repaired submission."""
     return [item for item in descriptors if not item.get("superseded_by")]
+
+
+def _source_row_count(payload: dict, descriptor: dict) -> int:
+    alias = descriptor.get("source_row_count_alias")
+    names = [column.get("name") for column in payload.get("columns") or []]
+    if not alias or alias not in names:
+        raise AnalysisExecutionError("analysis lacks source-row coverage evidence; resubmit it")
+    total = 0
+    for row in _rows_from_result(payload):
+        value = row[alias]
+        try:
+            count = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise AnalysisExecutionError("invalid source-row coverage evidence") from exc
+        if not count.is_finite() or count < 0 or count != count.to_integral_value():
+            raise AnalysisExecutionError("invalid source-row coverage evidence")
+        total += int(count)
+    return total
 
 
 def _failed_jobs(descriptors: list[dict], jobs: dict) -> list:
@@ -509,6 +541,7 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
     group_components: dict[str, dict[tuple, dict[str, Decimal | None]]] = {"baseline": {}, "current": {}}
     composition = next((item.get("composition") for item in descriptors if item.get("composition")), None)
     aggregation_kind = (task.state or {}).get("metric_definition", {}).get("aggregation_kind", "sum")
+    coverage: dict[str, list[dict]] = {"baseline": [], "current": []}
     if dimensions and aggregation_kind not in {"sum", "sum_of_aggregates"} and not total_periods:
         raise AnalysisExecutionError("analysis predates period-total compilation; resubmit it")
     primary_aliases = {item["metric_alias"] for item in descriptors if item.get("role") != DRIVER_ROLE}
@@ -534,8 +567,14 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
             alias = descriptor["metric_alias"]
             is_total = descriptor.get("period_total") or period not in total_periods
             if is_total:
+                source_rows = _source_row_count(payload, descriptor)
+                coverage[period].append({
+                    "dataset_id": descriptor["dataset_id"],
+                    "query_id": str(job.id),
+                    "source_rows": source_rows,
+                })
                 has_value = bool(_values_from_result(payload, alias))
-                if not composition and aggregation_kind not in {"sum", "sum_of_aggregates"} and not has_value:
+                if source_rows and not composition and aggregation_kind not in {"sum", "sum_of_aggregates"} and not has_value:
                     raise AnalysisExecutionError("nonadditive period value is undefined")
                 components[period][alias] = value if has_value or not composition else None
             if dimensions and not descriptor.get("period_total") and not descriptor.get("post_aggregation"):
@@ -553,7 +592,12 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
         dataset_ids.add(descriptor["dataset_id"])
         expires_at = result.expires_at if expires_at is None else min(expires_at, result.expires_at)
 
+    empty_periods = [period for period, sources in coverage.items() if any(item["source_rows"] == 0 for item in sources)]
+    if not all(coverage.values()):
+        raise AnalysisExecutionError("analysis lacks a period's coverage evidence; resubmit it")
     for period in totals:
+        if period in empty_periods:
+            continue
         if composition:
             value = evaluate_formula(composition, components[period])
             if value is None:
@@ -570,17 +614,23 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
             else:
                 grouped[period][key] = sum((value for value in cell.values() if value is not None), Decimal(0))
 
-    comparison = compare_totals(totals["baseline"], totals["current"])
-    raw = comparison.as_dict()
+    comparison = None if empty_periods else compare_totals(totals["baseline"], totals["current"])
+    raw = comparison.as_dict() if comparison is not None else {
+        "baseline": None if "baseline" in empty_periods else str(totals["baseline"]),
+        "current": None if "current" in empty_periods else str(totals["current"]),
+        "delta": None,
+        "change_pct": None,
+    }
     observation: dict = {
-        "calculation_version": 2,
+        "calculation_version": 3,
+        "coverage": coverage,
         "baseline": raw["baseline"],
         "current": raw["current"],
         "delta": raw["delta"],
         "change_pct": raw.get("change_pct"),
         "change": raw["delta"],
-        "material": is_material(raw["delta"], raw["baseline"]),
-        "materiality_threshold": str(materiality_band(raw["baseline"])),
+        "material": is_material(raw["delta"], raw["baseline"]) if comparison is not None else False,
+        "materiality_threshold": str(materiality_band(raw["baseline"])) if comparison is not None else None,
         "dataset_ids": sorted(dataset_ids),
         "primary_query_ids": primary_ids,
         "evidence_available_until": expires_at.isoformat() if expires_at else None,
@@ -588,7 +638,7 @@ def _observe(session, *, task, descriptors: list[dict], jobs: dict) -> None:
     additive = aggregation_kind in {"sum", "sum_of_aggregates"} and (
         composition is None or additive_composition(composition)
     )
-    if additive and dimensions and (grouped["baseline"] or grouped["current"]):
+    if comparison is not None and additive and dimensions and (grouped["baseline"] or grouped["current"]):
         contribution = decompose_contribution(
             [
                 {
@@ -1059,17 +1109,13 @@ def _synthesizing(session, *, task) -> bool:
     jobs = {job.id: job for job in analyses_repo.list_queries(session, task.id)}
     if not observation:
         raise AnalysisExecutionError("synthesis without observations")
-    contract = state.get("metric_definition") or {}
-    if observation.get("calculation_version") != 2 and (
-        contract.get("aggregation_kind", "sum") not in {"sum", "sum_of_aggregates"}
-        or len(contract.get("datasets") or []) > 1
-    ):
+    if observation.get("calculation_version") != 3 or not observation.get("coverage"):
         raise AnalysisExecutionError("analysis uses an old calculation checkpoint; resubmit it")
     primary_ids = list(observation.get("primary_query_ids") or [])
     dataset_ids = list(observation.get("dataset_ids") or [])
     calculation = {
         key: observation[key]
-        for key in ("baseline", "current", "delta", "change_pct", "change", "contribution")
+        for key in ("baseline", "current", "delta", "change_pct", "change", "contribution", "coverage")
         if key in observation
     }
     _, definition = _metric_definition(session, str(state["metric_key"]))
@@ -1200,11 +1246,117 @@ def _synthesizing(session, *, task) -> bool:
 # ---------------------------------------------------------------------------
 # claim dispatch
 # ---------------------------------------------------------------------------
+def _fail_claim(session, *, task, claim, exc) -> None:
+    if task.status not in TERMINAL_ANALYSIS_STATUSES:
+        analyses_repo.set_status(task, AnalysisStatus.FAILED)
+        code = ErrorCode.LLM_UNAVAILABLE if isinstance(exc, LLMUnavailable) else ErrorCode.ANALYSIS_EXECUTION_ERROR
+        task.state = {**(task.state or {}), "last_error": {"code": code, "message": str(exc)[:500]}}
+        _event(session, task, "analysis.failed", code=code)
+    queue_repo.release_analysis_claim(session, claim, terminal=True, failed=True)
+
+
+def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Settings) -> bool:
+    """Prepare/reserve -> network with no session -> fenced apply.
+
+    Lost calls retain their worst-case charge. Reclaimed workers reserve again;
+    stale successes and failures cannot submit queries or change the new owner.
+    """
+    with session_factory() as session:
+        task = analyses_repo.get_analysis_for_update(session, claim.analysis_id)
+        if task is None:
+            queue_repo.release_analysis_claim(session, claim, terminal=True, failed=True)
+            session.commit()
+            return True
+        lease = queue_repo.lock_analysis_claim(session, claim)
+        if lease is None:
+            return False
+        if task.status not in {AnalysisStatus.CREATED, AnalysisStatus.UNDERSTANDING}:
+            result = execute_claim(session, claim=claim, settings=settings)
+            session.commit()
+            return result
+        try:
+            planning = _planning_input(session, task=task, settings=settings)
+            deadline = (task.budget or {}).get("deadline_at") or (
+                utcnow() + timedelta(seconds=int((task.budget or {}).get("max_wall_seconds", settings.agent_max_wall_seconds)))
+            ).isoformat()
+            if utcnow() >= datetime.fromisoformat(deadline):
+                raise BudgetExceeded("wall_seconds")
+            task.budget = {**(task.budget or {}), "deadline_at": deadline}
+            if planning["budget"] is None:
+                with session.begin_nested():
+                    _prepare(session, task=task, settings=settings, planning=planning)
+                queue_repo.release_analysis_claim(session, claim, delay_seconds=0)
+                session.commit()
+                return True
+            budget = planning["budget"]
+            estimated = sum(len(message["content"]) for message in planning["messages"]) // 4 + 1
+            budget.reserve_model_call(estimated_input=estimated, max_output=500)
+            reserved = budget.record_model_usage(input_tokens=estimated, output_tokens=500)
+            task.budget = {
+                **task.budget, **reserved.as_dict(),
+                "model_calls": int(task.budget.get("model_calls", 0)) + 1,
+            }
+            planning["checkpoint_version"] = int(task.checkpoint_version)
+            # A bounded call can outlive the ordinary polling lease. It gets a
+            # bounded planning lease; cancellation never needs this queue lock.
+            lease.lease_until = utcnow() + timedelta(seconds=max(settings.lease_seconds, int(settings.llm_timeout_seconds) + 15))
+            task.state = {**(task.state or {}), "planning_attempt": {
+                "fencing_token": claim.fencing_token,
+                "reserved_input": estimated, "reserved_output": 500,
+            }}
+            session.commit()
+        except Exception as exc:
+            _fail_claim(session, task=task, claim=claim, exc=exc)
+            session.commit()
+            return True
+
+    generated, error = None, None
+    try:
+        provider = resolve_provider(settings).provider
+        if provider is None:
+            raise LLMUnavailable("model configuration became unavailable")
+        generated = _call_provider(
+            provider, task=None, messages=planning["messages"], schema=PlanningSelection,
+            budget=planning["budget"], max_output_tokens=500,
+        )
+    except Exception as exc:
+        error = exc
+
+    with session_factory() as session:
+        task = analyses_repo.get_analysis_for_update(session, claim.analysis_id)
+        if task is None or queue_repo.lock_analysis_claim(session, claim) is None:
+            return False
+        if task.status in TERMINAL_ANALYSIS_STATUSES:
+            queue_repo.release_analysis_claim(session, claim, terminal=True, failed=task.status not in {AnalysisStatus.COMPLETED, AnalysisStatus.PARTIAL})
+            session.commit()
+            return False
+        if task.status != AnalysisStatus.UNDERSTANDING or int(task.checkpoint_version) != planning["checkpoint_version"]:
+            return False
+        try:
+            if error is not None:
+                raise error
+            if utcnow() >= datetime.fromisoformat(task.budget["deadline_at"]):
+                raise BudgetExceeded("wall_seconds")
+            actual = planning["budget"].record_model_usage(
+                input_tokens=generated.usage.input_tokens, output_tokens=generated.usage.output_tokens,
+            )
+            task.budget = {**task.budget, **actual.as_dict()}
+            with session.begin_nested():
+                _prepare(session, task=task, settings=settings, planning=planning, generated=generated)
+            queue_repo.release_analysis_claim(session, claim, delay_seconds=0)
+        except Exception as exc:
+            _fail_claim(session, task=task, claim=claim, exc=exc)
+        session.commit()
+    return True
+
+
 def execute_claim(session, *, claim: queue_repo.AnalysisClaim, settings: Settings) -> bool:
     task = analyses_repo.get_analysis_for_update(session, claim.analysis_id)
     if task is None:
         queue_repo.release_analysis_claim(session, claim, terminal=True, failed=True)
         return True
+    if session is not None and queue_repo.lock_analysis_claim(session, claim) is None:
+        return False
     if task.status in TERMINAL_ANALYSIS_STATUSES:
         queue_repo.release_analysis_claim(
             session,
@@ -1214,7 +1366,7 @@ def execute_claim(session, *, claim: queue_repo.AnalysisClaim, settings: Setting
         )
         return True
     try:
-        if task.status == AnalysisStatus.CREATED:
+        if task.status in {AnalysisStatus.CREATED, AnalysisStatus.UNDERSTANDING}:
             _prepare(session, task=task, settings=settings)
             queue_repo.release_analysis_claim(session, claim, delay_seconds=0)
             return True

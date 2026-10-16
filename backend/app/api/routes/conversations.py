@@ -14,7 +14,7 @@ import json
 import time
 import uuid
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
@@ -234,16 +234,21 @@ def list_messages(
     settings: Settings = Depends(get_settings_dep),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
+    direction: Literal["forward", "backward"] = Query(default="forward"),
 ) -> AgentMessageListResponse:
     _own_session(db, auth, session_id)
-    route = f"{MESSAGES_ROUTE}:{session_id}"
-    offset = decode_list_cursor(settings.resolved_cursor_secret(), cursor, route=route) if cursor else 0
-    rows, total = analyses_repo.list_messages(db, session_id=session_id, limit=limit, offset=offset)
-    next_cursor = (
-        encode_list_cursor(settings.resolved_cursor_secret(), route=route, offset=offset + len(rows))
-        if offset + len(rows) < total
-        else None
-    )
+    route = f"{MESSAGES_ROUTE}:{session_id}" + (":backward" if direction == "backward" else "")
+    position = decode_list_cursor(settings.resolved_cursor_secret(), cursor, route=route) if cursor else None
+    if direction == "backward":
+        rows, has_more = analyses_repo.list_messages_before(db, session_id=session_id, before=position, limit=limit)
+        boundary = int(rows[0].sequence) if rows else 0
+    else:
+        offset = position or 0
+        rows, total = analyses_repo.list_messages(db, session_id=session_id, limit=limit, offset=offset)
+        has_more = offset + len(rows) < total
+        boundary = offset + len(rows)
+    next_cursor = encode_list_cursor(settings.resolved_cursor_secret(), route=route, offset=boundary) if has_more else None
+    statuses = conversation_repo.turn_statuses(db, {row.turn_id for row in rows if row.turn_id is not None})
     return AgentMessageListResponse(
         items=[
             AgentMessageResponse(
@@ -254,6 +259,7 @@ def list_messages(
                 sequence=int(row.sequence),
                 turn_id=row.turn_id,
                 content_schema_version=int(row.content_schema_version),
+                turn_status=statuses.get(row.turn_id),
             )
             for row in rows
         ],
@@ -371,6 +377,57 @@ def create_turn(
         details={"session_id": str(session_id), "idempotency_key": idempotency_key.strip()},
     )
     return _turn_response(session, turn)
+
+
+@router.post("/sessions/{session_id}/turns/{turn_id}/retry", response_model=TurnResponse, status_code=202)
+def retry_turn(
+    session_id: uuid.UUID, turn_id: uuid.UUID, request: Request,
+    auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> TurnResponse:
+    """A new turn from frozen original inputs; completed work is immutable."""
+    from app.agent.conversation import context as scope
+    from app.models.orm import AgentMessage
+
+    _require_conversations(settings)
+    _own_session(session, auth, session_id, for_update=True)
+    original = conversation_repo.get_turn(session, turn_id)
+    if original is None or original.session_id != session_id:
+        raise ApiError(ErrorCode.NOT_FOUND, "turn not found in this session")
+    if original.status not in {"FAILED", "CANCELLED"}:
+        raise ApiError(ErrorCode.CONFLICT, "only a failed or cancelled turn can be retried")
+    if not idempotency_key or not idempotency_key.strip() or len(idempotency_key) > 128:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "Idempotency-Key is required (1..128 chars)")
+    message = session.get(AgentMessage, original.user_message_id)
+    if message is None:
+        raise ApiError(ErrorCode.NOT_FOUND, "original user input is unavailable")
+    content = analyses_repo.message_content(message)
+    frozen = dict(original.context_after or scope.merge_scope_patch(original.context_before, content.get("scope_patch")))
+    fields = [name for name in scope.PATCHABLE_FIELDS if name != "data_complete_source"]
+    patch = {name: frozen[name] for name in fields if frozen.get(name) is not None}
+    patch["clear"] = [name for name in fields if frozen.get(name) is None]
+    if all(frozen.get(name) for name in scope.REQUIRED_ANALYSIS_FIELDS):
+        patch["comparison"] = "explicit"
+        patch["clear"] = [name for name in patch["clear"] if name != "comparison"]
+    snapshot = original.skill_snapshot or {}
+    selected = [item["version_id"] for item in snapshot.get("loaded", [])]
+    selection = ({"mode": "manual", "version_ids": selected} if selected else {"mode": "off", "version_ids": []}) if snapshot else content.get("skill_selection")
+    payload = TurnCreate.model_validate({
+        "text": content.get("text"), "scope_patch": patch,
+        "skill_selection": selection, "parent_analysis_id": content.get("parent_analysis_id"),
+    })
+    key = sha256_hex(f"retry:{turn_id}:{idempotency_key.strip()}")
+    response = create_turn(session_id, payload, request, auth, session, settings, key)
+    retried = conversation_repo.get_turn(session, response.id)
+    retried.context_before = frozen
+    new_message = session.get(AgentMessage, retried.user_message_id)
+    if not new_message.content.get("retry_of_turn_id"):
+        new_message.content = {**new_message.content, "retry_of_turn_id": str(turn_id)}
+        audit_repo.add_audit(session, actor_id=auth.user.id, action="turn.retry",
+            resource_type="conversation_turn", resource_id=str(retried.id), trace_id=get_trace_id(request),
+            outcome="success", details={"retry_of_turn_id": str(turn_id), "session_id": str(session_id)})
+    return _turn_response(session, retried)
 
 
 @router.get("/sessions/{session_id}/turns/{turn_id}", response_model=TurnResponse)

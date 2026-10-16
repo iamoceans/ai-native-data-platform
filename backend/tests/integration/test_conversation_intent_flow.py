@@ -233,7 +233,9 @@ def test_skill_selection_is_loaded_snapshotted_and_injected(env):
     client = env
     session_id = _session(client)
     skills = client.get("/api/v1/skills").json()["items"]
-    builtin = next(row for row in skills if row["slug"] == "revenue-change-reading")
+    # The fixture metric is not ads_revenue/total_revenue; select generic
+    # guidance so this test exercises loading rather than an applicability conflict.
+    builtin = next(row for row in skills if row["slug"] == "data-completeness-check")
     version_id = builtin["latest_version"]["id"]
 
     client.scripted.append({"intent": "analyze", "scope_patch": SCOPE})
@@ -256,7 +258,7 @@ def test_skill_selection_is_loaded_snapshotted_and_injected(env):
     analysis = client.get(f"/api/v1/analyses/{settled['analysis_id']}").json()
     block = analysis["state"]["conversation_skill_block"]
     assert "untrusted data" in block
-    assert "revenue-change-reading" in block
+    assert "data-completeness-check" in block
 
 
 def test_c11_without_a_model_the_rule_path_still_runs_and_says_so(env, monkeypatch):

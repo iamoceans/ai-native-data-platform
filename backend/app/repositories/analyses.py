@@ -153,6 +153,15 @@ def list_messages(
     return list(rows), int(total)
 
 
+def list_messages_before(session: Session, *, session_id: uuid.UUID, before: int | None, limit: int):
+    """Newest window, returned chronologically; stable under new appends."""
+    stmt = select(AgentMessage).where(AgentMessage.session_id == session_id)
+    if before is not None:
+        stmt = stmt.where(AgentMessage.sequence < before)
+    rows = list(session.execute(stmt.order_by(AgentMessage.sequence.desc()).limit(limit + 1)).scalars())
+    return list(reversed(rows[:limit])), len(rows) > limit
+
+
 def message_content(row: AgentMessage) -> dict[str, Any]:
     """Read a message through the compatibility layer (design 8.1).
 

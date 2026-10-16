@@ -2,7 +2,7 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale, message, translateMessage, type Message } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
   getDatasetContext,
@@ -21,10 +21,14 @@ function isTemporal(columnType: string): boolean {
 }
 
 export function CatalogPage() {
+  const { id } = useParams();
+  return <DatasetCatalog key={id ?? "catalog"} selected={id ?? null} />;
+}
+
+function DatasetCatalog({ selected }: { selected: string | null }) {
   useLocale();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
   const datasets = useQuery({
     queryKey: ["datasets", search],
     queryFn: () => listDatasets(search || undefined),
@@ -37,12 +41,12 @@ export function CatalogPage() {
   const schema = useQuery({
     queryKey: ["dataset-schema", selected],
     queryFn: () => getDatasetSchema(selected as string),
-    enabled: Boolean(selected),
+    enabled: Boolean(context.data) && !context.isError,
   });
   const lineage = useQuery({
     queryKey: ["dataset-lineage", selected],
     queryFn: () => getDatasetLineage(selected as string),
-    enabled: Boolean(selected),
+    enabled: Boolean(context.data) && !context.isError,
   });
   const [reason, setReason] = useState("");
   const myRequests = useQuery({
@@ -82,11 +86,12 @@ export function CatalogPage() {
         <ul className="dataset-list">
           {(datasets.data ?? []).map((dataset) => (
             <li key={dataset.id}>
-              <button
+              <Link
+                to={`/datasets/${encodeURIComponent(dataset.id)}`}
+                aria-current={dataset.id === selected ? "page" : undefined}
                 className={
                   dataset.id === selected ? "dataset active" : "dataset"
                 }
-                onClick={() => setSelected(dataset.id)}
               >
                 <span className="dataset-name">
                   {dataset.schema_name}.{dataset.object_name}
@@ -95,10 +100,11 @@ export function CatalogPage() {
                   {dataset.object_type} ·{" "}
                   <StatusBadge status={dataset.sync_status} />
                 </span>
-              </button>
+              </Link>
             </li>
           ))}
         </ul>
+        {datasets.error ? <p className="notice error" role="alert"><ErrorMessage error={datasets.error} /></p> : null}
         {datasets.data && datasets.data.length === 0 ? (
           <p className="muted">
             {t(
@@ -110,250 +116,265 @@ export function CatalogPage() {
 
       {selected ? (
         <section className="card">
-          <div className="card-head">
-            <h2>
-              {context.data
-                ? `${context.data.schema_name}.${context.data.object_name}`
-                : t("Dataset")}
-            </h2>
-          </div>
-          {context.data?.schema_hash ? (
-            <p className="muted small">
-              {t("schema hash")}{" "}
-              <code>{context.data.schema_hash.slice(0, 16)}…</code>
-              {schema.data ? (
-                <>
-                  {" "}
-                  {t("· source")} {schema.data.source}
-                </>
-              ) : null}
+          <Link to="/catalog">{t("Back to catalog")}</Link>
+          {context.isError ? (
+            <p className="notice error" role="alert" data-testid="dataset-error">
+              <ErrorMessage error={context.error} />
             </p>
-          ) : null}
-          {context.data &&
-          (context.data.description ||
-            (context.data.grain?.length ?? 0) > 0 ||
-            (context.data.metric_keys ?? []).length > 0) ? (
-            <div className="semantic-block" data-testid="dataset-semantics">
+          ) : !context.data ? (
+            <p className="muted" role="status">{t("Loading dataset…")}</p>
+          ) : (
+            <>
               <div className="card-head">
-                <h3>{t("语义维度（grain）")}</h3>
+                <h2>
+                  {context.data
+                    ? `${context.data.schema_name}.${context.data.object_name}`
+                    : t("Dataset")}
+                </h2>
+              </div>
+              {context.data?.schema_hash ? (
+                <p className="muted small">
+                  {t("schema hash")}{" "}
+                  <code>{context.data.schema_hash.slice(0, 16)}…</code>
+                  {schema.data ? (
+                    <>
+                      {" "}
+                      {t("· source")} {schema.data.source}
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+              {context.data &&
+              (context.data.description ||
+                (context.data.grain?.length ?? 0) > 0 ||
+                (context.data.metric_keys ?? []).length > 0) ? (
+                <div className="semantic-block" data-testid="dataset-semantics">
+                  <div className="card-head">
+                    <h3>{t("语义维度（grain）")}</h3>
+                    <span className="muted small">
+                      {t("来自 metadata/semantic，是可下钻维度的登记表")}
+                    </span>
+                  </div>
+                  {context.data.description ? (
+                    <p className="muted small">{context.data.description}</p>
+                  ) : null}
+                  <div className="chips">
+                    {(context.data.grain ?? []).map((dimension) => (
+                      <span
+                        className="chip mono-id"
+                        key={dimension}
+                        data-testid={`dataset-dimension-${dimension}`}
+                      >
+                        {dimension}
+                      </span>
+                    ))}
+                    {context.data.business_timezone ? (
+                      <span className="chip">
+                        {t("业务时区")} {context.data.business_timezone}
+                      </span>
+                    ) : null}
+                    {context.data.currency ? (
+                      <span className="chip">
+                        {t("币种")} {context.data.currency}
+                      </span>
+                    ) : null}
+                  </div>
+                  {(context.data.metric_keys ?? []).length > 0 ? (
+                    <p className="muted small">
+                      {t("已声明指标：")}
+                      {(context.data.metric_keys ?? []).join(" · ")} —{" "}
+                      <Link to="/ask">{t("去 Ask data 使用")}</Link>
+                    </p>
+                  ) : (
+                    <p className="muted small">
+                      {t(
+                        "这张表还没有声明指标，因此它在 Ask data 里不可选；要按它的维度做分析，先在治理侧声明指标口径。",
+                      )}
+                    </p>
+                  )}
+                  {(context.data.join_keys ?? []).length > 0 ? (
+                    <p className="muted small">
+                      {t("Join keys：")}
+                      {(context.data.join_keys ?? []).join(", ")}
+                      {t("（跨源关联只走白名单 relation）")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {schema.data ? (
+                <div className="table-scroll">
+                  <table className="result-table plain">
+                    <thead>
+                      <tr>
+                        <th>{t("Column")}</th>
+                        <th>{t("Type")}</th>
+                        <th>{t("Nullable")}</th>
+                        <th>{t("分析角色")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schema.data.columns.map((column) => (
+                        <tr key={column.name}>
+                          <td>{column.name}</td>
+                          <td>{column.type}</td>
+                          <td>
+                            {column.nullable === null
+                              ? "—"
+                              : column.nullable
+                                ? t("yes")
+                                : t("no")}
+                          </td>
+                          <td>
+                            {(context.data?.grain ?? []).includes(column.name) ? (
+                              <span className="tag">
+                                {t("维度")}
+                                {isTemporal(column.type) ? t(" · 时间列") : ""}
+                              </span>
+                            ) : (
+                              <span className="muted small">{t("非维度列")}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : schema.isError ? (
+                <p className="notice error" role="alert"><ErrorMessage error={schema.error} /></p>
+              ) : (
+                <p className="muted">{t("Loading schema…")}</p>
+              )}
+              <div className="card-head">
+                <h3>{t("Lineage（upstream, depth 2）")}</h3>
+                {lineage.data ? (
+                  <StatusBadge status={t(lineage.data.status)} />
+                ) : null}
+              </div>
+              {lineage.data ? (
+                <>
+                  <p className="muted small" data-testid="lineage-status">
+                    {t(lineage.data.status)}
+                    {lineage.data.message ? ` — ${lineage.data.message}` : ""}
+                    {lineage.data.labels.length
+                      ? t(" · 边标签：{0}", {
+                          0: lineage.data.labels
+                            .map((label) => t(label))
+                            .join(", "),
+                        })
+                      : ""}
+                    {lineage.data.filtered_nodes
+                      ? t(" · 权限过滤 {0} 个节点", {
+                          0: lineage.data.filtered_nodes,
+                        })
+                      : ""}
+                  </p>
+                  <ul className="dataset-list">
+                    {lineage.data.nodes.map((node) => (
+                      <li key={node.urn}>
+                        <span className="dataset-name">{node.name}</span>
+                        <span className="dataset-meta">
+                          {node.platform ?? t("unknown")} · {t(node.label)}
+                          {node.mapped ? t(" · 已映射") : t(" · 未映射")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {!lineage.data.nodes.length ? (
+                    <p className="muted small">
+                      {t("没有可见的上游节点（状态已如实说明，未做模拟）。")}
+                    </p>
+                  ) : null}
+                </>
+              ) : lineage.isError ? (
+                <p className="notice error" role="alert"><ErrorMessage error={lineage.error} /></p>
+              ) : (
+                <p className="muted small">{t("Loading lineage…")}</p>
+              )}
+
+              <div className="card-head">
+                <h3>{t("申请查询权限")}</h3>
                 <span className="muted small">
-                  {t("来自 metadata/semantic，是可下钻维度的登记表")}
+                  {t("申请进入管理员队列，Mock 批准不等于授权")}
                 </span>
               </div>
-              {context.data.description ? (
-                <p className="muted small">{context.data.description}</p>
-              ) : null}
-              <div className="chips">
-                {(context.data.grain ?? []).map((dimension) => (
-                  <span
-                    className="chip mono-id"
-                    key={dimension}
-                    data-testid={`dataset-dimension-${dimension}`}
-                  >
-                    {dimension}
-                  </span>
-                ))}
-                {context.data.business_timezone ? (
-                  <span className="chip">
-                    {t("业务时区")} {context.data.business_timezone}
-                  </span>
-                ) : null}
-                {context.data.currency ? (
-                  <span className="chip">
-                    {t("币种")} {context.data.currency}
-                  </span>
-                ) : null}
+              <div className="form-row">
+                <label className="grow">
+                  {t("理由")}{" "}
+                  <input
+                    data-testid="request-reason"
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="ghost"
+                  data-testid="request-access"
+                  disabled={accessRequest.isPending || reason.trim().length === 0}
+                  onClick={() => accessRequest.mutate()}
+                >
+                  {t("提交申请")}
+                </button>
               </div>
-              {(context.data.metric_keys ?? []).length > 0 ? (
-                <p className="muted small">
-                  {t("已声明指标：")}
-                  {(context.data.metric_keys ?? []).join(" · ")} —{" "}
-                  <Link to="/ask">{t("去 Ask data 使用")}</Link>
-                </p>
-              ) : (
-                <p className="muted small">
-                  {t(
-                    "这张表还没有声明指标，因此它在 Ask data 里不可选；要按它的维度做分析，先在治理侧声明指标口径。",
-                  )}
-                </p>
-              )}
-              {(context.data.join_keys ?? []).length > 0 ? (
-                <p className="muted small">
-                  {t("Join keys：")}
-                  {(context.data.join_keys ?? []).join(", ")}
-                  {t("（跨源关联只走白名单 relation）")}
+              {accessRequest.error instanceof ApiError ? (
+                <p className="notice error">
+                  <strong>{accessRequest.error.code}</strong> —{" "}
+                  <ErrorMessage error={accessRequest.error} />
                 </p>
               ) : null}
-            </div>
-          ) : null}
-          {schema.data ? (
-            <div className="table-scroll">
-              <table className="result-table plain">
-                <thead>
-                  <tr>
-                    <th>{t("Column")}</th>
-                    <th>{t("Type")}</th>
-                    <th>{t("Nullable")}</th>
-                    <th>{t("分析角色")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schema.data.columns.map((column) => (
-                    <tr key={column.name}>
-                      <td>{column.name}</td>
-                      <td>{column.type}</td>
-                      <td>
-                        {column.nullable === null
-                          ? "—"
-                          : column.nullable
-                            ? t("yes")
-                            : t("no")}
-                      </td>
-                      <td>
-                        {(context.data?.grain ?? []).includes(column.name) ? (
-                          <span className="tag">
-                            {t("维度")}
-                            {isTemporal(column.type) ? t(" · 时间列") : ""}
-                          </span>
-                        ) : (
-                          <span className="muted small">{t("非维度列")}</span>
-                        )}
-                      </td>
+              {requestNotice ? (
+                <p className="notice" data-testid="request-notice">
+                  {translateMessage(requestNotice)}
+                </p>
+              ) : null}
+
+              <div className="card-head">
+                <h3>{t("我的申请")}</h3>
+                <span className="muted small">
+                  {t("只有你自己看得到；批准即创建真实授权")}
+                </span>
+              </div>
+              {(myRequests.data?.items ?? []).length ? (
+                <table className="data-table" data-testid="my-requests-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{t("数据集")}</th>
+                      <th scope="col">{t("理由")}</th>
+                      <th scope="col">{t("状态")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="muted">{t("Loading schema…")}</p>
-          )}
-          <div className="card-head">
-            <h3>{t("Lineage（upstream, depth 2）")}</h3>
-            {lineage.data ? (
-              <StatusBadge status={t(lineage.data.status)} />
-            ) : null}
-          </div>
-          {lineage.data ? (
-            <>
-              <p className="muted small" data-testid="lineage-status">
-                {t(lineage.data.status)}
-                {lineage.data.message ? ` — ${lineage.data.message}` : ""}
-                {lineage.data.labels.length
-                  ? t(" · 边标签：{0}", {
-                      0: lineage.data.labels
-                        .map((label) => t(label))
-                        .join(", "),
-                    })
-                  : ""}
-                {lineage.data.filtered_nodes
-                  ? t(" · 权限过滤 {0} 个节点", {
-                      0: lineage.data.filtered_nodes,
-                    })
-                  : ""}
-              </p>
-              <ul className="dataset-list">
-                {lineage.data.nodes.map((node) => (
-                  <li key={node.urn}>
-                    <span className="dataset-name">{node.name}</span>
-                    <span className="dataset-meta">
-                      {node.platform ?? t("unknown")} · {t(node.label)}
-                      {node.mapped ? t(" · 已映射") : t(" · 未映射")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {!lineage.data.nodes.length ? (
-                <p className="muted small">
-                  {t("没有可见的上游节点（状态已如实说明，未做模拟）。")}
-                </p>
-              ) : null}
+                  </thead>
+                  <tbody>
+                    {(myRequests.data?.items ?? []).map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          {item.dataset_id === selected
+                            ? t("本数据集")
+                            : item.dataset_id.slice(0, 8)}
+                        </td>
+                        <td className="small">{item.reason}</td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              item.status === "APPROVED"
+                                ? "ok"
+                                : item.status === "MOCK_APPROVED"
+                                  ? "wait"
+                                  : "muted"
+                            }`}
+                          >
+                            {statusLabel(item.status)}
+                          </span>
+                          {item.status === "MOCK_APPROVED" ? (
+                            <span className="muted small"> {t("未授权")}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted small">{t("还没有提交过申请。")}</p>
+              )}
             </>
-          ) : (
-            <p className="muted small">{t("Loading lineage…")}</p>
-          )}
-
-          <div className="card-head">
-            <h3>{t("申请查询权限")}</h3>
-            <span className="muted small">
-              {t("申请进入管理员队列，Mock 批准不等于授权")}
-            </span>
-          </div>
-          <div className="form-row">
-            <label className="grow">
-              {t("理由")}{" "}
-              <input
-                data-testid="request-reason"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </label>
-            <button
-              className="ghost"
-              data-testid="request-access"
-              disabled={accessRequest.isPending || reason.trim().length === 0}
-              onClick={() => accessRequest.mutate()}
-            >
-              {t("提交申请")}
-            </button>
-          </div>
-          {accessRequest.error instanceof ApiError ? (
-            <p className="notice error">
-              <strong>{accessRequest.error.code}</strong> —{" "}
-              <ErrorMessage error={accessRequest.error} />
-            </p>
-          ) : null}
-          {requestNotice ? (
-            <p className="notice" data-testid="request-notice">
-              {translateMessage(requestNotice)}
-            </p>
-          ) : null}
-
-          <div className="card-head">
-            <h3>{t("我的申请")}</h3>
-            <span className="muted small">
-              {t("只有你自己看得到；批准即创建真实授权")}
-            </span>
-          </div>
-          {(myRequests.data?.items ?? []).length ? (
-            <table className="data-table" data-testid="my-requests-table">
-              <thead>
-                <tr>
-                  <th scope="col">{t("数据集")}</th>
-                  <th scope="col">{t("理由")}</th>
-                  <th scope="col">{t("状态")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(myRequests.data?.items ?? []).map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      {item.dataset_id === selected
-                        ? t("本数据集")
-                        : item.dataset_id.slice(0, 8)}
-                    </td>
-                    <td className="small">{item.reason}</td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          item.status === "APPROVED"
-                            ? "ok"
-                            : item.status === "MOCK_APPROVED"
-                              ? "wait"
-                              : "muted"
-                        }`}
-                      >
-                        {statusLabel(item.status)}
-                      </span>
-                      {item.status === "MOCK_APPROVED" ? (
-                        <span className="muted small"> {t("未授权")}</span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted small">{t("还没有提交过申请。")}</p>
           )}
         </section>
       ) : null}

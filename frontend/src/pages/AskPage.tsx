@@ -1,7 +1,7 @@
 import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale, formatDate } from "../i18n";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { analysisPollInterval } from "../api/polling";
@@ -15,13 +15,15 @@ import {
   getSession,
   getTurn,
   listMetrics,
-  listSessionMessages,
+  listSessionMessagePage,
+  retryTurn,
   listSessions,
   listSkills,
   patchSession,
   type ConversationMessage,
   type SkillSummary,
   type TurnDetail,
+  type AnalysisDetail,
 } from "../api/endpoints";
 import { ChartPanel } from "../components/ChartPanel";
 import {
@@ -66,6 +68,15 @@ export function AskPage() {
   const [skillMode, setSkillMode] = useState<"off" | "manual" | "auto">("auto");
   const [pickedSkills, setPickedSkills] = useState<string[]>([]);
   const [scopeCollapsed, setScopeCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 820px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)");
+    const change = () => setNarrow(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => setDrawerOpen(false), [routeSessionId]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const sessionId = routeSessionId ?? null;
@@ -93,18 +104,21 @@ export function AskPage() {
       query.state.data?.active_turn_id ? 2000 : 15000,
   });
 
-  const messages = useQuery({
+  const messages = useInfiniteQuery({
     queryKey: ["session-messages", sessionId],
-    queryFn: () => listSessionMessages(sessionId as string),
+    queryFn: ({ pageParam }) => listSessionMessagePage(sessionId as string, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: Boolean(sessionId),
     // Fast while a turn runs, slow otherwise (another tab may still be active).
-    refetchInterval: (query) =>
-      query.state.data?.some(
-        (item) => item.turn_id === session.data?.active_turn_id,
-      )
-        ? 4000
-        : 15000,
+    refetchInterval: session.data?.active_turn_id ? 4000 : 15000,
   });
+  const visibleMessages = useMemo(() => {
+    const unique = new Map<string, ConversationMessage>();
+    for (const page of [...(messages.data?.pages ?? [])].reverse())
+      for (const message of page.items) unique.set(message.id, message);
+    return [...unique.values()].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+  }, [messages.data]);
 
   const activeTurnId = session.data?.active_turn_id ?? null;
   const activeTurn = useQuery({
@@ -403,12 +417,26 @@ export function AskPage() {
     }
   };
 
+  const retry = useMutation({
+    mutationFn: ({ origin, turnId, key }: { origin: string; turnId: string; key: string }) => retryTurn(origin, turnId, key),
+    retry: false,
+    onSuccess: (_turn, { origin }) => {
+      queryClient.invalidateQueries({ queryKey: ["session", origin] });
+      queryClient.invalidateQueries({ queryKey: ["session-messages", origin] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      if (origin === currentSessionRef.current) setError(null);
+    },
+    onError: (failure, { origin }) => {
+      if (origin === currentSessionRef.current && failure instanceof ApiError) setError(failure);
+    },
+  });
+
   const busy =
     Boolean(activeTurnId) ||
     send.isPending ||
     legacySubmit.isPending ||
     bindSkills.isPending ||
-    startConversation.isPending;
+    startConversation.isPending || retry.isPending;
   // A session in the URL that has not loaded yet is the only reason to hold the
   // send button back; without a session, sending opens one (see onSend).
   const sendBlocked = busy || !text.trim() || (Boolean(sessionId) && !session.data);
@@ -445,9 +473,14 @@ export function AskPage() {
             type="button"
             className="ghost small"
             data-testid="scope-panel-toggle"
-            onClick={() => setScopeCollapsed((value) => !value)}
+            aria-expanded={narrow ? drawerOpen : !scopeCollapsed}
+            aria-controls={narrow ? "scope-drawer" : "scope-sidebar"}
+            onClick={() => {
+              if (narrow) { setScopeCollapsed(false); setDrawerOpen(true); }
+              else setScopeCollapsed((value) => !value);
+            }}
           >
-            {scopeCollapsed ? t("显示范围面板") : t("隐藏范围面板")}
+            {narrow ? t("范围与技能") : scopeCollapsed ? t("显示范围面板") : t("隐藏范围面板")}
           </button>
         </header>
 
@@ -457,11 +490,19 @@ export function AskPage() {
             aria-label={t("消息")}
             data-testid="conversation-thread"
           >
-            {(messages.data ?? []).map((message) => (
-              <MessageRow key={message.id} message={message} />
+            {messages.hasNextPage ? (
+              <button className="ghost" data-testid="load-older-messages" disabled={messages.isFetching} onClick={() => messages.fetchNextPage()}>
+                {messages.isFetchingNextPage ? t("正在加载…") : t("加载更早消息")}
+              </button>
+            ) : null}
+            {messages.error ? <p className="notice error" role="alert"><ErrorMessage error={messages.error} /></p> : null}
+            {visibleMessages.map((message) => (
+              <MessageRow key={message.id} message={message} busy={busy} onRetry={(turnId) => {
+                if (sessionId && !busy) retry.mutate({ origin: sessionId, turnId, key: crypto.randomUUID() });
+              }} />
             ))}
             {turn ? <TurnProgress turn={turn} /> : null}
-            {(messages.data ?? []).length === 0 && !turn ? (
+            {visibleMessages.length === 0 && !turn ? (
               <p className="muted" data-testid="conversation-empty">
                 {sessionId
                   ? t(
@@ -517,7 +558,7 @@ export function AskPage() {
         </div>
       </main>
 
-      <div className="conversation-side">
+      <ScopeSidebar narrow={narrow} open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         {draft ? (
           <ScopePanel
             draft={draft}
@@ -552,13 +593,60 @@ export function AskPage() {
           busy={busy || !session.data}
         />
         {draft?.metricKey ? <MemoryPanel metricKey={draft.metricKey} /> : null}
-      </div>
+      </ScopeSidebar>
     </div>
   );
 }
 
+function ScopeSidebar({ narrow, open, onClose, children }: { narrow: boolean; open: boolean; onClose: () => void; children: ReactNode }) {
+  useLocale();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!narrow || !element) return;
+    if (open && !element.open) element.showModal();
+    if (!open && element.open) element.close();
+    const previousOverflow = document.body.style.overflow;
+    if (open) document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (element.open) element.close();
+    };
+  }, [narrow, open]);
+  if (!narrow) return <div id="scope-sidebar" className="conversation-side">{children}</div>;
+  return (
+    <dialog ref={dialog} id="scope-drawer" className="scope-drawer" aria-labelledby="scope-drawer-title" onCancel={onClose} onClose={onClose}>
+      <header className="card-head">
+        <h2 id="scope-drawer-title">{t("范围与技能")}</h2>
+        <button type="button" className="ghost small" data-testid="scope-drawer-close" onClick={onClose}>{t("关闭")}</button>
+      </header>
+      <div className="conversation-side">{children}</div>
+    </dialog>
+  );
+}
+
+function AnalysisDiagnostics({ analysis }: { analysis: AnalysisDetail }) {
+  useLocale();
+  const budget = analysis.budget ?? {};
+  const amount = (key: string) => typeof budget[key] === "number" ? String(budget[key]) : "—";
+  return (
+    <details data-testid="analysis-diagnostics">
+      <summary>{t("本轮诊断")}</summary>
+      <dl className="kv">
+        <dt>{t("输入 tokens")}</dt><dd>{amount("input_tokens")} / {amount("max_input_tokens")}</dd>
+        <dt>{t("输出 tokens")}</dt><dd>{amount("output_tokens")} / {amount("max_output_tokens")}</dd>
+        <dt>{t("查询预算")}</dt><dd>{amount("queries")} / {amount("max_queries")}</dd>
+        <dt>{t("工具调用预算")}</dt><dd>{amount("tool_calls")} / {amount("max_tool_calls")}</dd>
+        <dt>{t("SQL 修复预算")}</dt><dd>{amount("sql_repairs")} / {amount("max_sql_repairs")}</dd>
+        {typeof analysis.state?.model_id === "string" ? <><dt>{t("模型")}</dt><dd>{analysis.state.model_id}</dd></> : null}
+        {typeof budget.deadline_at === "string" ? <><dt>{t("截止时间")}</dt><dd>{formatDate(budget.deadline_at, true)}</dd></> : null}
+      </dl>
+    </details>
+  );
+}
+
 /** One committed message; the shape follows `content.kind`. */
-function MessageRow({ message }: { message: ConversationMessage }) {
+function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; busy: boolean; onRetry: (turnId: string) => void }) {
   useLocale();
   const content = message.content;
   const kind = String(
@@ -575,7 +663,7 @@ function MessageRow({ message }: { message: ConversationMessage }) {
   const analysis = useQuery({
     queryKey: ["analysis", analysisId],
     queryFn: () => getAnalysis(analysisId as string),
-    enabled: Boolean(analysisId) && isResult,
+    enabled: Boolean(analysisId) && (isResult || kind === "failure"),
     refetchInterval: (query) => analysisPollInterval(query.state.data?.status),
   });
   const chartId =
@@ -629,6 +717,9 @@ function MessageRow({ message }: { message: ConversationMessage }) {
           <ErrorMessage error={{ code: String(content.code ?? "FAILED"), message: String(content.message ?? "") }} />
         </p>
       ) : null}
+      {message.role === "user" && message.turn_id && ["FAILED", "CANCELLED"].includes(message.turn_status ?? "") ? (
+        <button className="ghost small" data-testid="retry-turn" disabled={busy} onClick={() => onRetry(message.turn_id as string)}>{t("重试本轮")}</button>
+      ) : null}
       {isResult ? (
         <div className="message-body">
           <div className="message-head">
@@ -678,6 +769,7 @@ function MessageRow({ message }: { message: ConversationMessage }) {
           />
         </div>
       ) : null}
+      {analysis.data ? <AnalysisDiagnostics analysis={analysis.data} /> : null}
       {message.content_schema_version === 0 ? (
         <p className="muted small">{t("（历史消息，按兼容格式显示）")}</p>
       ) : null}

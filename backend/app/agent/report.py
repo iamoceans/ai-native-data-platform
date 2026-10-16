@@ -93,16 +93,32 @@ def build_comparison_report(
     Collapsing `unknown` into `incomplete` (as the first version did) turned the
     cautious default into an empty answer for every conversational turn.
     """
-    change = Decimal(str(calculation["change"]))
+    coverage = calculation.get("coverage")
+    empty_periods = [
+        period for period in ("baseline", "current")
+        if coverage is not None and (
+            not coverage.get(period)
+            or any(source["source_rows"] == 0 for source in coverage[period])
+        )
+    ]
+    has_data = not empty_periods
+    change = Decimal(str(calculation["change"])) if has_data else None
     change_pct = calculation.get("change_pct")
-    material = is_material(change, calculation.get("baseline", 0))
-    band = materiality_band(calculation.get("baseline", 0))
-    data_complete = completeness == COMPLETENESS_COMPLETE
-    observable = data_complete or completeness == COMPLETENESS_UNKNOWN
+    material = is_material(change, calculation.get("baseline", 0)) if has_data else False
+    band = materiality_band(calculation.get("baseline", 0)) if has_data else None
+    data_complete = has_data and completeness == COMPLETENESS_COMPLETE
+    observable = has_data and (data_complete or completeness == COMPLETENESS_UNKNOWN)
     claims: list[dict[str, Any]] = []
     limitations = ["统计分解描述相关变化，不能单独证明业务因果关系"]
     limitations.extend(str(item) for item in (warnings or []))
     calculations = {calculation_id: calculation}
+    for period in empty_periods:
+        label = "基准期" if period == "baseline" else "当前期"
+        window = comparison.get(period) or []
+        dates = f" [{window[0]}, {window[1]})" if isinstance(window, (list, tuple)) and len(window) == 2 else ""
+        limitations.append(
+            f"{label}{dates} 的必需数据源没有匹配数据，未报告变化与归因结论；无数据不等于指标为零"
+        )
     if observable and not material:
         limitations.append(
             f"变化 {change} 在材料性阈值 ±{band} 内，不构成需要归因的变化"
@@ -174,9 +190,9 @@ def build_comparison_report(
             )
         elif material and drivers and drivers.get("status") == "undefined_impressions":
             limitations.append("目标组合在某一期间没有展示量，eCPM 未定义，未做因子拆分")
-    elif completeness == COMPLETENESS_INCOMPLETE:
+    elif has_data and completeness == COMPLETENESS_INCOMPLETE:
         limitations.append("数据完整性检查未通过：已知窗口数据不完整，未报告变化与归因结论")
-    else:
+    elif has_data:
         limitations.append("数据完整性未验证：仅报告观测到的变化，未做归因结论")
     hypotheses = [] if (not material or not data_complete) else [
         {"text": "需要结合贡献分解和业务配置进一步核查变化来源", "status": "unverified"}
@@ -193,12 +209,12 @@ def build_comparison_report(
         "comparison": comparison,
         "materiality": {
             "relative_band": str(MATERIALITY_RELATIVE_BAND),
-            "absolute_threshold": str(band),
+            "absolute_threshold": str(band) if band is not None else None,
             "material": material,
         },
         "claims": claims,
         "hypotheses": hypotheses,
-        "chart_ids": list(chart_ids or []),
+        "chart_ids": list(chart_ids or []) if has_data else [],
         "limitations": limitations,
         "evidence_available_until": evidence_available_until,
     }

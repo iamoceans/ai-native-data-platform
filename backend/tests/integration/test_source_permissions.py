@@ -113,8 +113,9 @@ def test_sensitive_columns_and_unconfirmed_views_are_not_registered(admin_client
         "/api/v1/queries",
         json={"datasource_id": setup.datasource_id, "sql": "SELECT email FROM users_pii"},
     )
-    assert denied.status_code == 404
-    assert denied.json()["error"]["code"] == "DATASET_NOT_REGISTERED"
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "PERMISSION_DENIED"
+    assert denied.json()["error"]["details"] == {}
 
     # The confirmed view is queryable once granted (grants were created by the
     # helper for the original refresh only, so grant explicitly here).

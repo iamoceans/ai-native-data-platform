@@ -198,20 +198,15 @@ def test_timeout_enforced_by_max_execution_time(admin_client, source):
 
 def test_reader_account_blocks_writes(seed_mysql):
     """A05 for MySQL: even bypassing the AST layer the database refuses writes."""
-    import json
-    from pathlib import Path
-
-    credentials = json.loads(
-        (Path(__file__).resolve().parents[3] / "infra" / "local-secrets" / "source-mysql.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    from app.config import get_settings
+    from app.datasource.secrets import SecretResolver
+    credentials = SecretResolver(get_settings().secrets_dir).resolve("source-mysql")
     parts = seed_mysql
     conn = pymysql.connect(
         host=parts["host"],
         port=parts["port"],
-        user=credentials["username"],
-        password=credentials["password"],
+        user=credentials.username,
+        password=credentials.password,
         database=parts["database"],
         autocommit=True,
     )

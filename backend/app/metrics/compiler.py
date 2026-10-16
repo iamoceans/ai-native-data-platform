@@ -53,6 +53,7 @@ class CompiledQuery:
     components: dict[str, str]
     post_aggregation: str | None = None
     period_total: bool = False
+    source_row_count_alias: str = "__aind_source_rows"
 
     def as_dict(self) -> dict:
         return {
@@ -64,6 +65,7 @@ class CompiledQuery:
             "components": dict(self.components),
             "post_aggregation": self.post_aggregation,
             "period_total": self.period_total,
+            "source_row_count_alias": self.source_row_count_alias,
         }
 
 
@@ -325,6 +327,12 @@ def compile_metric(
     component_sql = _component_sql(definition)
     component_datasets = _assign_components_to_datasets(definition)
     date_column = _date_column(definition)
+    # Keep the evidence column distinct from metric/component and dimension
+    # aliases, including on engines with case-insensitive output identifiers.
+    occupied = {name.lower() for name in [definition.metric_key, date_column, *requested, *component_sql]}
+    source_row_count_alias = "__aind_source_rows"
+    while source_row_count_alias.lower() in occupied:
+        source_row_count_alias += "_"
     date_where, parameters = _date_where(definition, date_column, filters)
     parameters["start"] = str(period_start)
     parameters["end"] = str(period_end)
@@ -342,6 +350,7 @@ def compile_metric(
             )
         formula_sql = compile_formula(definition.formula, component_sql)
         select_columns = ", ".join(group_by + [f"{formula_sql} AS {definition.metric_key}"])
+        select_columns += f", COUNT(*) AS {source_row_count_alias}"
         sql = _assemble(definition.all_datasets[0], select_columns, date_where, group_by)
         queries.append(
             CompiledQuery(
@@ -352,6 +361,7 @@ def compile_metric(
                 metric_alias=definition.metric_key,
                 components=component_sql,
                 post_aggregation=post_aggregation,
+                source_row_count_alias=source_row_count_alias,
             )
         )
         composition = None
@@ -362,6 +372,7 @@ def compile_metric(
         for component_name, dataset in component_datasets.items():
             group_by = list(requested)
             select_columns = ", ".join(group_by + [f"{component_sql[component_name]} AS {component_name}"])
+            select_columns += f", COUNT(*) AS {source_row_count_alias}"
             sql = _assemble(dataset, select_columns, date_where, group_by)
             queries.append(
                 CompiledQuery(
@@ -371,6 +382,7 @@ def compile_metric(
                     group_by=tuple(group_by),
                     metric_alias=component_name,
                     components={component_name: component_sql[component_name]},
+                    source_row_count_alias=source_row_count_alias,
                 )
             )
         composition = compile_formula(definition.formula, {name: name for name in component_sql})

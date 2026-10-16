@@ -58,14 +58,17 @@ def parse_url(url: str) -> dict:
     import urllib.parse
 
     parsed = urllib.parse.urlparse(url)
-    return {
+    class ConnectionConfig(dict):
+        def __repr__(self):
+            return "<test connection: credentials redacted>"
+    return ConnectionConfig({
         "scheme": parsed.scheme,
         "user": urllib.parse.unquote(parsed.username or ""),
         "password": urllib.parse.unquote(parsed.password or ""),
         "host": parsed.hostname or "127.0.0.1",
         "port": parsed.port or 3306,
         "database": (parsed.path or "/").lstrip("/"),
-    }
+    })
 
 
 def connect_mysql(url: str):
@@ -148,9 +151,11 @@ def run_seed_script(*, mysql_url: str | None, doris_url: str | None) -> None:
     if mysql_url:
         parts = parse_url(mysql_url)
         args += ["--mysql-host", parts["host"], "--mysql-port", str(parts["port"])]
+        args += ["--engine", "mysql"]
     if doris_url:
         parts = parse_url(doris_url)
         args += ["--doris-host", parts["host"], "--doris-port", str(parts["port"])]
+        args += ["--engine", "doris"]
     env = dict(os.environ)
     if mysql_url:
         parts = parse_url(mysql_url)
@@ -281,7 +286,7 @@ def run_pending_analyses(max_analyses: int = 5) -> int:
     """
     from app.agent import runner as analysis_runner
     from app.config import get_settings
-    from app.db import session_scope
+    from app.db import get_session_factory, session_scope
     from app.repositories import queue as queue_repo
 
     settings = get_settings()
@@ -292,8 +297,7 @@ def run_pending_analyses(max_analyses: int = 5) -> int:
             claim = queue_repo.claim_next_analysis(session, worker_id=worker, settings=settings)
         if claim is None:
             break
-        with session_scope() as session:
-            analysis_runner.execute_claim(session, claim=claim, settings=settings)
+        analysis_runner.run_claim(get_session_factory(), claim=claim, settings=settings)
         drain_worker()
         completed += 1
     return completed

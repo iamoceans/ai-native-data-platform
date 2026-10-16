@@ -593,3 +593,42 @@ def test_key_file_comments_never_reach_the_authorization_header(workdir):
     finally:
         llm_module.httpx.post = original
     assert observed["headers"]["Authorization"] == "Bearer sk-live-key-value"
+
+
+def test_injected_llm_secret_overrides_missing_file_without_entering_prompt(monkeypatch, workdir):
+    from app.config import Settings
+
+    marker = 'test-proxy-credential'
+    monkeypatch.setenv('AIND_LLM_API_KEY', marker)
+    settings = Settings(
+        _env_file=None,
+        llm_provider='openai-compatible',
+        llm_base_url='https://api.deepseek.com/v1',
+        llm_model='configured-model',
+        llm_api_key_file=workdir / 'missing.key',
+    )
+    assert marker not in repr(settings)
+    assert marker not in settings.model_dump_json()
+    observed = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        observed.update(url=url, headers=headers, body=json)
+        import httpx
+        return httpx.Response(200, request=httpx.Request('POST', url), json={
+            'model': 'reported-model',
+            'choices': [{'message': {'content': '{"dimensions":["country"]}'}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 8, 'completion_tokens': 4},
+        })
+
+    monkeypatch.setattr('app.agent.llm.httpx.post', fake_post)
+    provider = resolve_provider(settings).provider
+    assert provider is not None
+    result = provider.generate_structured(
+        messages=[{'role': 'user', 'content': 'choose'}],
+        schema=PlanningSelection, budget=AnalysisBudget.start(), max_output_tokens=100,
+    )
+    assert result.model_id == 'reported-model'
+    assert observed['headers']['Authorization'] == f'Bearer {marker}'
+    assert marker not in str(observed['body'])
+    settings.llm_api_key_file = None
+    assert resolve_provider(settings).provider is not None

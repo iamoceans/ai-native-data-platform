@@ -29,6 +29,7 @@ import logging
 import re
 import uuid
 from typing import Any, Literal, Sequence
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -326,7 +327,7 @@ def _record_skip(
     """
     reason = reason[:300]
     previous = (task.state or {}).get("memory_extraction") or {}
-    attempts = int(previous.get("attempts") or 0) + 1
+    attempts = int(previous.get("attempts") or 0) + (0 if previous.get("status") == "extracting" else 1)
     task.state = {
         **(task.state or {}),
         "memory_extraction": {
@@ -347,13 +348,15 @@ def _record_skip(
 
 
 def remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: Settings) -> dict[str, Any]:
-    """Learn from one finished analysis. Never raises, never mutates its outcome.
+    """Legacy mock-session helper; database callers must use run_extraction.
 
-    The body is wrapped because the worker loop must survive any failure here: an
+    The body is wrapped so unit callers can exercise extraction failures: an
     unexpected error is recorded as a non-retryable attempt on the analysis
     itself, so a defect degrades into one visible marker instead of a retry
     storm that calls the model on every pass.
     """
+    if session is not None:
+        raise RuntimeError("use run_extraction(session_factory) for database-backed model calls")
     try:
         return _remember_completed(session, analysis_id=analysis_id, settings=settings)
     except Exception as exc:  # noqa: BLE001 - the analysis outcome is already published
@@ -369,7 +372,7 @@ def remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: Se
         return {"status": "failed", "reason": type(exc).__name__}
 
 
-def _remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: Settings) -> dict[str, Any]:
+def _extraction_input(session: Session, *, analysis_id: uuid.UUID, settings: Settings) -> dict[str, Any]:
     task = analyses_repo.get_analysis_for_update(session, analysis_id)
     if task is None:
         return {"status": "skipped", "reason": "unknown_analysis"}
@@ -403,8 +406,19 @@ def _remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: S
         max_sql_repairs=0,
         max_wall_seconds=max(30, int(settings.llm_timeout_seconds * 2)),
     )
+    return {"prepared": True, "digest": digest, "budget": budget, "provider": resolution.provider}
+
+
+def _remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: Settings) -> dict[str, Any]:
+    # Compatibility helper for synchronous mock-session unit callers. The worker
+    # uses run_extraction, whose model request runs with no open session.
+    preparation = _extraction_input(session, analysis_id=analysis_id, settings=settings)
+    if not preparation.get("prepared"):
+        return preparation
+    task = analyses_repo.get_analysis_for_update(session, analysis_id)
+    digest, budget = preparation["digest"], preparation["budget"]
     try:
-        generated = resolution.provider.generate_structured(
+        generated = preparation["provider"].generate_structured(
             messages=[
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(digest, ensure_ascii=False)},
@@ -419,6 +433,12 @@ def _remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: S
             session, task, reason=f"provider_error:{type(exc).__name__}", retryable=True
         )
 
+    return _apply_extraction(session, task=task, digest=digest, generated=generated)
+
+
+def _apply_extraction(session: Session, *, task, digest: dict, generated) -> dict[str, Any]:
+    state = dict(task.state or {})
+    metric_key = str(state.get("metric_key") or "")
     allowed_identifiers = evidence_identifiers(digest)
     allowed_dimensions = {str(item) for item in digest["metric"].get("allowed_dimensions") or []}
     dataset_qualifiers = [str(item) for item in digest["metric"].get("dataset_qualifiers") or []]
@@ -470,7 +490,7 @@ def _remember_completed(session: Session, *, analysis_id: uuid.UUID, settings: S
 
     record = {
         "status": "extracted",
-        "attempts": 1,
+        "attempts": int((state.get("memory_extraction") or {}).get("attempts") or 1),
         "model_id": generated.model_id,
         "prompt_version": MEMORY_PROMPT_VERSION,
         "created_ids": created,
@@ -537,4 +557,75 @@ def catch_up(session: Session, *, settings: Settings, limit: int = 2) -> dict[st
         outcome = remember_completed(session, analysis_id=task.id, settings=settings)
         if outcome.get("status") == "extracted":
             processed.append(str(task.id))
+    return {"processed": processed}
+
+
+def run_extraction(session_factory, *, analysis_id: uuid.UUID, settings: Settings) -> dict[str, Any]:
+    """Claim a bounded extraction in JSON state; perform network I/O lock-free."""
+    token = str(uuid.uuid4())
+    with session_factory() as session:
+        task = analyses_repo.get_analysis_for_update(session, analysis_id)
+        if task is None:
+            return {"status": "skipped", "reason": "unknown_analysis"}
+        previous = (task.state or {}).get("memory_extraction") or {}
+        if previous.get("status") == "extracting" and datetime.fromisoformat(previous["lease_until"]) > utcnow():
+            return {"status": "skipped", "reason": "extraction_busy"}
+        try:
+            with session.begin_nested():
+                preparation = _extraction_input(session, analysis_id=analysis_id, settings=settings)
+        except Exception as exc:
+            logger.exception("business memory preparation failed")
+            result = _record_skip(session, task, reason=f"internal_error:{type(exc).__name__}", retryable=False)
+            session.commit()
+            return result
+        if not preparation.get("prepared"):
+            session.commit()
+            return preparation
+        task.state = {**(task.state or {}), "memory_extraction": {
+            "status": "extracting", "retryable": True,
+            "attempts": int(previous.get("attempts") or 0) + 1,
+            "claim_token": token,
+            "lease_until": (utcnow() + timedelta(seconds=max(settings.lease_seconds, int(settings.llm_timeout_seconds) + 15))).isoformat(),
+        }}
+        session.commit()
+    generated, error = None, None
+    try:
+        generated = preparation["provider"].generate_structured(
+            messages=[{"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                      {"role": "user", "content": json.dumps(preparation["digest"], ensure_ascii=False)}],
+            schema=MemoryExtraction, budget=preparation["budget"], max_output_tokens=700,
+        )
+    except Exception as exc:
+        error = exc
+    with session_factory() as session:
+        task = analyses_repo.get_analysis_for_update(session, analysis_id)
+        record = (task.state or {}).get("memory_extraction", {}) if task else {}
+        if (task is None or record.get("claim_token") != token or task.status not in LEARNED_STATUSES
+                or datetime.fromisoformat(record["lease_until"]) <= utcnow()):
+            return {"status": "skipped", "reason": "extraction_claim_lost"}
+        if error is not None:
+            result = _record_skip(session, task, reason=f"provider_error:{type(error).__name__}", retryable=True)
+        else:
+            try:
+                with session.begin_nested():
+                    result = _apply_extraction(session, task=task, digest=preparation["digest"], generated=generated)
+            except Exception as exc:
+                logger.exception("business memory apply failed")
+                result = _record_skip(session, task, reason=f"internal_error:{type(exc).__name__}", retryable=False)
+        session.commit()
+        return result
+
+
+def run_catch_up(session_factory, *, settings: Settings, limit: int = 2) -> dict[str, Any]:
+    with session_factory() as session:
+        ids = [task.id for task in analyses_repo.list_recent_terminal(session, limit=40)
+               if task.status in LEARNED_STATUSES
+               and ((task.state or {}).get("memory_extraction") or {}).get("status") != "extracted"]
+    processed = []
+    for analysis_id in ids:
+        if len(processed) >= limit:
+            break
+        outcome = run_extraction(session_factory, analysis_id=analysis_id, settings=settings)
+        if outcome.get("status") == "extracted":
+            processed.append(str(analysis_id))
     return {"processed": processed}

@@ -134,9 +134,9 @@ def test_observer_uses_period_total_and_composition(monkeypatch, kind, formula, 
     descriptors, jobs, payloads = [], {}, {}
     def add(period, alias, values, total=False):
         id = uuid.uuid4()
-        descriptors.append({"query_id": str(id), "metric_alias": alias, "period": period, "period_total": total, "composition": formula, "dataset_id": str(uuid.uuid4()), "role": "primary"})
+        descriptors.append({"query_id": str(id), "metric_alias": alias, "period": period, "period_total": total, "composition": formula, "dataset_id": str(uuid.uuid4()), "role": "primary", "source_row_count_alias": "__aind_source_rows"})
         jobs[id] = NS(id=id, status="SUCCEEDED")
-        payloads[str(id)] = {"columns": [{"name": "country"}, {"name": alias}], "rows": [["US", value] for value in values]}
+        payloads[str(id)] = {"columns": [{"name": "country"}, {"name": alias}, {"name": "__aind_source_rows"}], "rows": [["US", value, 1] for value in values]}
     for period, value in [("baseline", "5"), ("current", "4")]:
         if formula:
             add(period, "aa", [None if formula.startswith("coalesce") else ("10" if period == "baseline" else "8")])

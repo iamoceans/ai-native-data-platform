@@ -221,6 +221,18 @@ with `scripts/capture_datahub_fixtures.py`).
   SQL NULL semantics). Nonadditive breakdowns also compile a separate period
   aggregate with the same filters and windows but without breakdown dimensions.
   Nonadditive/nonlinear formulas do not produce additive contribution charts.
+  Every compiled query also selects `COUNT(*)` under a collision-safe alias;
+  the query descriptor persists that alias. The observer uses period-total
+  queries where present, otherwise the primary grouped aggregates, to record
+  per-period/per-source counts with query IDs. These are row-presence evidence
+  (a sum over returned groups can be a lower bound when results are truncated),
+  not an assertion that every day is loaded. No extra query or query budget is
+  needed. If any required source has zero rows in either period, the comparison
+  and missing period values are NULL, contribution/driver extension is skipped,
+  and synthesis emits PARTIAL with dated limitations, no numeric claims,
+  hypotheses or charts, even with completeness set to complete. Populated zeros
+  retain their existing comparison behavior. Coverage is stored in the
+  period-comparison artifact; calculation checkpoints are now version 3.
   Older incompatible in-flight calculation checkpoints require resubmission;
   previously completed reports remain historical artifacts.
 - `app/analysis/` implements the specification's arithmetic exactly:
@@ -342,7 +354,11 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   selection loads nothing. Saving the selection pins exact version IDs with an
   expected context version. Auto mode considers explicitly bound personal
   versions before builtin candidates; a new upload never replaces a pinned
-  version. Archived or foreign versions cannot load.
+  version. Within those tiers, question/description lexical similarity, metric and
+  dimension relevance rank candidates. Selection is restricted to offered IDs
+  and revalidated against final scope. Required inputs are unioned; missing
+  fields and incompatible metric constraints clarify rather than silently
+  replacing explicit scope. Archived or foreign versions cannot load.
 - **Budgets**: a turn has a UTC `deadline_at`, token and model-call allowances;
   the analysis it creates runs on the *remaining* sub-budget, never a fresh one.
 - **Live updates**: `GET /sessions/{id}/events` streams persisted, monotonic
@@ -391,9 +407,8 @@ Chinese/English interface entry.
   (`_extend_with_driver_step`: materiality + a declared `driver_decomposition`
   metric + budget and depth gates). Nothing yet lets a model choose steps or
   iterate over tools.
-- The specification's `/datasets/:id` deep link: the catalog detail panel serves
-  that content instead of a dedicated route. The shared/dashboard screens are not
-  part of the V1 specification and were not invented.
+- The shared/dashboard screens are not part of the V1 specification and were
+  not invented.
 - The production phases of the specification (sections 31-32): Kyuubi/Spark batch
   provider, Flink streaming jobs, MCP egress and enterprise semantics. See the
   roadmap row in `docs/todo.md`.
@@ -403,9 +418,13 @@ Chinese/English interface entry.
 Query resource locking is job -> queue -> lease for claim, publication and
 reconciliation; capacity locks retain global -> datasource -> user ordering.
 Analysis/turn/ingestion claims lock the resource before its queue and skip locked
-resources. The analysis model call still holds the task lock; a competing
-reclaimer skips it instead of holding its queue while waiting. Moving model calls
-outside that transaction requires fenced post-call writes and is not implemented.
+resources. Analysis planning now reserves its model budget and a bounded lease
+in a short transaction, closes the session for the network call, then locks task
+and queue again to validate owner, fencing token, lease, checkpoint and terminal
+state before applying. Lost calls retain their reservation; replacement calls
+reserve again. Late replies cannot publish queries or overwrite cancellation.
+Memory extraction uses the same session-free network pattern with a bounded
+per-analysis claim token/expiry, at most three attempts and fenced post-call writes.
 Task-queue state changes use an explicit allow-table.
 
 Optional driver plans compile both periods before enqueuing, submit inside one
@@ -419,3 +438,32 @@ include discover and query; datasource list topology is administrative only.
 Frontend SSE closes on terminal stream control events; session streams restart
 for a new active turn. Idle tabs poll session/transcript at 15 seconds to detect
 cross-tab activity, and terminal historical analyses stop their own 3-second polls.
+
+### Dataset deep links (2026-10-16)
+
+The catalog links to `/datasets/:id`; the route renders the same governed detail
+surface and uses the URL as its selected dataset. Reload and browser history
+retain that selection. Dataset-specific form state is remounted on ID changes,
+so request reasons, mutation errors and success notices do not cross datasets.
+The detail GET uses the existing discover grant check; schema and lineage reads
+start only after context is available. Missing or denied context renders an error
+and hides the request form; secondary read failures render their own errors.
+IDs are encoded as path segments in links and API reads. No API contract or
+database migration changed.
+
+### Conversation history and retry (2026-10-16)
+
+`GET /sessions/{id}/messages?direction=backward&limit=40` returns the newest
+window in chronological order. Its signed cursor binds session and direction
+and pages by immutable sequence, so appending messages cannot shift old pages.
+The existing forward reader remains supported. Message rows include turn status.
+`POST /sessions/{id}/turns/{turn_id}/retry` requires an idempotency key and an
+owned FAILED/CANCELLED origin. It freezes the original resolved scope, clears,
+question, parent and loaded skill versions in a new turn; the original stays
+unchanged. The normal feature/capability/busy checks still apply. The UI retains
+unsent drafts, pages older history, offers retry and reads authorized analysis
+diagnostics inline. On narrow screens the scope panel is a native modal dialog.
+
+The model adapter accepts a redacted `AIND_LLM_API_KEY` injected by the cloud
+secret proxy, taking precedence over the existing mounted key file. Datasource
+credentials still resolve exclusively through their mounted secret references.

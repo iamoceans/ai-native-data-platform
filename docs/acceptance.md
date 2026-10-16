@@ -1586,3 +1586,225 @@ regression suite plus the live click-through. Known and not fixed: a period that
 lies entirely outside the loaded data still reports `变化 0` rather than "该期间没有
 数据" — the calculation carries no row coverage, so telling "genuinely zero" apart
 from "no rows" needs a new evidence signal; it is recorded in `docs/todo.md`.
+
+## 2026-10-16 Dataset deep links
+
+The M6 `/datasets/:id` gap is implemented. Catalog items now link to the dataset
+URL, and direct entry uses the existing governed detail endpoints. Schema,
+semantic context, lineage and access requests remain on the same detail surface.
+Browser history and refresh retain the selected ID. A keyed dataset view resets
+request drafts, errors and notices when changing datasets. IDs are encoded as URL
+path segments. Context failures render an error and hide the form; schema and
+lineage reads wait for successful context, and their failures render errors.
+No backend API, permission contract or database migration changed.
+
+Executed in `/workspace/ai-native-data-platform/frontend`:
+
+```bash
+npm run typecheck
+# exit 0
+npm run build
+# exit 0 (includes generated API types and TypeScript compilation)
+npm run test:unit
+# 11 passed
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression
+# 49 passed / 1 failed (50 total)
+```
+
+The five new catalog cases all pass: catalog link + reload + return; direct entry
+and back/forward across datasets with isolated drafts; missing dataset; denied
+dataset without secondary reads; and access submission targeting the current ID
+with isolated success notices and a translated return link. All Ask, chart and
+i18n cases passed. The remaining Skills case times out at
+`page.waitForEvent('filechooser')` after keyboard Enter on the new-version button.
+The initial catalog-only invocation could not launch Playwright's absent bundled
+headless shell. The completed run above explicitly used installed system Chromium.
+
+Deployed browser journeys, the service integration matrix and A09 were not
+executed for this frontend-only change. Mocked permission tests verify UI behavior;
+server-side authorization is unchanged and was not revalidated on live services.
+
+Failure follow-up: exported the unchanged `HEAD` frontend into
+`/tmp/dataset-route-baseline/frontend` and ran the failing Skills case alone with
+the same system Chromium; **1 passed**. The identical single-case command on the
+current frontend also reports **1 passed**:
+
+```bash
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression -- skills.spec.ts -g 'renders per-skill actions'
+# baseline: 1 passed; current: 1 passed
+```
+
+This establishes an isolated pass on both trees, not the cause of the full-suite
+timeout. The full-suite result remains **49 passed / 1 failed**; no Skills code
+or assertions were changed to suppress it. `git diff --check` exits 0.
+
+## 2026-10-16 Empty-period source coverage
+
+Previously an empty grouped query yielded no rows and an ungrouped aggregate
+could yield one NULL or zero row; the observer converted both into a numeric
+zero. A question outside loaded dates could therefore claim `变化 0`, and one
+empty period could resemble a full drop or increase.
+
+Metric SQL now includes a collision-safe `COUNT(*)` evidence column with exactly
+the same dates and filters. Submission checkpoints its alias. Observation
+retains per-period/per-required-source counts, dataset IDs and query IDs; it
+uses period-total evidence for nonadditive metrics and avoids counting the
+breakdown a second time. Missing required input prevents composition from
+zero-filling a missing source, skips contribution/driver extension, and leaves
+comparison values undefined. Synthesis persists coverage in its calculation
+artifact and emits PARTIAL, naming the affected half-open period with no change,
+attribution, hypothesis or chart. This overrides even an explicit complete
+flag. A real zero with matching source rows remains a valid zero comparison.
+
+No extra query is submitted, and no database migration is needed. In-flight
+queries or calculation checkpoints predating coverage must be resubmitted
+(calculation version 3). Completed historical reports are not rewritten.
+Row presence is not day-by-day completeness; counts summed over bounded grouped
+results can be lower bounds. Populated undefined nonadditive/formula values
+retain their existing failure behavior.
+
+Executed from `/workspace/ai-native-data-platform`:
+
+```bash
+UV_CACHE_DIR=/tmp/aind-uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 509 passed, 2 dependency deprecation warnings, 6.58s
+git diff --check
+# exit 0
+```
+
+The new `backend/tests/unit/test_empty_periods.py` contributes 30 cases covering
+empty grouped/ungrouped aggregates under all completeness states; populated
+zero values; either period missing; empty eCPM and daily-average periods;
+composition with a missing source (including COALESCE); filters; COUNT(column)
+zero over actual NULL-bearing rows; alias collisions; invalid/missing coverage;
+old checkpoint rejection; final synthesis and evidence payload retention; and
+submission carrying the alias without extra queries. The SQL cases execute
+compiled SQL against in-memory SQLite tables before invoking the real observer
+and report builder. Two older observer fixtures now carry the count column and
+descriptor alias that new queries return, preserving their existing numeric
+assertions.
+
+The first targeted run exposed those six old mocked-result cases missing the
+new evidence column; their fixtures were updated. A subsequent run found a new
+SQLite fixture using the wrong DAU table name, corrected to `demo.user_daily`.
+The final complete static run above has no failures. The default uv cache was
+read-only in this executor, so commands use the writable `/tmp` cache.
+
+PostgreSQL/MySQL/Doris/Spark live acceptance, deployed browser journeys and
+real-model A09 were **not executed** for this fix. No live dataset or historical
+report was modified.
+
+## 2026-10-16 High/medium priority workflows — current revision
+
+Analysis planning now commits its reservation and bounded lease, closes its
+session for the model call, then checks owner/fencing/expiry/checkpoint and
+terminal status in a new transaction before submitting queries. Real PostgreSQL
+regressions acquire the task lock with a 500 ms lock timeout while a controlled
+provider waits on an event, then cancel or reclaim the task. Both late successes
+and late errors leave cancellation intact; a replacement owner submits exactly
+one query pair and preserves the earlier model-call charge. Memory extraction
+uses its own bounded claim token/expiry and rejects the previous owner's reply.
+Provider calls remain bounded by their configured HTTP timeout.
+
+Skills rank candidates by description/question lexical overlap (English tokens,
+Chinese bigrams), metric and preferred dimensions within the pinned-before-builtin
+tiers. Required fields are unioned, explicit clears are retained, and missing
+inputs or incompatible loaded metric scopes clarify. Final scope/applicability
+and offered model selection IDs are rechecked. This is lexical ranking, not an
+embedding service; skill prose cannot add arbitrary input constraints.
+
+The transcript uses signed, session/direction-bound backward sequence cursors;
+125-message integration and 130-message browser fixtures verify complete history
+and isolation across sessions. Retry creates a new idempotent turn from frozen
+original scope/skills; nonterminal origins, foreign sessions, missing keys and
+busy sessions are rejected. Mobile scope uses native dialog focus handling;
+closing or resizing retains edits. Authorized per-message diagnostics show the
+analysis token/query/tool/repair counters and deadline. Browser regressions cover
+pagination, retry preserving the unsent draft, drawer keyboard/focus behavior and
+diagnostics. Skills keyboard activation targets its button directly, removing the
+cross-test focus race without sleeps or dropping filechooser assertions.
+
+Executed with isolated validation databases and generated credentials under the
+ignored `runtime/validation/` directory. Existing control/source databases were
+not truncated. Commands below require the usual `AIND_TEST_*`/database settings;
+credentials were loaded internally rather than printed or committed.
+
+```bash
+UV_CACHE_DIR=/tmp/aind-uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 515 passed, 2 dependency deprecation warnings, 6.93s
+uv run --project backend --frozen pytest backend/tests/integration/test_provider_network_bounds.py -q
+# 3 passed, 14.00s (actual stalled sockets and TLS-enabled PostgreSQL)
+cd frontend
+npm run test:unit
+# 11 passed
+npm run build
+# exit 0: generated API types, TypeScript and Vite production bundle
+npm run test:regression -- --repeat-each=2
+# 108 passed (54 cases twice), 4.6m, system Chromium
+```
+
+The prior 49-pass/one-failure Skills chooser result is superseded by the complete
+repeated run. Live journeys exposed stale mixed-language expectations in the
+administration test; it now selects zh-CN explicitly and checks the translated
+catalog, health and approval labels. API/security integration assertions were
+updated for existing unknown-dataset permission denial, unique repair keys and
+configured source identities; permission isolation was not relaxed. Source
+seeding supports repeated `--engine` selection so PostgreSQL/MySQL validation
+does not require an unavailable Doris service.
+
+The LLM adapter now supports the redacted process secret `AIND_LLM_API_KEY`,
+which takes precedence over mounted files and can carry the platform proxy
+placeholder unchanged. Tests verify it is absent from Settings repr/JSON and
+model request bodies and present only in the authorization header. Existing
+file-key tests still pass. No actual credential was written to source or docs.
+
+**Real-model A09 was explicitly deferred by the user for later.** It was not
+executed for this revision. The requested provider is
+DeepSeek, model "v4.1 flash"; existing configuration names `deepseek-chat`, which
+has not been confirmed against the endpoint's model list. The key file has no
+usable credential, no environment key is bound, and the current HTTPS proxy
+policy rejects `api.deepseek.com`. The saved environment configuration draft
+adds only that destination and the `DEEPSEEK_API_KEY` requirement targeting
+`AIND_LLM_API_KEY`. It preserves existing installation/start instructions and
+other network settings. Draft save succeeded with `requires_publish=true`;
+review/save and publish in environment settings are still needed to apply it.
+Saving a draft neither supplies the credential nor changes this running runtime.
+The live-service browser runs use the deterministic provider; historical A09
+passes are not evidence for this revision or for the requested model version.
+
+Full Doris/DataHub acceptance remains unexecuted. Docker uses vfs on a 32 GB disk;
+fetching the Doris FE alone brought usage to roughly 22 GB, leaving insufficient
+space for its BE and DataHub stack. Only the newly fetched unused FE image was
+removed and its BE pull stopped, returning usage to roughly 5 GB. Existing Docker
+storage/daemon settings and pre-existing containers were preserved. The Doris
+socket-stall test exercises the adapter protocol, not a deployed Doris server.
+Spark was not rerun. These limits must remain visible beside passing counts.
+
+Live-service browser verification (API + query/agent workers + Vite, isolated
+PostgreSQL databases, deterministic provider):
+
+```bash
+# With E2E_BASE_URL, E2E_ADMIN_USER/PASSWORD, E2E_METRIC,
+# E2E_ANALYSIS_METRIC and PLAYWRIGHT_EXECUTABLE_PATH configured:
+cd frontend
+npx playwright test
+# 7 passed, 35.0s
+```
+
+This covers SQL/results/history, write rejection, analysis/chart/drilldown,
+conversation/follow-up, Skills upload preview, administration/grants/request queue
+and viewer capability gating. It is a locally running service acceptance, not a
+remote deployment or a real-model run.
+
+Final service matrix (includes the three protocol/TLS tests above):
+
+```bash
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --tb=short
+# 97 passed, 14 skipped, 25 deselected, 2 dependency warnings, 193.55s
+```
+
+Thirteen skips require Doris and one requires the deployed DataHub stack.
+PostgreSQL and MySQL were real services; the 97 passes include the new
+priority-workflow tests and the existing PostgreSQL lock-contention cases.
+The earlier 94-pass run preceded adding the three network-bound tests; the
+final 97-pass run supersedes it.

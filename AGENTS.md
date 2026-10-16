@@ -17,8 +17,8 @@ per-milestone notes and open items in `docs/todo.md` and the known limits in
 `README.md` (section "Known limitations").
 M5's real-model evaluation passed on 2026-09-27 (`docs/acceptance.md`). The runner's
 driver decomposition is rule-driven and integration-tested; model-driven step
-selection, iterative tool selection and the specification's `/datasets/:id` route
-remain open - see `docs/todo.md`.
+selection and iterative tool selection remain open - see `docs/todo.md`. The
+`/datasets/:id` deep link is implemented (2026-10-16).
 
 ## Layout
 
@@ -140,6 +140,21 @@ the 576-point chart). The backend static suite, the service matrix, A09 and the
 deployed journeys were **not** rerun for this frontend-only change. See
 `docs/acceptance.md`, the three "2026-10-15" records.
 
+Re-observed 2026-10-16 after high/medium priority work: static **515 passed**,
+frontend units **11 passed**, production build exit 0, repeated mocked browser
+regressions **108 passed**, focused real socket/TLS tests **3 passed**, live-service browser journeys
+**7 passed** (deterministic provider); real PostgreSQL/MySQL integration
+**97 passed / 14 skipped / 25 deselected** (Doris/DataHub absent). Analysis
+planning and memory extraction now perform network calls outside DB sessions,
+with fenced apply and durable reservations/claims. Conversation history pages
+backward by sequence; retry freezes original inputs; mobile scope uses a native
+dialog; diagnostics are available per message; Skills rank descriptions and
+reconcile required inputs. See the latest acceptance record for the live
+PostgreSQL/MySQL and browser results and explicit Doris/DataHub/Spark/A09 gaps.
+The user explicitly deferred DeepSeek/A09 until later. Credentials may also be
+bound as redacted `AIND_LLM_API_KEY`; the saved
+cloud draft needs review/save and publish before the network/secret change applies.
+
 ## Invariants - do not break these
 
 1. **The API never executes user SQL against a source database.** It validates,
@@ -168,8 +183,10 @@ deployed journeys were **not** rerun for this frontend-only change. See
    arithmetic - the deterministic kernel in `app/analysis/` does, in `Decimal`.
 9. **`ground_truth.json` is evaluation-only.** It is never mounted into metadata or
    agent context.
-10. **Secrets live in mounted files** (`infra/local-secrets/<ref>.json`); the
-    database stores only a `secret_ref`. Never commit `.env` or secret files.
+10. **Datasource secrets live in mounted files** (`infra/local-secrets/<ref>.json`);
+    the database stores only a `secret_ref`. LLM credentials may alternatively use
+    the redacted cloud process secret `AIND_LLM_API_KEY`. Never commit `.env`,
+    credential values or secret files.
 
 ## Conventions
 

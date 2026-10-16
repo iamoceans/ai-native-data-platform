@@ -325,6 +325,19 @@ def release_analysis_claim(
     return True
 
 
+def lock_analysis_claim(session: Session, claim: AnalysisClaim) -> TaskQueue | None:
+    """Called after the analysis lock: only a current, unexpired owner may write."""
+    row = session.execute(
+        select(TaskQueue).where(TaskQueue.id == claim.queue_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if (row is None or row.state != QueueState.LEASED
+            or row.worker_id != claim.worker_id or int(row.fencing_token) != claim.fencing_token
+            or row.lease_until is None or row.lease_until <= utcnow()):
+        return None
+    return row
+
+
 def heartbeat(session: Session, claim: ClaimedTask, settings: Settings) -> bool:
     """Refresh the lease; returns False when the worker lost the lease."""
     result = session.execute(
