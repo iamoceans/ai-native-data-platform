@@ -90,12 +90,14 @@ Product and verification items (current status):
 Resumed by the user on 2026-10-17: DeepSeek v4.1 flash connection, model identity
 verification, real-model A09 and large-pool automatic Skill choice acceptance.
 Endpoint discovery (`llm-check --list-models`) and exact response identity checks
-(`--expect-model ID`) are implemented. Live acceptance remains blocked: the cloud
-draft reports `DEEPSEEK_API_KEY` without a saved binding, and neither its secret
-nor its DeepSeek network rule is applied to the current instance. The actual
-check exits 1 before making a request. Bind the secret and publish the environment
-configuration, then verify the endpoint's actual model; do not assume the existing
-`deepseek-chat` alias identifies the requested version. Historical deferred notes
+(`--expect-model ID`) are implemented. A subsequent published-environment retry
+passed real authentication, model discovery and structured completion with exact
+returned ID `deepseek-flash` (2.63 s, 535 input/142 output tokens). The API also
+lists `deepseek-v4-pro`; it does not report the "v4.1" version label. Local ignored
+`.env` now selects the verified Flash ID. Full A09 and large-pool automatic Skill
+acceptance remain pending: this restored runtime lacks Doris/MySQL, and the
+onboarding stack's explicit fake-provider override still needs a controlled
+deployment/migration before end-to-end model acceptance. Historical deferred notes
 below describe earlier rounds. Enterprise/HA,
 Kyuubi/Flink/MCP, content translation and other explicitly future/out-of-V1 items
 remain roadmap choices, not high-priority implementation claims.

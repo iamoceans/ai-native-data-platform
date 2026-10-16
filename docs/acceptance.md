@@ -2464,3 +2464,33 @@ and published before live checking. Existing `deepseek-chat` configuration is no
 proof of the requested v4.1 flash identity. Current model identity, real A09 and
 large-pool automatic Skill acceptance remain **not executed**. No DB migration,
 service restart or source-data evaluation was performed in this round.
+
+## Published-environment retry — real Flash endpoint verified
+
+The subsequent user-requested retry succeeds with the injected
+`AIND_LLM_API_KEY`, inherited proxy and TLS trust. Authenticated
+`GET https://api.deepseek.com/v1/models` returned **HTTP 200** with
+`deepseek-flash` and `deepseek-v4-pro`. The restored checkout was seven commits
+behind `origin/work`; it was clean and fast-forwarded from `5e7b37d` to
+`a1b0894`, restoring process-secret support and the diagnostic options.
+
+The application adapter command
+`PYTHONPATH=backend AIND_LLM_MODEL=deepseek-flash uv run --project backend --frozen
+python -m app.cli llm-check --expect-model deepseek-flash` exited **0**:
+reported model **deepseek-flash**, latency **2.63 s**, **535 input / 142 output
+tokens**, finish **stop**, parsed selection
+`{"dimensions":["country"],"next_action":"breakdown"}`. A preceding raw
+completion returned HTTP 200 but its local diagnostic failed to import the app;
+only the successful application-adapter run is counted as structured acceptance.
+After setting the ignored local `.env` model to `deepseek-flash`, the application
+`llm-check --list-models` also exited **0** and returned the same two IDs.
+No credential material was logged or committed.
+
+This proves real authentication, endpoint discovery and one schema-validated
+planning call. It does not establish an unreported "v4.1" version label, A09
+accuracy or automatic Skill choice. This restored environment has only control
+and source PostgreSQL containers; the existing full A09 loader requires
+Doris/MySQL. Its onboarding `env.sh` still explicitly exports the fake provider;
+no deployed API/worker was restarted, no migration was applied and no full A09
+or large-pool Skill evaluation was run. Earlier missing-binding notes are
+historical and are superseded by the successful request evidence above.

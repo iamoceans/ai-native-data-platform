@@ -212,9 +212,13 @@ Discovery makes only an authenticated `/models` request. The exact check makes
 a structured completion and fails if the response reports a different model ID
 or omits it; a configured alias alone cannot pass. Neither command changes the
 configured model. Cloud secrets and network changes must be bound and published
-before they reach the running instance. As of the 2026-10-17 recheck, the draft's
-`DEEPSEEK_API_KEY` binding was still unsaved and the running instance had no usable
-LLM credential; current v4.1 flash identity/A09 acceptance remains pending.
+before they reach the running instance. A subsequent published-environment retry
+succeeded: `/models` lists `deepseek-flash` and `deepseek-v4-pro`; a structured
+completion returned the exact ID `deepseek-flash` and passed local validation.
+Local ignored `.env` now selects `deepseek-flash`. This verifies the endpoint ID,
+not the unreported "v4.1" version label. Full A09/large-pool Skill acceptance and
+switching the restored onboarding stack from its fake-provider override remain
+pending; see the latest acceptance record.
 
 The second 2026-10-15 review also fixes driver-error skipping, driver percent
 escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock
