@@ -40,6 +40,12 @@ Product and verification items (current status):
       mutation; exhaustion during apply settles the turn without queueing work.
       Unconfirmed retry keys survive same-tab reload via account-scoped storage,
       with in-memory fallback when storage is unavailable.
+- [x] Further review: charge unknown requests across worker restarts (including
+      physical model calls), avoid offline quota reservations, validate queue
+      ownership/preparation checkpoints on success and failure, and extend the
+      intent lease for bounded model calls. Invalid relative dates clarify safely;
+      upstream model error messages are sanitized. Real PostgreSQL conversation
+      acceptance: **14 passed**, scripted models; backend static **664 passed**.
 - [x] Shared PostgreSQL login/password failure limits, bounded allocation and
       cross-process persistence; same-host dual API deployment acceptance.
 - [x] Per-poll SSE auth-session/user/grant rechecks and revoked event suppression.

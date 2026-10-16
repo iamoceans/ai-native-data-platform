@@ -380,6 +380,17 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   exact positive remainders; exhausted tokens/calls or an expired deadline cannot
   create a minimum allowance. Exhaustion during apply rolls back tentative
   submission and closes the turn as FAILED without repeating the intent call.
+  Each intent preparation snapshots its own budget and advances the turn's
+  checkpoint. Persisted reservations include both tokens and physical requests
+  (at most two for format repair). A restarted attempt first charges unknown
+  prior work conservatively; later success cannot erase it. Only the local
+  current-attempt reservation is released before the adapter runs. Offline
+  intent resolution reserves no model allowance.
+  Worker calls carry their queue claim through prepare/apply/failure. Each short
+  transaction locks the turn before validating the current unexpired queue fence;
+  preparation extends the lease for two configured model timeouts plus margin.
+  Apply and failure also check the preparation checkpoint and current state, so
+  superseded workers cannot publish, fail or change the replacement attempt.
 - **Live updates**: `GET /sessions/{id}/events` streams persisted, monotonic
   events (message/turn/analysis state, skill loads, revocations) with
   `Last-Event-ID` resume; the UI also polls, so a dropped stream degrades to
@@ -387,6 +398,12 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
 - The whole module sits behind `AIND_CONVERSATIONAL_ASK_ENABLED` (default off);
   with it off the turn write API answers 503 `CONVERSATIONAL_DISABLED` and the
   UI falls back to the one-shot analysis path.
+
+Relative-date proposals validate ISO/range bounds before date arithmetic.
+Invalid model dates clear only the proposed pending scope, forcing clarification
+instead of reusing older dates; explicit valid UI values retain precedence.
+Model failures expose exception class and optional HTTP status, without arbitrary
+provider messages. Budget refusals retain their own type.
 
 The Ask frontend omits unedited skill selections, including the first question
 that creates a session, so account/session defaults apply. Explicit skill edits

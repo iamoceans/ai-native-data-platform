@@ -70,6 +70,12 @@ class LLMProvider(Protocol):
 RESPONSE_FORMATS = ("json_object", "json_schema")
 
 
+def provider_failure_message(exc: Exception) -> str:
+    """Keep diagnostic classes/statuses, never arbitrary provider text."""
+    status = f" (HTTP {exc.response.status_code})" if isinstance(exc, httpx.HTTPStatusError) else ""
+    return f"model endpoint {type(exc).__name__}{status}"
+
+
 def schema_instruction(schema: type[BaseModel]) -> str:
     """The system message that carries the schema in json_object mode.
 

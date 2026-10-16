@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ from app.agent.conversation import explain as evidence
 from app.agent.conversation import intent as intent_layer
 from app.agent.conversation import skills as skill_loader
 from app.agent.conversation.budget import TurnBudget
-from app.agent.llm import resolve_provider
+from app.agent.llm import resolve_provider, schema_instruction
 from app.agent.state import TERMINAL_ANALYSIS_STATUSES
 from app.config import Settings
 from app.constants import (
@@ -445,6 +445,9 @@ class TurnPreparation:
     skill_snapshot: dict[str, Any]
     metric_hint: str | None
     degraded: str | None
+    checkpoint_version: int | None = None
+    budget: TurnBudget | None = None
+    claim: queue_repo.TurnClaim | None = None
 
 
 @dataclass(frozen=True)
@@ -457,7 +460,8 @@ class TurnResolution:
 
 
 def _prepare_turn(
-    session: Session, *, turn_id: uuid.UUID, settings: Settings
+    session: Session, *, turn_id: uuid.UUID, settings: Settings,
+    claim: queue_repo.TurnClaim | None = None,
 ) -> TurnPreparation | str:
     """Phase 1: state, inputs, skill candidates and the worst-case reservation."""
     turn = conversation_repo.get_turn_for_update(session, turn_id)
@@ -470,6 +474,9 @@ def _prepare_turn(
         # resolution would call the model again and try to create a second
         # analysis (the unique index would refuse it) - a retry must be a no-op.
         return str(turn.status)
+    lease = queue_repo.lock_turn_claim(session, claim) if claim is not None else None
+    if claim is not None and lease is None:
+        return str(turn.status)
     if turn.status == ConversationTurnStatus.QUEUED:
         conversation_repo.transition(turn, ConversationTurnStatus.RESOLVING)
         _turn_event(session, turn, "turn.state.changed", {"status": "RESOLVING"})
@@ -477,16 +484,15 @@ def _prepare_turn(
     session_row = analyses_repo.get_session_for_update(session, turn.session_id)
     user_content = _user_content(session, turn)
     budget = TurnBudget.from_turn(turn, settings)
-    # Worst-case reservation for the call about to happen: a crash while the
-    # model answers must not hand the allowance out again (design 10.2).
+    # A prior attempt may have reached the provider before its worker vanished.
+    # Keep its worst-case charge; a later success cannot erase that expenditure.
     try:
-        budget.reserve_model_call(
-            estimated_input=settings.agent_max_input_tokens // 4, max_output=1400
-        )
-    except BudgetExceeded:
-        pass
-    turn.budget = budget.as_dict()
-    session.flush()
+        budget.spend_without_usage(note="lost_intent_attempt")
+        budget.ensure_time()
+    except BudgetExceeded as exc:
+        turn.budget = budget.as_dict()
+        _fail(session, turn, code=ErrorCode.EXECUTION_ERROR, message=intent_layer.budget_error(exc))
+        return str(turn.status)
 
     effective, _ = resolve_scope_patch(turn.context_before or {}, user_content, None)
     metric_hint = effective.get("metric_key")
@@ -540,7 +546,34 @@ def _prepare_turn(
             ),
         )
 
+    if messages:
+        # Persist a bounded allowance for both possible physical requests.
+        # The adapter checks each actual request against the remaining budget.
+        schema_tokens = len(schema_instruction(intent_layer.ConversationDecision)) // 4 + 1
+        estimated = intent_layer.estimate_input_tokens(messages) + schema_tokens
+        input_left = budget.max_input_tokens - budget.input_tokens
+        output_left = budget.max_output_tokens - budget.output_tokens
+        calls_left = budget.max_model_calls - budget.model_calls
+        try:
+            for dimension, remaining in (("input_tokens", input_left),
+                                         ("output_tokens", output_left), ("model_calls", calls_left)):
+                if remaining <= 0:
+                    raise BudgetExceeded(dimension)
+            budget.reserve_model_call(
+                estimated_input=min(2 * (estimated + schema_tokens + 300), input_left),
+                max_output=min(1400, output_left), model_calls=min(2, calls_left),
+            )
+        except BudgetExceeded as exc:
+            turn.budget = budget.as_dict()
+            _fail(session, turn, code=ErrorCode.EXECUTION_ERROR, message=intent_layer.budget_error(exc))
+            return str(turn.status)
+    turn.budget = budget.as_dict()
     turn.skill_snapshot = skill_record.as_snapshot()
+    if lease is not None:
+        lease.lease_until = utcnow() + timedelta(seconds=max(
+            settings.lease_seconds, int(settings.llm_timeout_seconds * 2) + 15,
+        ))
+    conversation_repo.save_checkpoint(session, turn, {})
     session.flush()
     return TurnPreparation(
         turn_id=turn.id,
@@ -556,6 +589,9 @@ def _prepare_turn(
         skill_snapshot=skill_record.as_snapshot(),
         metric_hint=metric_hint,
         degraded=resolution.warning,
+        checkpoint_version=int(turn.checkpoint_version),
+        budget=budget,
+        claim=claim,
     )
 
 
@@ -568,6 +604,10 @@ def _decide_turn(
     for as long as the model takes (design 10.1: model requests run outside the
     transaction).
     """
+    # Only the local snapshot is released. The committed reservation remains
+    # available to charge conservatively if this worker disappears mid-request.
+    budget.release_reservation()
+    budget.ensure_time()
     resolution = resolve_provider(settings)
     if resolution.provider is None or not preparation.messages:
         merged, missing = resolve_scope_patch(
@@ -586,6 +626,11 @@ def _decide_turn(
         patch_reasons.extend(intent_layer.resolve_relative_periods(decision, now=date.today()))
         model_patch, reasons = intent_layer.validate_patch(decision, metrics=preparation.metrics)
         patch_reasons.extend(reasons)
+        # Invalid model dates must ask for clarification, not silently inherit
+        # an older confirmed date. A valid explicit UI value still wins later.
+        invalid_dates = [reason.partition(":")[2] for reason in reasons if reason.startswith("invalid_date:")]
+        if invalid_dates:
+            model_patch["clear"] = list(dict.fromkeys([*(model_patch.get("clear") or []), *invalid_dates]))
         if "dimensions" not in model_patch and decision.scope_patch.dimensions:
             decision.scope_patch.dimensions = None
     return TurnResolution(decision=decision, model_patch=model_patch, patch_reasons=patch_reasons)
@@ -606,6 +651,14 @@ def _apply_turn(
     if turn.status in TERMINAL_CONVERSATION_TURN_STATUSES:
         # A cancel that landed during the model call wins; nothing is published.
         return str(turn.status)
+    if preparation.checkpoint_version is not None and (
+        turn.status != ConversationTurnStatus.RESOLVING
+        or int(turn.checkpoint_version) != preparation.checkpoint_version
+    ):
+        return str(turn.status)
+    if preparation.claim is not None and queue_repo.lock_turn_claim(session, preparation.claim) is None:
+        return str(turn.status)
+    budget.ensure_time()
 
     session_row = analyses_repo.get_session_for_update(session, turn.session_id)
     user_content = _user_content(session, turn)
@@ -748,33 +801,48 @@ def _budget_for_turn(session_factory, turn_id: uuid.UUID, settings: Settings) ->
         )
 
 
-def _fail_turn(session_factory, turn_id: uuid.UUID, *, code: str, message: str) -> str:
+def _fail_turn(session_factory, turn_id: uuid.UUID, *, code: str, message: str,
+               checkpoint_version: int | None = None, claim: queue_repo.TurnClaim | None = None) -> str:
     with session_factory() as session:
         turn = conversation_repo.get_turn_for_update(session, turn_id)
+        if turn is not None and (
+            turn.status in TERMINAL_CONVERSATION_TURN_STATUSES
+            or (checkpoint_version is not None and (
+                turn.status != ConversationTurnStatus.RESOLVING
+                or int(turn.checkpoint_version) != checkpoint_version
+            ))
+        ):
+            return str(turn.status)
+        if turn is not None and claim is not None and queue_repo.lock_turn_claim(session, claim) is None:
+            return str(turn.status)
         if turn is not None and turn.status not in TERMINAL_CONVERSATION_TURN_STATUSES:
             _fail(session, turn, code=code, message=message)
         session.commit()
     return "FAILED"
 
 
-def run_turn(session_factory, *, turn_id: uuid.UUID, settings: Settings) -> str:
+def run_turn(session_factory, *, turn_id: uuid.UUID, settings: Settings,
+             claim: queue_repo.TurnClaim | None = None) -> str:
     """The worker entry point: three phases, two short transactions.
 
     Nothing holds a row lock while the model answers, so a cancel stays
     responsive and a crash cannot leave the turn locked.
     """
     with session_factory() as session:
-        preparation = _prepare_turn(session, turn_id=turn_id, settings=settings)
+        preparation = _prepare_turn(session, turn_id=turn_id, settings=settings, claim=claim)
         session.commit()
     if isinstance(preparation, str):
         return preparation
 
-    budget = _budget_for_turn(session_factory, turn_id, settings)
+    budget = getattr(preparation, "budget", None) or _budget_for_turn(session_factory, turn_id, settings)
+    checkpoint_version = getattr(preparation, "checkpoint_version", None)
     try:
         resolution = _decide_turn(preparation, settings=settings, budget=budget)
     except intent_layer.IntentUnavailable as exc:
         return _fail_turn(
-            session_factory, turn_id, code=ErrorCode.LLM_UNAVAILABLE, message=str(exc)
+            session_factory, turn_id, code=ErrorCode.LLM_UNAVAILABLE, message=str(exc),
+            checkpoint_version=checkpoint_version,
+            claim=claim,
         )
     except BudgetExceeded as exc:
         return _fail_turn(
@@ -782,6 +850,8 @@ def run_turn(session_factory, *, turn_id: uuid.UUID, settings: Settings) -> str:
             turn_id,
             code=ErrorCode.EXECUTION_ERROR,
             message=intent_layer.budget_error(exc),
+            checkpoint_version=checkpoint_version,
+            claim=claim,
         )
 
     try:
@@ -794,6 +864,8 @@ def run_turn(session_factory, *, turn_id: uuid.UUID, settings: Settings) -> str:
         return _fail_turn(
             session_factory, turn_id, code=ErrorCode.EXECUTION_ERROR,
             message=intent_layer.budget_error(exc),
+            checkpoint_version=checkpoint_version,
+            claim=claim,
         )
     return status
 

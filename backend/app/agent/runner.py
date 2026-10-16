@@ -24,7 +24,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 
 from app.agent.budget import AnalysisBudget, BudgetExceeded
-from app.agent.llm import resolve_provider
+from app.agent.llm import provider_failure_message, resolve_provider
 from app.agent.memory import planner_brief
 from app.agent.planner import (
     InvestigationPlan,
@@ -95,10 +95,10 @@ def _call_provider(provider, *, task, messages, schema, budget, max_output_token
             budget=budget,
             max_output_tokens=max_output_tokens,
         )
+    except BudgetExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001 - reported, never swallowed
-        raise LLMUnavailable(
-            f"model endpoint {type(exc).__name__}: {str(exc)[:200]}"
-        ) from exc
+        raise LLMUnavailable(provider_failure_message(exc)) from exc
 
 
 def _event(session, task, event_type: str, **payload) -> None:

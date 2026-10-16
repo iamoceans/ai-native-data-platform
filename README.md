@@ -228,6 +228,11 @@ Unconfirmed retry keys also survive page reload in the same tab through
 clear the saved key; disabled browser storage falls back to page-memory recovery.
 Child analyses receive the exact remaining turn allowance, without minimum-token
 top-ups; an exhausted allowance closes the turn before an analysis is queued.
+Worker restarts conservatively charge unknown in-flight requests; current queue
+ownership and preparation checkpoints prevent stale replies/errors from changing
+a replacement attempt. Offline intent resolution reserves no model quota.
+Invalid model dates ask for clarification, and provider errors expose only their
+class/status rather than arbitrary upstream text.
 
 The second 2026-10-15 review also fixes driver-error skipping, driver percent
 escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock

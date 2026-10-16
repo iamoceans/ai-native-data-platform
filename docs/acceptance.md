@@ -2563,3 +2563,46 @@ account isolation, success cleanup, malformed storage and blocked storage.
 The exhausted-turn orchestration case uses a mocked session factory, not a live
 database. No migration, deployed-service restart, full engine/browser matrix,
 A09 or additional real-model call was performed in this follow-up.
+
+## Further review — restart accounting, worker ownership and model failures
+
+The next review confirmed and fixed four related defect classes:
+
+- Orphaned intent reservations are charged as conservative token/physical-call
+  consumption before another attempt. A subsequent successful call cannot erase
+  unknown prior spend. Legacy token-only reservations assume up to two physical
+  requests. Actual multi-request usage is settled atomically against all caps.
+  Current reservations are released only in the local preparation snapshot;
+  persisted crash accounting remains intact. Offline intent resolution reserves
+  no model tokens/calls, and budget refusals are no longer swallowed or relabeled
+  as endpoint failures.
+- Prepare/apply/failure validate the worker's current, unexpired queue claim under
+  the turn-first lock order. The worker now passes that claim into orchestration.
+  Preparation extends the lease to cover two model timeouts plus margin and
+  increments the existing checkpoint; the returned budget snapshot belongs to
+  that preparation. Old successes and failures cannot mutate a newer checkpoint,
+  an ANALYZING/terminal turn or replacement queue ownership, including before a
+  replacement worker has prepared. No network call holds these locks.
+- Relative-date proposals are validated before date arithmetic. Invalid dates
+  become missing pending-scope fields rather than exceptions or silent reuse of
+  confirmed dates. The confirmed scope remains intact; explicit valid UI values
+  still win.
+- Intent and analysis failures expose exception class and optional HTTP status;
+  arbitrary upstream exception text no longer enters user-facing error records.
+
+Final validation: backend unit/security/contract suite **664 passed** (two existing
+dependency deprecation warnings); complete affected PostgreSQL conversation
+integration suite **14 passed** (15.77 s, two existing warnings). The real-service
+run created separate control/source databases and private ignored credentials
+under `runtime/review-turns/`; existing databases and deployed processes were not
+modified. Evidence: `runtime/review-turns/integration-final.log`. The suite covers
+restart spend, late success/failure, queue takeover before replacement preparation,
+lease extension, exhaustion after lost calls, offline budgets, invalid-date
+clarification and the existing inheritance/cancellation/evidence/SSE flows.
+Providers are scripted fixtures: these results do not establish real-model A09.
+
+An initial integration run reported **12 passed / 1 failed** because a new assertion
+read a pending-clarification field not exposed by the session DTO. It was corrected
+to inspect the actual clarification message; the final run above also includes
+the added queue-fence case. Frontend code, migrations and API schemas were not
+changed; no frontend/full-engine/A09 acceptance was rerun in this backend round.

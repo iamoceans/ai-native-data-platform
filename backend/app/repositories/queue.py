@@ -703,6 +703,19 @@ def release_turn_claim(
     return True
 
 
+def lock_turn_claim(session: Session, claim: TurnClaim) -> TaskQueue | None:
+    """Lock after the turn row; reject expired or superseded worker ownership."""
+    row = session.execute(
+        select(TaskQueue).where(TaskQueue.id == claim.queue_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if (row is None or row.state != QueueState.LEASED
+            or row.worker_id != claim.worker_id or int(row.fencing_token) != claim.fencing_token
+            or row.lease_until is None or row.lease_until <= utcnow()):
+        return None
+    return row
+
+
 def _lock_stale_resource(
     session: Session, candidate: TaskQueue, model: type[_Resource]
 ) -> tuple[_Resource | None, TaskQueue | None]:

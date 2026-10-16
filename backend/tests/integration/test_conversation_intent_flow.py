@@ -380,3 +380,143 @@ def test_turn_budget_is_persisted_with_a_utc_deadline(env):
     assert budget["model_calls"] >= 1
     assert budget["input_tokens"] > 0
     assert INTENT_PROMPT_VERSION in " ".join(budget["history"])
+
+
+def test_reclaimed_attempt_keeps_lost_cost_and_fences_old_success_and_failure(env):
+    from app.db import get_session_factory
+    from app.agent.conversation.intent import ConversationDecision
+    client, settings = env, get_settings()
+    sid = _session(client)
+    tid = uuid.UUID(_turn(client, sid, "retry a lost worker", "lost-worker").json()["id"])
+    factory = get_session_factory()
+    with factory() as db:
+        first = orchestrator._prepare_turn(db, turn_id=tid, settings=settings)
+        db.commit()
+    first_charge = first.budget.as_dict()
+    with factory() as db:
+        second = orchestrator._prepare_turn(db, turn_id=tid, settings=settings)
+        db.commit()
+    assert second.checkpoint_version > first.checkpoint_version
+    assert second.budget.input_tokens == first_charge["reserved_input"]
+    assert second.budget.output_tokens == first_charge["reserved_output"]
+    assert second.budget.model_calls == first_charge["reserved_model_calls"] == 2
+    old_reply = orchestrator.TurnResolution(ConversationDecision(intent="help"), {}, [])
+    with factory() as db:
+        assert orchestrator._apply_turn(db, first, old_reply, settings=settings, budget=first.budget) == "RESOLVING"
+        db.commit()
+    assert orchestrator._fail_turn(factory, tid, code="LLM_UNAVAILABLE", message="old failure",
+                                   checkpoint_version=first.checkpoint_version) == "RESOLVING"
+    assert len(client.get(f"/api/v1/sessions/{sid}/messages").json()["items"]) == 1
+    client.scripted.append({"intent": "help"})
+    reply = orchestrator._decide_turn(second, settings=settings, budget=second.budget)
+    with factory() as db:
+        assert orchestrator._apply_turn(db, second, reply, settings=settings, budget=second.budget) == "COMPLETED"
+        db.commit()
+    with factory() as db:
+        settled = conversation_repo.get_turn(db, tid)
+        assert settled.budget["input_tokens"] > first_charge["reserved_input"]
+        assert settled.budget["output_tokens"] > first_charge["reserved_output"]
+        assert settled.budget["model_calls"] == 3
+        assert settled.budget["reserved_model_calls"] == 0
+    messages = client.get(f"/api/v1/sessions/{sid}/messages").json()["items"]
+    assert [row["role"] for row in messages] == ["user", "assistant"]
+
+
+def test_restarts_stop_when_lost_physical_call_allowance_is_exhausted(env):
+    from app.db import get_session_factory
+    from app.agent.conversation.budget import TurnBudget
+    settings = get_settings()
+    sid = _session(env)
+    tid = uuid.UUID(_turn(env, sid, "exhausted recovery", "lost-budget").json()["id"])
+    factory = get_session_factory()
+    with factory() as db:
+        row = conversation_repo.get_turn_for_update(db, tid)
+        budget = TurnBudget.start(settings)
+        budget.max_model_calls = 2
+        row.budget = budget.as_dict()
+        first = orchestrator._prepare_turn(db, turn_id=tid, settings=settings)
+        db.commit()
+    assert first.budget.reserved_model_calls == 2
+    assert orchestrator.run_turn(factory, turn_id=tid, settings=settings) == "FAILED"
+    with factory() as db:
+        row = conversation_repo.get_turn(db, tid)
+        assert row.budget["model_calls"] == 2
+        assert row.error["code"] == "EXECUTION_ERROR"
+        assert "model_calls" in row.error["message"]
+        assert conversation_repo.analysis_for_turn(db, tid) is None
+
+
+def test_offline_intent_does_not_reserve_model_allowances(env, monkeypatch):
+    from app.db import get_session_factory
+    client = env
+    monkeypatch.setattr(orchestrator, "resolve_provider", lambda *args: ProviderResolution(provider=None))
+    sid = _session(client)
+    tid = uuid.UUID(_turn(client, sid, "offline scoped question", "offline-budget", scope_patch=SCOPE).json()["id"])
+    assert orchestrator.run_turn(get_session_factory(), turn_id=tid, settings=get_settings()) == "ANALYZING"
+    with session_scope() as db:
+        row = conversation_repo.get_turn(db, tid)
+        assert row.budget["input_tokens"] == row.budget["reserved_input"] == 0
+        assert row.budget["output_tokens"] == row.budget["reserved_output"] == 0
+        assert row.budget["model_calls"] == row.budget["reserved_model_calls"] == 0
+        child = conversation_repo.analysis_for_turn(db, tid)
+        assert child.budget["max_input_tokens"] == row.budget["max_input_tokens"]
+        assert child.budget["max_output_tokens"] == row.budget["max_output_tokens"]
+
+
+def test_invalid_relative_model_date_clarifies_instead_of_crashing_or_reusing_old_dates(env):
+    from app.agent.conversation import context
+    from app.db import get_session_factory
+    from app.repositories import analyses
+    sid = _session(env)
+    with session_scope() as db:
+        row = analyses.get_session_for_update(db, uuid.UUID(sid))
+        analyses.update_session_scope(db, row, resolved_context=context.merge_scope_patch({}, SCOPE))
+    env.scripted.append({"intent": "analyze", "scope_patch": {
+        "comparison": "previous_period", "current_start": "2026-99-01", "current_end": "2026-09-15"}})
+    tid = uuid.UUID(_turn(env, sid, "invalid relative period", "invalid-relative").json()["id"])
+    assert orchestrator.run_turn(get_session_factory(), turn_id=tid, settings=get_settings()) == "WAITING_INPUT"
+    with session_scope() as db:
+        assert conversation_repo.analysis_for_turn(db, tid) is None
+    detail = env.get(f"/api/v1/sessions/{sid}").json()
+    messages = env.get(f"/api/v1/sessions/{sid}/messages").json()["items"]
+    assert "current_start" in messages[-1]["content"]["missing"]
+    assert detail["resolved_context"]["current_start"] == SCOPE["current_start"]
+
+
+def test_expired_claim_cannot_publish_before_its_replacement_prepares(env):
+    from datetime import timedelta
+    from app.db import get_session_factory
+    from app.ids import utcnow
+    from app.models.orm import TaskQueue
+    from app.agent.conversation.intent import ConversationDecision
+    settings, factory = get_settings(), get_session_factory()
+    sid = _session(env)
+    tid = uuid.UUID(_turn(env, sid, "claim ownership", "claim-fence").json()["id"])
+    with factory() as db:
+        first_claim = queue_repo.claim_next_turn(db, worker_id="old-worker", settings=settings)
+        db.commit()
+    with factory() as db:
+        first = orchestrator._prepare_turn(db, turn_id=tid, settings=settings, claim=first_claim)
+        lease = db.get(TaskQueue, first_claim.queue_id)
+        assert (lease.lease_until - utcnow()).total_seconds() > settings.llm_timeout_seconds * 2
+        lease.lease_until = utcnow() - timedelta(seconds=1)
+        db.commit()
+    reply = orchestrator.TurnResolution(ConversationDecision(intent="help"), {}, [])
+    with factory() as db:
+        assert orchestrator._apply_turn(db, first, reply, settings=settings, budget=first.budget) == "RESOLVING"
+        db.commit()
+    with factory() as db:
+        queue_repo.requeue_stale_turns(db)
+        replacement = queue_repo.claim_next_turn(db, worker_id="new-worker", settings=settings)
+        db.commit()
+    assert replacement.fencing_token > first_claim.fencing_token
+    # No newer preparation/checkpoint exists yet: the queue fence must protect it.
+    assert orchestrator._fail_turn(factory, tid, code="LLM_UNAVAILABLE", message="old error",
+        checkpoint_version=first.checkpoint_version, claim=first_claim) == "RESOLVING"
+    with factory() as db:
+        assert orchestrator._prepare_turn(db, turn_id=tid, settings=settings, claim=first_claim) == "RESOLVING"
+        current = conversation_repo.get_turn(db, tid)
+        assert current.checkpoint_version == first.checkpoint_version
+        assert current.error is None and current.budget["model_calls"] == 0
+        db.commit()
+    assert len(env.get(f"/api/v1/sessions/{sid}/messages").json()["items"]) == 1

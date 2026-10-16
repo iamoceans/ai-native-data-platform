@@ -159,3 +159,36 @@ def test_exhaustion_after_intent_settles_the_turn_without_publishing_an_analysis
     assert decide.call_count == 1
     create.assert_not_called()
     assert "output_tokens" in fail.call_args.kwargs["message"]
+
+
+def test_restart_charges_unknown_attempt_before_a_later_success():
+    settings = Settings(_env_file=None)
+    budget = TurnBudget.start(settings)
+    budget.reserve_model_call(estimated_input=3000, max_output=1400, model_calls=2)
+    restored = TurnBudget.from_turn(make_turn(budget=budget.as_dict()), settings)
+    restored.spend_without_usage(note="lost_intent_attempt")
+    restored.reserve_model_call(estimated_input=2000, max_output=1400, model_calls=2)
+    persisted = restored.as_dict()
+    restored.release_reservation()
+    restored.record_model_usage(input_tokens=100, output_tokens=20)
+    assert (restored.input_tokens, restored.output_tokens, restored.model_calls) == (3100, 1420, 3)
+    assert persisted["reserved_input"] == 2000 and persisted["reserved_model_calls"] == 2
+    assert restored.analysis_sub_budget(settings)["max_input_tokens"] == settings.agent_max_input_tokens - 3100
+
+
+def test_legacy_lost_reservation_is_charged_conservatively():
+    settings = Settings(_env_file=None)
+    old = TurnBudget.start(settings).as_dict()
+    old.pop("reserved_model_calls")
+    old.update(reserved_input=500, reserved_output=700)
+    restored = TurnBudget.from_turn(make_turn(budget=old), settings)
+    restored.spend_without_usage(note="legacy_lost_attempt")
+    assert (restored.input_tokens, restored.output_tokens, restored.model_calls) == (500, 700, 2)
+
+
+def test_physical_call_overrun_rejects_entire_settlement():
+    budget = TurnBudget.start(Settings(_env_file=None, agent_max_tool_calls=1))
+    before = budget.as_dict()
+    with pytest.raises(BudgetExceeded, match="model_calls"):
+        budget.record_model_usage(input_tokens=10, output_tokens=5, model_calls=2)
+    assert budget.as_dict() == before

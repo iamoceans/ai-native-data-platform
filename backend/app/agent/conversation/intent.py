@@ -29,6 +29,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.budget import BudgetExceeded
+from app.agent.llm import provider_failure_message
 from app.agent.memory import statement_violations
 from app.constants import ErrorCode
 
@@ -192,8 +193,11 @@ def resolve_relative_periods(decision: ConversationDecision, *, now: date) -> li
         return []
     if patch.baseline_start and patch.baseline_end:
         return []
-    start = date.fromisoformat(patch.current_start)
-    end = date.fromisoformat(patch.current_end)
+    valid_start, valid_end = _valid_date(patch.current_start), _valid_date(patch.current_end)
+    if valid_start is None or valid_end is None:
+        return []  # validate_patch records the invalid fields for clarification.
+    start = date.fromisoformat(valid_start)
+    end = date.fromisoformat(valid_end)
     span = (end - start).days
     if span <= 0:
         return []
@@ -300,17 +304,17 @@ def call_model(
             budget=budget,
             max_output_tokens=max_output_tokens,
         )
+    except BudgetExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001 - reported as a typed failure
-        raise IntentUnavailable(
-            f"model endpoint {type(exc).__name__}: {str(exc)[:200]}"
-        ) from exc
+        raise IntentUnavailable(provider_failure_message(exc)) from exc
     usage = getattr(generated, "usage", None)
     budget.record_model_usage(
         input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
         output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
         note=f"intent:{PROMPT_VERSION}",
+        model_calls=max(1, int(getattr(generated, "model_calls", 1))),
     )
-    budget.model_calls += int(getattr(generated, "model_calls", 1)) - 1
     return parse_decision(generated.value)
 
 

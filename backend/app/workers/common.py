@@ -130,7 +130,7 @@ def run_reconciler_loop(settings: Settings | None = None, stop: StopFlag | None 
                     # The orchestrator owns its transactions: the model call runs
                     # outside them so a cancel is never blocked behind it.
                     status = conversation_orchestrator.run_turn(
-                        get_session_factory(), turn_id=turn_claim.turn_id, settings=settings
+                        get_session_factory(), turn_id=turn_claim.turn_id, settings=settings, claim=turn_claim
                     )
                     with session_scope() as session:
                         queue_repo.release_turn_claim(

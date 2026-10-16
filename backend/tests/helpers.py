@@ -322,7 +322,7 @@ def drain_conversations(max_cycles: int = 20, worker_id: str | None = None) -> i
             from app.db import get_session_factory
 
             status = orchestrator.run_turn(
-                get_session_factory(), turn_id=claim.turn_id, settings=settings
+                get_session_factory(), turn_id=claim.turn_id, settings=settings, claim=claim
             )
             with session_scope() as session:
                 queue_repo.release_turn_claim(
