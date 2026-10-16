@@ -74,6 +74,35 @@ class ProfileResponse(BaseModel):
     username: str
     roles: list[str]
     capabilities: list[str]
+    display_name: str = ""
+    locale: Literal["zh-CN", "en"] | None = None
+    timezone: str | None = None
+    settings_version: int = 1
+
+
+class ProfileUpdate(StrictModel):
+    expected_settings_version: int = Field(ge=1)
+    display_name: str = Field(default="", max_length=80)
+    locale: Literal["zh-CN", "en"] | None = None
+    timezone: str | None = Field(default=None, max_length=128)
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, value: str) -> str:
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("display_name must not contain control characters")
+        return value.strip()
+
+    @field_validator("timezone")
+    @classmethod
+    def known_timezone(cls, value: str | None) -> str | None:
+        if value is not None:
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError("timezone must be a valid IANA timezone") from exc
+        return value
 
 
 class LoginResponse(BaseModel):

@@ -1,0 +1,33 @@
+# Standalone RPC-race fixture; embedded metastore, no platform or HMS dependency.
+# Only intended for the transport regression, not source authorization/lineage.
+name: ainative-spark-cancel-test
+services:
+  spark-thrift:
+    image: apache/spark:3.5.3
+    user: root
+    ports:
+      - "127.0.0.1:11000:10000"
+    volumes:
+      - ./cancel-test-hive-site.xml:/opt/spark/conf/hive-site.xml:ro
+    entrypoint: /opt/spark/bin/spark-submit
+    command:
+      - --class
+      - org.apache.spark.sql.hive.thriftserver.HiveThriftServer2
+      - --master
+      - local[2]
+      - --name
+      - cancellation-transport-regression
+      - --driver-memory
+      - 1g
+      - --conf
+      - spark.ui.enabled=false
+      - --conf
+      - spark.sql.thriftServer.interruptOnCancel=true
+      - --conf
+      - spark.sql.thriftServer.queryTimeout=60s
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000' 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s

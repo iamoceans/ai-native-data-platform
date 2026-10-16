@@ -97,7 +97,7 @@ test("mobile scope is a modal with Escape, focus return and preserved drafts", a
   await page.setViewportSize({ width: 844, height: 390 });
   await expect(page.getByTestId("scope-current-start")).toBeVisible();
   await expect(page.getByTestId("scope-current-start")).toHaveValue("2026-10-01");
-  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
   expect(errors).toEqual([]);
 });
 

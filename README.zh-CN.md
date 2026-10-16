@@ -8,7 +8,7 @@
 
 - **Spark/Hive 预览**：已接入共用 Hive Metastore 的 Spark Thrift 查询适配器和 DataHub HMS 元数据配方；连接器路径、取消与 120 秒超时路径已于 2026-09-28/29 在真实的 Spark/Hive 服务上验收（注册、目录刷新、授权、查询、单一 Hive URN 映射、取消记为 `CANCELLED`、超时记为 `TIMED_OUT`）；Spark 作业血缘、只读源授权与浏览器 E2E 尚待验收。见 [操作手册](docs/runbook.md#spark--hive-shared-metastore-preview)。
 - **已交付**：M0–M6，以及 2026-10-13 的对话式 Ask 与技能包（真实模型多轮对话 + 全量回归验收，见 [docs/acceptance.md](docs/acceptance.md)）。真实模型评测（A09）于 2026-09-27 通过 —— DeepSeek 上十个固定用例，目标格进入 Top-3 贡献者 **7/7**，无目标用例 **3/3** 未被强行归因，证据一致 **10/10**。
-- **仍然开放**：规格里的 `/datasets/:id` 深链由目录详情面板承担，没有独立路由；分析步骤目前由规则扩展，尚未实现让模型自己选择步骤与工具。
+- **仍然开放**：分析步骤目前由规则扩展，尚未实现让模型自己选择步骤与工具。
 - 逐阶段清单与执行过的证据在 [docs/todo.md](docs/todo.md) 与 [docs/acceptance.md](docs/acceptance.md)；未执行的项一律标注 `not executed`，从不计入通过。
 
 ## 它能做什么
@@ -128,7 +128,7 @@ compose.yaml  core 与 full profile；compose.dev.yaml 负责发布 DB 端口
 
 - 分析器按规则扩展计划；让模型自己选步骤、在工具间迭代尚未实现。
 - 规划回复在本地按闭合 schema 校验，校验不通过会让那一次分析直接失败并告警 —— 没有格式修复循环，只有 SQL 修复预算。
-- 规格里的 `/datasets/:id` 深链由目录详情面板承担；shared/dashboard 屏幕不在 V1 规格内，也没有被发明出来。
+- `/datasets/:id` 已支持独立深链；shared/dashboard 屏幕仍不在 V1 范围内。
 - Doris 只支持本地单 BE 画像；多 BE 拓扑、workload group 与外部 catalog 属于 V1 范围外。
 - DataHub 开启认证的模式未验证（pinned quickstart 关掉了 GMS 认证），profiling 在 recipes 里按策略禁用；列级血缘不在范围内。
 - 仅本地 HTTP 部署，回环绑定是补偿控制（TLS 之后应设 `AIND_COOKIE_SECURE=true`）；登录限流与 SSE 轮询是单进程实现，多 API 副本需要先做共享存储与 fan-out。
@@ -151,3 +151,13 @@ compose.yaml  core 与 full profile；compose.dev.yaml 负责发布 DB 端口
 ## 许可
 
 Apache License 2.0，见 [LICENSE](LICENSE)。第三方组件（PostgreSQL、MySQL、Doris、DataHub，以及 `backend/uv.lock` 与 `frontend/package-lock.json` 中 pin 的依赖）各自保留其许可证。
+
+## 个人设置与会话历史
+
+账户入口的“个人设置”（`/settings`，`/profile` 会跳转）支持显示名称、
+界面语言和 IANA 时区，偏好按用户存储并在换设备登录后恢复。时区仅改变
+时间显示，不改变分析期间。旧版本提交会提示冲突并保留草稿，角色和权限只读；
+密码修改仍通过 CLI 完成。登录前语言选择保留在浏览器，登录后以账户偏好为准。
+
+会话侧栏每次加载 20 条，可点击“加载更多会话”；会话内消息另有向前加载历史的
+分页入口。升级须先执行 `alembic upgrade head`，应用迁移 `d2e6a9f18c40`。

@@ -2,6 +2,7 @@
 
 import { apiFetch, apiUpload, setCsrfToken } from "./client";
 import type { components } from "./schema";
+import { applyAccountPreferences, notifyAccountPreferences, resetAccountPreferences } from "../i18n";
 
 export type Profile = components["schemas"]["ProfileResponse"];
 export type LoginResponse = components["schemas"]["LoginResponse"];
@@ -20,22 +21,39 @@ export type AnalysisMemoryResponse = components["schemas"]["AnalysisMemoryRespon
 export type AnalysisDetail = components["schemas"]["AnalysisDetail"];
 export type AnalysisListResponse = components["schemas"]["AnalysisListResponse"];
 
+function notifyAuthenticationChange() {
+  try { localStorage.setItem("ainative.auth-change", crypto.randomUUID()); } catch { /* optional cross-tab notification */ }
+}
+
 export async function login(username: string, password: string): Promise<Profile> {
   const response = await apiFetch<LoginResponse>("/api/v1/auth/login", {
     method: "POST",
     body: { username, password },
   });
   setCsrfToken(response.csrf_token);
+  if (response.profile.id) applyAccountPreferences(response.profile);
+  notifyAuthenticationChange();
   return response.profile;
 }
 
 export async function logout(): Promise<void> {
   await apiFetch<void>("/api/v1/auth/logout", { method: "POST" });
   setCsrfToken(null);
+  resetAccountPreferences();
+  notifyAuthenticationChange();
 }
 
 export async function me(): Promise<Profile> {
   return apiFetch<Profile>("/api/v1/auth/me");
+}
+
+// OpenAPI's default-valued display_name is optional on PATCH, even though the
+// generator treats non-null defaults as required properties.
+export async function updateProfile(patch: Omit<components["schemas"]["ProfileUpdate"], "display_name"> & { display_name?: string }): Promise<Profile> {
+  const profile = await apiFetch<Profile>("/api/v1/auth/me", { method: "PATCH", body: patch });
+  applyAccountPreferences(profile);
+  notifyAccountPreferences(profile.id);
+  return profile;
 }
 
 export async function listDatasources(): Promise<Datasource[]> {
@@ -613,14 +631,18 @@ export interface TurnDetail {
   finished_at: string | null;
 }
 
-export async function listSessions(includeArchived = false): Promise<SessionSummary[]> {
+export async function listSessionPage(includeArchived = false, cursor?: string): Promise<{ items: SessionSummary[]; next_cursor?: string | null }> {
   const params = new URLSearchParams();
   if (includeArchived) params.set("include_archived", "true");
+  if (cursor) params.set("cursor", cursor);
   const query = params.toString();
-  const response = await apiFetch<{ items: SessionSummary[] }>(
+  return apiFetch(
     `/api/v1/sessions${query ? `?${query}` : ""}`,
   );
-  return response.items;
+}
+
+export async function listSessions(includeArchived = false): Promise<SessionSummary[]> {
+  return (await listSessionPage(includeArchived)).items;
 }
 
 export async function getSession(sessionId: string): Promise<SessionDetail> {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -96,6 +97,7 @@ def test_spark_provider_uses_thrift_metadata_and_streams_rows(monkeypatch) -> No
 
         def execute_async(self, sql):
             self.sql = sql
+            self._last_operation = SimpleNamespace(handle="test-operation")
 
         def is_executing(self):
             return False
@@ -114,6 +116,12 @@ def test_spark_provider_uses_thrift_metadata_and_streams_rows(monkeypatch) -> No
     class Connection:
         def __init__(self):
             self.last_cursor = None
+            self.service = SimpleNamespace(_rpc=self.rpc)
+
+        def rpc(self, method, request, safe_to_retry):
+            assert method == "CancelOperation" and safe_to_retry is True
+            assert request.operationHandle == "test-operation"
+            self.last_cursor.cancelled = True
 
         def cursor(self):
             self.last_cursor = Cursor()
@@ -259,3 +267,35 @@ def test_spark_server_timeout_state_is_a_timeout(monkeypatch):
     with pytest.raises(SparkOperationTimedOut) as caught:
         list(provider.execute(handle, query))
     assert provider.classify_execution_error(caught.value) == "timeout"
+
+
+def test_spark_cancel_uses_a_different_transport_and_always_closes_it(monkeypatch):
+    query = ValidatedQuery(query_id=uuid.uuid4(), sql='SELECT 1', parameters={}, dataset_ids=(),
+        schema_hashes={}, policy_revision=1, max_rows=3, max_bytes=1000, timeout_seconds=5)
+    calls = []
+    class Control:
+        closed = False
+        service = SimpleNamespace(_rpc=lambda method, request, safe: calls.append((method, request.operationHandle, safe)))
+        def close(self): self.closed = True
+    control = Control()
+    provider = SparkProvider(connection_config=_datasource().connection_config, credentials=ProviderCredentials('reader', ''))
+    monkeypatch.setattr(provider, '_connect', lambda **kwargs: control)
+    cursor = SimpleNamespace(_last_operation=SimpleNamespace(handle='opaque-operation'))
+    from app.providers.base import ExecutionHandle
+    handle = ExecutionHandle(query_id=query.query_id, dialect='spark', worker_id='', fencing_token=0, native={'cursor': cursor})
+    assert provider.cancel(handle).detail == 'Spark cancel requested'
+    assert calls == [('CancelOperation', 'opaque-operation', True)]
+    assert handle.native['cursor'] is cursor and control.closed
+    control.closed = False
+    def fail(*args): raise RuntimeError('endpoint unavailable')
+    control.service = SimpleNamespace(_rpc=fail)
+    assert 'Spark cancel failed' in provider.cancel(handle).detail
+    assert control.closed
+
+
+def test_spark_cancel_before_publication_never_submits_the_query(monkeypatch):
+    cursor = SimpleNamespace()
+    provider, query, handle = _cancelled_cursor_provider(monkeypatch, cursor)
+    assert provider.cancel(handle).detail == 'no Spark operation'
+    with pytest.raises(SparkOperationCancelled, match='before submission'):
+        list(provider.execute(handle, query))

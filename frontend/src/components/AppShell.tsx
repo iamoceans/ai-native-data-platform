@@ -1,14 +1,39 @@
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { t, useLocale } from "../i18n";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { applyAccountPreferences, t, useLocale } from "../i18n";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { logout, me } from "../api/endpoints";
+import { logout, me, updateProfile } from "../api/endpoints";
+import { ErrorMessage } from "./ErrorMessage";
 
 export function AppShell() {
   useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
+  useEffect(() => {
+    if (profile.data?.id) applyAccountPreferences(profile.data);
+  }, [profile.data]);
+  useEffect(() => {
+    const refresh = () => { queryClient.invalidateQueries({ queryKey: ["me"] }); };
+    window.addEventListener("account-preferences-changed", refresh);
+    return () => window.removeEventListener("account-preferences-changed", refresh);
+  }, [queryClient]);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === "ainative.auth-change") {
+        queryClient.clear();
+        window.location.reload();
+      }
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, [queryClient]);
+  const language = useMutation({
+    mutationFn: (locale: "zh-CN" | "en") => updateProfile({ locale, expected_settings_version: profile.data!.settings_version ?? 1 }),
+    onSuccess: updated => queryClient.setQueryData(["me"], updated),
+    onError: () => { queryClient.invalidateQueries({ queryKey: ["me"] }); },
+  });
 
   if (profile.isError) {
     return (
@@ -98,12 +123,12 @@ export function AppShell() {
           ) : null}
         </nav>
         <div className="topbar-right">
-          <LanguageSwitcher />
+          <LanguageSwitcher onChange={profile.data?.id ? locale => language.mutate(locale) : undefined} disabled={language.isPending} />
           {profile.data ? (
             <>
-              <span className="muted small">
-                {profile.data.username} · {profile.data.roles.join(", ")}
-              </span>
+              <NavLink to="/settings" data-testid="nav-settings">
+                {profile.data.display_name || profile.data.username} · {t("个人设置")}
+              </NavLink>
               <button
                 className="ghost"
                 onClick={async () => {
@@ -123,6 +148,7 @@ export function AppShell() {
           )}
         </div>
       </header>
+      {language.isError ? <p className="notice error" role="alert"><ErrorMessage error={language.error} /></p> : null}
       <main className="page">
         <Outlet />
       </main>

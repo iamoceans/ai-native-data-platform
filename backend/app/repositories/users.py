@@ -16,6 +16,21 @@ def get_user(session: Session, user_id: uuid.UUID) -> User | None:
     return session.get(User, user_id)
 
 
+def get_user_for_update(session: Session, user_id: uuid.UUID) -> User | None:
+    return session.execute(
+        select(User).where(User.id == user_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def update_profile(session: Session, user: User, changes: dict) -> None:
+    for name in ("display_name", "locale", "timezone"):
+        if name in changes:
+            setattr(user, name, changes[name])
+    user.settings_version += 1
+    session.flush()
+
+
 def get_user_by_username(session: Session, username: str) -> User | None:
     return session.execute(select(User).where(User.username == username)).scalar_one_or_none()
 

@@ -125,6 +125,10 @@ test('allows typing a complete filter, rejects malformed input, and clears expli
  await page.getByTestId('conversation-send').click();
  await expect.poll(() => turns.length).toBe(1);
  expect(turns[0].scope_patch.filters).toEqual({ platform:'android' });
+ // Request capture precedes the response and the fixture's asynchronous turn
+ // completion. Wait for that confirmed scope before composing the next turn.
+ await expect(page.getByTestId('scope-current-start')).toHaveValue('2026-09-15');
+ await expect(page.getByTestId('conversation-input')).toBeEnabled();
  await page.getByTestId('conversation-input').fill('bad filter');
  await expect(page.getByTestId('conversation-send')).toBeEnabled();
  await filters.fill('platform=');

@@ -134,3 +134,19 @@ downgraded. MySQL/Doris execution sockets have finite read/write timeouts at the
 query timeout plus five seconds; other connections use the default timeout plus
 five seconds. These controls were regression-tested without live engines on
 2026-10-15; deployment acceptance remains pending.
+
+Account settings (2026-10-16): PATCH `/auth/me` derives its target solely from
+the authenticated user, requires CSRF and a matching persisted settings version,
+and forbids identity, role, capability or password fields. Display name is bounded
+plain text rendered by React; language and IANA timezone are validated. Audits
+record changed field names. Account settings persist on the server; browser storage
+contains only the guest locale and cross-tab notification markers. These markers
+authorize nothing. Other workspace tabs clear caches/reload on authentication
+changes. Timezone preferences affect display only, not query permissions or period
+interpretation. Real PostgreSQL and browser tests verify isolation and stale saves.
+
+The 2026-10-16 live protocol tests supersede the older pending note for PostgreSQL
+TLS negotiation and MySQL/Doris greeting stalls. They do not establish a deployed
+Doris server acceptance. Spark cancellation now uses a separate HS2 connection,
+verified against real Spark 3.5.3; secure Spark authentication/TLS and read-only
+authorization remain unverified.

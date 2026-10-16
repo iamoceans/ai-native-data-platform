@@ -17,7 +17,7 @@ import {
   listMetrics,
   listSessionMessagePage,
   retryTurn,
-  listSessions,
+  listSessionPage,
   listSkills,
   patchSession,
   type ConversationMessage,
@@ -88,9 +88,11 @@ export function AskPage() {
     queryKey: ["skills"],
     queryFn: () => listSkills(false),
   });
-  const sessions = useQuery({
+  const sessions = useInfiniteQuery({
     queryKey: ["sessions"],
-    queryFn: () => listSessions(false),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => listSessionPage(false, pageParam),
+    getNextPageParam: page => page.next_cursor || undefined,
   });
 
   // The session query polls while a turn is active: without it a missed SSE
@@ -445,7 +447,13 @@ export function AskPage() {
   return (
     <div className="conversation">
       <SessionList
-        sessions={sessions.data ?? []}
+        sessions={[...new Map((sessions.data?.pages.flatMap(page => page.items) ?? []).map(item => [item.id, item])).values()]}
+        hasMore={sessions.hasNextPage}
+        loadingMore={sessions.isFetchingNextPage}
+        loading={sessions.isPending}
+        loadError={sessions.error}
+        onLoadMore={() => sessions.fetchNextPage()}
+        onReload={() => sessions.refetch()}
         currentId={sessionId}
         onCreate={() => newConversation.mutate()}
         onSelect={(id) => {

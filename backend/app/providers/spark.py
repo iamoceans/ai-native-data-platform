@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from impala.dbapi import connect
+from impala._thrift_gen.TCLIService.ttypes import TCancelOperationReq
 
 from app.config import Settings
 from app.models.orm import Datasource
@@ -174,7 +175,13 @@ class SparkProvider:
         if query.parameters:
             raise ValueError("Spark parameterized queries are not supported")
         cursor = handle.native["cursor"]
+        if handle.native.get("cancel_requested"):
+            raise SparkOperationCancelled("operation cancelled before submission")
         cursor.execute_async(query.sql)
+        # Cancellation can arrive while ExecuteStatement is publishing its
+        # operation handle. Send it once the handle exists as well.
+        if handle.native.get("cancel_requested"):
+            self.cancel(handle)
         while True:
             try:
                 executing = cursor.is_executing()
@@ -230,16 +237,29 @@ class SparkProvider:
                 "estimated_rows": None, "estimated_bytes": None}
 
     def cancel(self, handle: ExecutionHandle) -> CancelOutcome:
-        cursor = handle.native.get("cursor")
-        if cursor is None:
-            return CancelOutcome(confirmed=False, detail="no Spark operation")
-        # Recorded before the request, so a failure raised while the operation
-        # stops is attributed to this cancel rather than to the engine.
         handle.native["cancel_requested"] = True
+        cursor = handle.native.get("cursor")
+        operation = getattr(cursor, "_last_operation", None)
+        if operation is None:
+            return CancelOutcome(confirmed=False, detail="no Spark operation")
+        # Impyla's Thrift client is not thread-safe. A monitor must never read
+        # CancelOperation's response from the execution/status/fetch socket.
+        # The pinned HS2 protocol addresses an operation by handle, so a fresh
+        # authenticated transport can cancel it without touching cursor state.
+        connection = None
         try:
-            cursor.cancel_operation(reset_state=False)
+            connection = self._connect(timeout_seconds=int(self._config["connect_timeout_seconds"]))
+            connection.service._rpc(
+                "CancelOperation", TCancelOperationReq(operationHandle=operation.handle), True,
+            )
         except Exception as exc:
             return CancelOutcome(confirmed=False, detail=f"Spark cancel failed: {str(exc)[:200]}")
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    logger.warning("Spark cancel connection close failed", exc_info=True)
         return CancelOutcome(confirmed=False, detail="Spark cancel requested")
 
     def close(self, handle: ExecutionHandle) -> None:

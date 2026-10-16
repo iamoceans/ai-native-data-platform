@@ -91,8 +91,10 @@ source authorization and browser E2E still open.
 The login page and workspace header have a **简体中文 / English** selector.
 It switches the entire interface immediately, retaining form drafts and active
 queries. The browser language supplies the initial choice (Chinese for `zh-*`,
-English otherwise); an explicit choice is saved in `localStorage` and synchronized
-across tabs. Dates and chart numbers follow the selected locale.
+English otherwise). Before sign-in an explicit choice is kept in browser storage.
+After sign-in the account's saved language takes precedence; changes in the header
+are saved to that account and synchronized across tabs. Dates use the account's
+IANA timezone (browser timezone when unset); chart numbers follow the locale.
 
 Interface labels, statuses, validation and API error guidance are translated.
 SQL, query results, catalog descriptions, user-authored content, model prose and
@@ -100,6 +102,21 @@ stored report/evidence quotations keep their original text. This is interface
 localization; it does not translate or regenerate analysis evidence. Original API
 diagnostics remain available through the error's **Original error** control.
 See [the observed checks](docs/acceptance.md#2026-10-15--chineseenglish-interface-localization).
+
+## Personal settings and conversation history
+
+Open **Personal settings** in the account link (`/settings`; `/profile` redirects
+there) to edit your display name, interface language and IANA timezone. Preferences
+are stored per account and restored on other devices; concurrent stale saves
+return a conflict and preserve the unsaved form. Roles and capabilities are read-only.
+The timezone changes displayed timestamps, not metric periods or query semantics.
+Login/logout clears account caches; other workspace tabs reload on authentication
+changes. Password rotation remains a CLI operation.
+
+The Ask conversation rail loads 20 sessions at a time with **Load more conversations**;
+this is separate from backward pagination of messages inside a conversation.
+Existing installations must apply migration `d2e6a9f18c40` (`alembic upgrade head`)
+before starting the updated API/workers.
 
 ## Quick start (core profile)
 

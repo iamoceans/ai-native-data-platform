@@ -368,3 +368,18 @@ seconds. Cancellation is retried at least one second apart until execution exits
 heartbeats retain their separate configured cadence. PostgreSQL uses the exact
 registered TLS mode. Live metadata-lock and TLS-engine acceptance were not run
 for this change; the 2026-10-15 record in `docs/acceptance.md` lists executed tests.
+
+## Account preferences upgrade
+
+Apply `uv run --frozen alembic upgrade head` from `backend` before restarting the
+API/workers with this revision. Migration `d2e6a9f18c40` preserves existing users
+and defaults new fields to an empty display name, browser locale/timezone and
+settings version 1. `/settings` edits only the signed-in account. A 409 on save
+means another tab/device changed its version; inspect the retained form, then
+choose Reload settings to discard it and fetch the latest version. Password
+rotation remains `python -m app.cli set-password` with the documented CLI inputs.
+
+Spark cancellation uses a separate bounded HS2 connection for CancelOperation.
+Both execution and control transports must reach the same Thrift server. A cancel
+request is not a stop confirmation; terminal state still comes from execution
+monitoring. The 2026-10-16 acceptance record contains the real RPC race regression.

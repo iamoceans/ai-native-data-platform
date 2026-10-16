@@ -38,6 +38,10 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    locale: Mapped[str | None] = mapped_column(Text)
+    timezone: Mapped[str | None] = mapped_column(Text)
+    settings_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )

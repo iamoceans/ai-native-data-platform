@@ -54,3 +54,25 @@ test('interpolation preserves user values and unknown keys fall back safely', ()
  assert.equal(exports.t('已保存 {0} v{1}', { 0: '原始技能名', 1: 2 }), '已保存 原始技能名 v2');
  assert.equal(exports.errorMessage({ code: 'SQL_FORBIDDEN', message: 'diagnostic' }), '此 SQL 不符合只读安全策略。');
 });
+
+test('account language and timezone do not leak into the next account or guest preference', () => {
+ const exports = {}; const saved = new Map([['ainative.locale', 'en']]);
+ const code = ts.transpileModule(fs.readFileSync(path.join(root, 'src/i18n/index.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true, target: ts.ScriptTarget.ES2022 } }).outputText;
+ vm.runInNewContext(code, {
+  exports, navigator: { languages: ['en-US'], language: 'en-US' }, document: { documentElement: {} },
+  localStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) },
+  window: { addEventListener: () => {} }, require: name => name === 'react' ? {} : messages,
+ });
+ exports.applyAccountPreferences({ id: 'alice', locale: 'zh-CN', timezone: 'Asia/Singapore' });
+ assert.match(exports.formatDate('2026-10-16T00:00:00Z', true), /08:00:00/);
+ exports.setLocale('zh-CN');
+ assert.equal(saved.get('ainative.locale'), 'en');
+ exports.applyAccountPreferences({ id: 'bob', locale: 'en', timezone: 'UTC' });
+ assert.equal(exports.getLocale(), 'en');
+ assert.equal(exports.formatDate('2026-10-16T00:00:00Z', true), new Date('2026-10-16T00:00:00Z').toLocaleTimeString('en', { timeZone: 'UTC' }));
+ saved.set('ainative.locale', 'zh-CN');
+ exports.applyAccountPreferences({ id: 'charlie', locale: null, timezone: null });
+ assert.equal(exports.getLocale(), 'en');
+ exports.resetAccountPreferences();
+ assert.equal(exports.getLocale(), 'zh-CN');
+});

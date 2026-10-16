@@ -11,6 +11,8 @@ import { AnalysisPage } from "./pages/AnalysisPage";
 import { AdminDatasourcesPage } from "./pages/AdminDatasourcesPage";
 import { AdminPermissionsPage } from "./pages/AdminPermissionsPage";
 import { SkillsPage } from "./pages/SkillsPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { resetAccountPreferences } from "./i18n";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,6 +21,7 @@ const queryClient = new QueryClient({
 });
 
 onUnauthenticated(() => {
+  resetAccountPreferences();
   queryClient.clear();
   if (!window.location.pathname.startsWith("/login")) {
     window.location.assign("/login");
@@ -41,6 +44,8 @@ export function App() {
             <Route path="/catalog" element={<CatalogPage />} />
             <Route path="/datasets/:id" element={<CatalogPage />} />
             <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/profile" element={<Navigate to="/settings" replace />} />
             <Route path="/admin/datasources" element={<AdminDatasourcesPage />} />
             <Route path="/admin/permissions" element={<AdminPermissionsPage />} />
           </Route>

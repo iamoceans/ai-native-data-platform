@@ -1,5 +1,6 @@
 import { t, useLocale, formatDate } from "../i18n";
 import { useEffect, useState } from "react";
+import { ErrorMessage } from "./ErrorMessage";
 import type {
   SessionSummary,
   SkillSummary,
@@ -13,12 +14,19 @@ export function SessionList({
   onCreate,
   onSelect,
   busy,
+  hasMore, loadingMore, loading, loadError, onLoadMore, onReload,
 }: {
   sessions: SessionSummary[];
   currentId: string | null;
   onCreate: () => void;
   onSelect: (sessionId: string) => void;
   busy?: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  loading?: boolean;
+  loadError?: Error | null;
+  onLoadMore?: () => void;
+  onReload?: () => void;
 }) {
   useLocale();
   return (
@@ -51,10 +59,13 @@ export function SessionList({
             </button>
           </li>
         ))}
-        {sessions.length === 0 ? (
+        {sessions.length === 0 && !loading && !loadError ? (
           <li className="muted small">{t("还没有会话。")}</li>
         ) : null}
       </ul>
+      {loading ? <p role="status">{t("正在加载会话…")}</p> : null}
+      {loadError ? <div className="notice error" role="alert"><ErrorMessage error={loadError} /><button type="button" onClick={hasMore ? onLoadMore : onReload}>{t("重新加载会话")}</button></div> : null}
+      {hasMore ? <button className="ghost block" type="button" data-testid="load-more-sessions" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? t("加载中…") : t("加载更多会话")}</button> : null}
     </aside>
   );
 }

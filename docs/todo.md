@@ -9,6 +9,44 @@ that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
+## Current actionable backlog (2026-10-16, after account settings)
+
+High-priority implementation requested in this round:
+
+- [x] Personal profile/settings page, display name and read-only identity/roles/
+      capabilities. `/profile` redirects to `/settings`.
+- [x] Persisted per-account language and timezone, cross-device restoration,
+      account isolation, cross-tab synchronization and stale-save conflict handling.
+- [x] Session-list pagination beyond the default 20, with loading/error/retry
+      states; distinct from pagination of messages inside a conversation.
+- [x] Reproduce and fix Spark shared-client cancellation response corruption.
+- [~] Full Doris/DataHub acceptance: remains blocked by this 32 GB vfs host's
+      image/storage footprint. Current real PG/MySQL/Spark matrix is **111 passed,
+      14 skipped, 25 deselected**; the skips still need Doris/deployed DataHub.
+
+Remaining medium/low product and verification items (not implemented in this round):
+
+- [ ] Conversation rename/archive/restore UI and archived-session browsing
+      (the backend interfaces already exist).
+- [ ] Saved SQL frontend save/list/reuse workflow (backend interfaces exist).
+- [ ] Self-service password change; the existing CLI remains the supported path.
+- [ ] Explain templates populated from stored evidence; current replies quote it.
+- [ ] Skills quota boundary tests and dedicated session SSE contract tests.
+- [ ] Concurrent-session/worker load and soak acceptance, memory throughput and
+      cross-analysis paraphrase-race checks.
+- [ ] Spark read-only authorization, shared-HMS listener lineage and browser E2E.
+- [ ] Chat chart Top-N/expand product decision and unused class/style cleanup.
+- [ ] Historical affected report reruns; old stored reports are not rewritten.
+- [ ] Model-driven step/tool selection and structured-output format repair.
+- [ ] Memory semantic retrieval and team-level scope/isolation.
+- [ ] Consolidate older historical acceptance notes when reading this file: their
+      original not-executed statements do not override newer executed evidence.
+
+Deferred by the user: DeepSeek v4.1 flash connection, model identity verification,
+real-model A09 and large-pool automatic Skill choice acceptance. Enterprise/HA,
+Kyuubi/Flink/MCP, content translation and other explicitly future/out-of-V1 items
+remain roadmap choices, not high-priority implementation claims.
+
 ## 2026-10-15 medium defects
 
 - [x] Regressions verify the existing NULL eCPM fix and optional driver skipping;
@@ -25,8 +63,9 @@ Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` 
       database on 2026-10-16; see the priority-workflows acceptance record.
 - [x] MySQL/Doris connection stalls, PostgreSQL TLS negotiation and live browser
       journeys verified on 2026-10-16. Full Doris/DataHub acceptance remains open.
-- [ ] Spark shared-socket cancellation race: suspected; live reproduction required
-      before choosing a transport-isolation change. Spark implementation unchanged.
+- [x] Spark shared-socket cancellation race reproduced against real Spark 3.5.3
+      and fixed with an independent CancelOperation transport. The live overlap
+      regression checks intact status responses, CANCELED_STATE and a later SELECT.
 - [x] Analysis planning and memory extraction call the model outside database
       sessions. Post-call writes validate ownership, expiry and fencing; late
       success/failure cannot change a cancelled or reclaimed analysis.
@@ -105,9 +144,8 @@ See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0
 - [ ] Not verified: engine matrix, A09 and the deployed Playwright journeys were
       not run for this frontend-only change; the deployed image was built from
       built from the working copy before this change was committed.
-- [ ] Pre-existing, found by the live narrow-width probe and not fixed: the top
-      navigation cannot wrap, so at a 390px viewport every page scrolls sideways
-      by ~190px (7 links, 560px min-content width). One-line fix if wanted.
+- [x] Top navigation now wraps at narrow widths (delivered with localization);
+      the 390px browser layout regression passes, including the settings page.
 - [ ] Left as-is - class names with no rule in `styles.css`:
       `AdminDatasourcesPage.tsx` asks for `class="mono small"` while only
       `.mono-id` is defined; `ResultTable.tsx`'s `.result-wrap` / `.col-name` and
@@ -693,9 +731,9 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       produced are recorded in `docs/acceptance.md`.
 - [ ] Memory retrieval is metric-scoped text ranked by reuse, not embeddings: a
       large store would want a similarity search before the top-8 cut, and
-      statements are still platform-wide rather than per-team. Extraction is
-      also inline in the agent worker, so a second worker would need a
-      claim/lease before it scales beyond one loop.
+      statements are still platform-wide rather than per-team. Extraction now has
+      claim/lease fencing; throughput and cross-analysis paraphrase races still
+      need multi-worker acceptance.
 - [x] Curation audit detail (fixed 2026-09-29): `memory.confirm` / `memory.reject`
       rows used to log `previous` as the *new* status, because `_curate` read
       `row.status` after `set_status` had mutated it in place; the route now
@@ -1088,3 +1126,31 @@ Three defects, all fixed on the working copy; evidence in `docs/acceptance.md`,
       not apply/publish it. The configured `deepseek-chat` alias has not been
       verified as the requested model version. Historical A09 passes above do not
       count as this revision's acceptance.
+
+## 2026-10-16 Account settings, session-list pagination and Spark RPC isolation
+
+- [x] Migration `d2e6a9f18c40` adds per-user display name, nullable locale/timezone
+      and settings version. Closed PATCH `/auth/me` validates the fields, requires
+      CSRF and an expected version, locks the user, and audits changed field names.
+- [x] `/settings` plus `/profile` redirect, account entry, draft/error/reload states,
+      account-owned header language and formatted timestamp timezone. Read-only
+      roles/capabilities; password change and default analysis settings are not added.
+- [x] Account preferences do not write the guest's browser language key; 401/logout
+      reset locale/timezone. Other workspace tabs reload on login/logout so caches
+      and preferences from an earlier identity are discarded.
+- [x] Session rail follows next_cursor, deduplicates IDs and makes older sessions
+      reachable. 45-session backend/browser cases pass; backend ordering and
+      offset cursor contract are unchanged.
+- [x] Real Spark cancellation race reproduced before the fix (status RPC
+      `KeyError(None)`) and passes after it with a separate control transport.
+      Server cancellation and subsequent query success are asserted.
+- [x] Backend static **517 passed**; current service matrix **111 passed /
+      14 skipped / 25 deselected**; frontend units **12 passed**; production build
+      exit 0; live browser suite **8 passed**, followed by **1 passed** rerun of
+      the settings journey after cross-tab authentication handling was added.
+- [~] Full Doris/DataHub acceptance is still not executed. The new standalone
+      Spark NOSASL service does not validate read-only authorization, shared HMS
+      or listener lineage. Real-model validation remains deferred by the user.
+
+Final mocked-browser suite: **58 passed** (2.1m). Earlier race failures are
+superseded; commands and details are in the acceptance record.

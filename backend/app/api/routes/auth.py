@@ -13,7 +13,7 @@ from app.api.deps import (
     get_trace_id,
     require_csrf,
 )
-from app.api.dto import LoginRequest, LoginResponse, ProfileResponse
+from app.api.dto import LoginRequest, LoginResponse, ProfileResponse, ProfileUpdate
 from app.auth import sessions as sessions_service
 from app.auth.ratelimit import LoginRateLimiter
 from app.auth.sessions import AuthContext
@@ -50,6 +50,10 @@ def _profile(auth: AuthContext) -> ProfileResponse:
         username=auth.user.username,
         roles=auth.role_names,
         capabilities=sorted(auth.capabilities),
+        display_name=getattr(auth.user, "display_name", ""),
+        locale=getattr(auth.user, "locale", None),
+        timezone=getattr(auth.user, "timezone", None),
+        settings_version=getattr(auth.user, "settings_version", 1),
     )
 
 
@@ -139,6 +143,10 @@ def login(
             username=user.username,
             roles=[role.name for role in roles],
             capabilities=sorted(capabilities),
+            display_name=user.display_name,
+            locale=user.locale,
+            timezone=user.timezone,
+            settings_version=user.settings_version,
         ),
         csrf_token=csrf_token,
     )
@@ -170,4 +178,25 @@ def logout(
 
 @router.get("/me", response_model=ProfileResponse)
 def me(auth: AuthContext = Depends(current_auth)) -> ProfileResponse:
+    return _profile(auth)
+
+
+@router.patch("/me", response_model=ProfileResponse)
+def update_me(
+    payload: ProfileUpdate, request: Request,
+    auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db),
+) -> ProfileResponse:
+    user = users_repo.get_user_for_update(session, auth.user.id)
+    if user is None:
+        raise ApiError(ErrorCode.UNAUTHENTICATED, "account is unavailable")
+    if user.settings_version != payload.expected_settings_version:
+        raise ApiError(ErrorCode.CONFLICT, "settings changed; reload before saving")
+    changes = payload.model_dump(exclude_unset=True, exclude={"expected_settings_version"})
+    if changes:
+        users_repo.update_profile(session, user, changes)
+        audit_repo.add_audit(
+            session, actor_id=user.id, action="user.profile.update", resource_type="user",
+            resource_id=str(user.id), trace_id=get_trace_id(request), outcome="success",
+            details={"fields": sorted(changes)},
+        )
     return _profile(auth)

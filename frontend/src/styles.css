@@ -685,3 +685,6 @@ html[lang="zh-CN"] body { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei
   .topbar { flex-wrap: wrap; gap: 12px; }
   .nav { flex-wrap: wrap; }
 }
+
+.settings-page { max-width: 760px; margin-inline: auto; }
+.settings-page dd { overflow-wrap: anywhere; }

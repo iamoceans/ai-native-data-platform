@@ -6,6 +6,10 @@ export const LOCALE_STORAGE_KEY = "ainative.locale";
 const listeners = new Set<() => void>();
 const catalog: Record<string, Record<Locale, string>> = messages;
 
+function browserLocale(): Locale {
+  return (navigator.languages?.[0] ?? navigator.language).toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+}
+
 function detectLocale(): Locale {
   try {
     const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
@@ -13,13 +17,12 @@ function detectLocale(): Locale {
   } catch {
     /* Storage can be disabled in private or embedded browsers. */
   }
-  return (navigator.languages?.[0] ?? navigator.language)
-    .toLowerCase()
-    .startsWith("zh")
-    ? "zh-CN"
-    : "en";
+  return browserLocale();
 }
 let locale: Locale = detectLocale();
+let accountId: string | null = null;
+let timezone: string | undefined;
+let preferenceRevision = 0;
 export function getLocale(): Locale {
   return locale;
 }
@@ -31,7 +34,7 @@ function updateDocument() {
 export function setLocale(next: Locale) {
   locale = next;
   try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, next);
+    if (!accountId) localStorage.setItem(LOCALE_STORAGE_KEY, next);
   } catch {
     /* Use an in-memory preference. */
   }
@@ -39,18 +42,43 @@ export function setLocale(next: Locale) {
   listeners.forEach((listener) => listener());
 }
 window.addEventListener("storage", (event) => {
+  if (accountId && event.key === `ainative.preferences.${accountId}`) {
+    window.dispatchEvent(new Event("account-preferences-changed"));
+    return;
+  }
+  if (accountId) return;
   if (event.key !== LOCALE_STORAGE_KEY && event.key !== null) return;
   locale = detectLocale();
   updateDocument();
   listeners.forEach((listener) => listener());
 });
+export function applyAccountPreferences(profile: { id: string; locale?: Locale | null; timezone?: string | null }) {
+  accountId = profile.id;
+  timezone = profile.timezone || undefined;
+  locale = profile.locale || browserLocale();
+  preferenceRevision += 1;
+  updateDocument();
+  listeners.forEach(listener => listener());
+}
+export function resetAccountPreferences() {
+  accountId = null;
+  timezone = undefined;
+  locale = detectLocale();
+  preferenceRevision += 1;
+  updateDocument();
+  listeners.forEach(listener => listener());
+}
+export function notifyAccountPreferences(userId: string) {
+  try { localStorage.setItem(`ainative.preferences.${userId}`, String(Date.now())); } catch { /* optional cross-tab notification */ }
+}
 export function useLocale(): Locale {
-  return useSyncExternalStore((listener) => {
+  useSyncExternalStore((listener) => {
     listeners.add(listener);
     return () => {
       listeners.delete(listener);
     };
-  }, getLocale);
+  }, () => `${locale}:${preferenceRevision}`);
+  return locale;
 }
 
 /** Interpolate once so placeholder-like user values are never interpreted. */
@@ -68,8 +96,8 @@ export function formatDate(value: string, timeOnly = false): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return timeOnly
-    ? date.toLocaleTimeString(locale)
-    : date.toLocaleString(locale);
+    ? date.toLocaleTimeString(locale, { timeZone: timezone })
+    : date.toLocaleString(locale, { timeZone: timezone });
 }
 export function formatNumber(
   value: number,

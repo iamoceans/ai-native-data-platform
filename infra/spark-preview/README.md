@@ -57,3 +57,23 @@ in `backend/app/providers/spark.py`.
 
 The MySQL/Doris services can compete with this fixture for memory on a small
 VM; `docs/compatibility.md` finding 12 covers the ceiling this host hit.
+
+### Standalone cancellation transport regression
+
+For the RPC race test only, an embedded-metastore Spark fixture avoids starting
+HMS or the full platform. It does not verify shared-HMS lineage or authorization.
+It binds only loopback; it uses the same pinned Spark 3.5.3 image as the preview.
+
+```bash
+docker compose -f infra/spark-preview/compose.cancel-test.yaml up -d --wait
+AIND_TEST_SPARK_HOST=127.0.0.1 AIND_TEST_SPARK_PORT=11000 \
+  uv run --project backend --frozen pytest backend/tests/integration/test_spark_cancel_transport.py -q
+# Normal integration environment/control database settings are also required.
+docker compose -f infra/spark-preview/compose.cancel-test.yaml down
+```
+
+The test holds a real GetOperationStatus response before reading it, issues
+CancelOperation concurrently and verifies both the uncorrupted response and
+server CANCELED_STATE, then a successful SELECT. Shared-client cancellation
+reproduced KeyError(None) before isolation; the new provider uses a separate
+bounded transport and closes it on success/failure.

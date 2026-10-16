@@ -155,6 +155,22 @@ The user explicitly deferred DeepSeek/A09 until later. Credentials may also be
 bound as redacted `AIND_LLM_API_KEY`; the saved
 cloud draft needs review/save and publish before the network/secret change applies.
 
+Latest account/settings round (2026-10-16): migration **d2e6a9f18c40** adds
+per-user display name, nullable locale/timezone and settings version (still 31
+tables). Apply migrations before starting updated API/workers. `/settings` and
+`/profile` redirect, closed/CSRF/version-checked PATCH `/auth/me`, account-owned
+language/timezone and session-list pagination are implemented. Guest language
+storage is separate; auth changes clear/reload other workspace tabs. Spark's
+shared-client cancel race was reproduced on real Spark 3.5.3 and fixed with a
+separate bounded CancelOperation connection; standalone fixture lives in
+`infra/spark-preview/compose.cancel-test.yaml`. Static **517 passed**, integration
+**111 passed / 14 skipped / 25 deselected** (PG/MySQL/TLS + actual Spark RPC test),
+frontend units **12 passed**, live browser **8 passed** plus the final settings
+journey **1 passed**, production build exit 0 and schema verification passes.
+Final mocked-browser suite: **58 passed**. Doris/DataHub
+full acceptance remains blocked by disk footprint; Spark secure auth, read-only
+authorization, shared-HMS lineage/E2E and DeepSeek/A09 remain open/deferred.
+
 ## Invariants - do not break these
 
 1. **The API never executes user SQL against a source database.** It validates,

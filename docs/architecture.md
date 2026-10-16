@@ -378,13 +378,15 @@ an already-visible notice changes language too. Interpolation is a single pass
 and React renders its output as text. No HTML is injected by translations.
 
 The language selector is available at login, at the unauthenticated gate and in
-the workspace header. Preference order is a supported `ainative.locale` value
-in localStorage, then the browser's first preferred language (`zh-*` -> Chinese,
-otherwise English). Storage failures fall back to an in-memory selection; storage
-events synchronize other tabs. Locale changes update document language/title and
+the workspace header. Signed-out preference order is a supported `ainative.locale`
+value in localStorage, then the browser language. Authenticated preference comes
+from the user row; null means the browser language, without inheriting the guest
+storage choice. Authenticated changes persist to the account, and storage events
+notify same-account tabs to refetch authoritative preferences. Storage failures do
+not prevent server persistence. Locale changes update document language/title and
 rerender subscribed components without remounting routes, clearing the query
 cache, resubmitting work or resetting drafts. Date/time formatting uses the
-selected locale and the browser's timezone; chart display formatting uses Intl,
+selected locale and the account's timezone (browser timezone when unset); chart display formatting uses Intl,
 with exact audited Decimal strings retained in table values and tooltips.
 
 API requests and multipart uploads include `Accept-Language`. Existing backend
@@ -467,3 +469,37 @@ diagnostics inline. On narrow screens the scope panel is a native modal dialog.
 The model adapter accepts a redacted `AIND_LLM_API_KEY` injected by the cloud
 secret proxy, taking precedence over the existing mounted key file. Datasource
 credentials still resolve exclusively through their mounted secret references.
+
+### Account preferences and session-list pagination (2026-10-16)
+
+Migration `d2e6a9f18c40` adds `display_name`, nullable locale/timezone and
+`settings_version` to users. GET `/auth/me` and login responses include these
+fields. PATCH `/auth/me` is authenticated and CSRF-protected, addresses only the
+current user, accepts a closed field set and requires `expected_settings_version`.
+The repository locks/refreshes that user before comparing versions and applying
+only provided fields. Names are bounded/trimmed; locale is en/zh-CN/null and
+timezone is a ZoneInfo-validated IANA name/null. An audit records changed field
+names. It cannot alter identity, roles, capabilities or passwords. Null resets
+language/timezone to browser defaults; a stale save returns 409 with no write.
+
+The settings form preserves dirty fields and their base version across background
+refreshes; an explicit reload discards them. Locale and timezone notify subscribers
+even when only timezone changes. Account language never overwrites guest browser
+preference storage; logout and 401 reset it. Login/logout broadcasts cause other
+workspace tabs to clear caches and reload. The conversation rail now follows
+GET `/sessions` cursors with an infinite query, deduplicates by session ID and
+exposes loading, error/retry and load-more states. Existing backend offset cursor
+semantics and updated-at ordering remain unchanged.
+
+### Spark cancellation transport isolation (2026-10-16)
+
+A real Spark 3.5.3/Impyla 0.24.0 overlap reproduced a shared-client response swap:
+CancelOperation consumed an in-flight GetOperationStatus response and the status
+reader received a response with no operationState (`KeyError(None)`). Cancellation
+now uses a fresh bounded connection and sends the pinned HS2 CancelOperation RPC
+for the captured opaque handle; execution/status/fetch keep their own transport.
+The control connection closes even on RPC failure. Cancellation before submission
+stops launch; cancellation during handle publication is sent again once the handle
+exists. It remains an asynchronous request, not confirmation that the server stopped.
+The live regression checks CANCELED_STATE and a subsequent successful query. This
+standalone NOSASL fixture does not verify shared HMS lineage or source authorization.

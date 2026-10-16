@@ -1808,3 +1808,136 @@ PostgreSQL and MySQL were real services; the 97 passes include the new
 priority-workflow tests and the existing PostgreSQL lock-contention cases.
 The earlier 94-pass run preceded adding the three network-bound tests; the
 final 97-pass run supersedes it.
+
+## 2026-10-16 Account settings, session-list pagination and Spark cancel RPC race
+
+This round implements the requested high-priority product gaps: personal settings,
+per-account preferences, and access to session history beyond the first 20. It also
+reproduces and fixes Spark's suspected cancellation transport race. Full deployed
+Doris/DataHub acceptance remains pending for the resource reason below. DeepSeek
+and real-model A09 remain explicitly deferred by the user.
+
+Migration `d2e6a9f18c40` adds display_name, nullable locale/timezone and
+settings_version to existing users without adding a table. GET `/auth/me` and
+login return them. PATCH `/auth/me` accepts only those editable fields plus the
+required expected version; it locks the authenticated user, validates locale and
+IANA timezone, rejects privileged/foreign fields, and records changed field names
+in audit. Stale saves return 409 and cannot overwrite a newer version. Existing
+users default to an empty name and browser language/timezone. Migration was
+applied to the isolated integration and live-service databases, preserving the
+existing live accounts. Schema verification: **31 tables, 11 named state checks,
+25 indexes**, exit 0.
+
+`/settings` (and `/profile` redirect) shows read-only account identity/roles and
+human-readable capabilities, with editable display name, language and timezone.
+Changes persist to the user row and restore on a fresh browser context/device.
+A dirty form retains its original version across background refreshes; failed or
+conflicting saves retain its contents, and explicit reload discards them. Header
+language changes save only that account's locale. Unset language follows browser
+language rather than a previous guest's stored preference; unset timezone follows
+browser timezone. Timezone changes rerender timestamp subscribers even if locale
+is unchanged, and never alter query periods. Account changes do not write the
+guest language key. Logout/401 reset preferences; cross-tab authentication
+notifications clear caches/reload other workspace tabs. Same-account preference
+notifications refetch the server instead of trusting stored preference values.
+Browser storage contains notification markers and guest locale, not credentials.
+
+The conversation rail follows the API's next_cursor and deduplicates session IDs,
+with pending/error/retry/load-more states. Existing backend offset/updated-at
+ordering remains unchanged; pagination is not a snapshot guarantee under concurrent
+reordering. Real 45-session backend and browser fixtures reach every session and
+open the oldest one. This is independent of message pagination within a session.
+
+Executed on the existing disposable validation services/databases (generated
+credentials remain in ignored runtime files; they were not printed or committed):
+
+```bash
+UV_CACHE_DIR=/tmp/aind-uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 517 passed, 2 dependency deprecation warnings, 14.89s
+# With isolated PG/MySQL/TLS settings and AIND_TEST_SPARK_HOST=127.0.0.1,
+# AIND_TEST_SPARK_PORT=11000:
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --tb=short
+# 111 passed, 14 skipped, 25 deselected, 2 dependency warnings, 158.22s
+uv run --project backend --frozen python backend/scripts/verify_schema.py
+# schema verification OK: 31 tables, 11 named state checks, 25 indexes
+cd frontend
+npm run test:unit
+# 12 passed
+npm run build
+# exit 0: OpenAPI types, TypeScript and production Vite build
+# With E2E_BASE_URL and the disposable live admin/metric settings configured:
+npx playwright test
+# 8 passed, 44.4s (actual API/query worker/agent worker, deterministic model)
+npx playwright test settings.spec.ts
+# 1 passed, 8.7s after final preference/authentication changes
+```
+
+The new account integration module contributes 13 cases: durable preferences across
+sessions, viewer/admin isolation, stale version rejection, null reset, preservation
+of untouched fields, unknown/privileged field denial, invalid names/locales/timezones,
+CSRF/version requirements, and 45-session history. The new four mocked browser
+cases cover fresh-device restoration, account switching and failed-save drafts,
+all session pages, and cross-tab conflict handling. The account-switch case also
+checks that a second workspace tab clears its old identity on logout. A frontend
+unit case verifies timezone formatting and guest/account isolation. Live E2E creates
+a disposable viewer, saves preferences, reloads, signs in on a fresh context and
+returns to the unchanged administrator. Desktop and 390px settings captures are
+in `/tmp/aind-settings-desktop.png` and `/tmp/aind-settings-mobile.png`; the mobile
+page has no horizontal document overflow.
+
+Spark reproduction used pinned `apache/spark:3.5.3`, Impyla 0.24.0 and a standalone
+NOSASL Thrift Server on loopback 11000, with an embedded metastore. A controlled
+pause before reading a real GetOperationStatus response allows CancelOperation to
+run concurrently. Before the fix the shared client consumed the wrong response:
+
+```json
+{"status_rpc":"corrupted","exception":"KeyError","detail":"None","cancel_detail":"Spark cancel requested"}
+```
+
+After isolating cancellation on a fresh connection, the same probe reports:
+
+```json
+{"status_rpc":"valid","executing":false,"cancel_detail":"Spark cancel requested"}
+```
+
+The checked-in live regression additionally requires server CANCELED_STATE and a
+successful later SELECT. Focused Spark run: **10 passed** (9 unit, 1 real service).
+Cancellation closes its control transport on success/failure, leaves the execution
+cursor/client untouched, stops a pre-cancelled query before launch and resends a
+cancel arriving during operation-handle publication. It still returns an
+unconfirmed request; terminal confirmation belongs to the executor/monitor.
+`infra/spark-preview/compose.cancel-test.yaml` and `cancel-test-hive-site.xml`
+provide the isolated fixture; Compose config validation exits 0. The command-line
+container used for the run has the equivalent image, XML and Spark settings.
+This does not validate Spark read-only source authorization, secure authentication,
+shared HMS, listener lineage or Spark browser end-to-end coverage.
+
+Resource limits: Docker remains vfs on the 32 GB filesystem. Before this round
+roughly 24 GB was available; adding the standalone Spark fixture left roughly
+18 GB. The earlier measured Doris FE pull alone had increased filesystem use
+from roughly 5 GB to 22 GB, without its BE or the DataHub dependencies. The complete
+Doris/DataHub stack was not retried on this disk and its 14 tests remain skipped
+(13 Doris, one deployed DataHub). Existing Docker storage settings, base services
+and user data were preserved. No mocked metadata response or protocol-stall test
+is counted as deployed Doris/DataHub acceptance.
+
+During final browser runs, two existing test-order races surfaced: the mobile
+scope test checked body overflow before React's resize cleanup ran, and the filter
+editing test began its next turn after request capture but before the previous
+mocked response/context completion. They now wait on their observable completion
+conditions (overflow restored; confirmed scope/composer ready), with no sleeps,
+removed assertions or production behavior changes for these tests.
+
+Final mocked-browser run after those explicit completion waits:
+
+```bash
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm --prefix frontend run test:regression
+# 58 passed, 2.1m
+```
+
+An earlier complete run also passed 58; a subsequent run surfaced the filter
+fixture race (57 passed / 1 failed), which the final run above supersedes. The
+production filter/send behavior was not modified to make the test pass. Profile
+OpenAPI was finally tightened so an explicitly null display name is rejected by
+the request schema as well as validation; the affected 13 integration cases and
+static suite were rerun, and frontend types/build regenerated.
