@@ -150,3 +150,17 @@ TLS negotiation and MySQL/Doris greeting stalls. They do not establish a deploye
 Doris server acceptance. Spark cancellation now uses a separate HS2 connection,
 verified against real Spark 3.5.3; secure Spark authentication/TLS and read-only
 authorization remain unverified.
+
+Self-service password rotation (2026-10-16) requires current credentials and CSRF.
+New passwords are 12..1024 characters, represented as SecretStr in the closed DTO;
+validation responses omit raw inputs. Verification failures are audited without
+password values and rate-limited in an account-specific bucket. Rotation hashes
+and revokes all sessions in one transaction; login verification/session issuance
+uses the same user row lock so a concurrent old-password login cannot survive
+revocation. Other accounts are unaffected. Cookies are deleted on both password
+change and logout; cross-tab auth notifications trigger the existing cache reset.
+The limiter remains single-process; multi-API scaling still requires shared state.
+
+Saved query templates remain private to their owner. Frontend loading only sets
+editor values, without execution; the Query Gateway remains authoritative for
+SQL/grant validation when the user explicitly runs a loaded template.

@@ -1,6 +1,8 @@
 import { t, useLocale, formatDate } from "../i18n";
 import { useEffect, useState } from "react";
 import { ErrorMessage } from "./ErrorMessage";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { patchSession } from "../api/endpoints";
 import type {
   SessionSummary,
   SkillSummary,
@@ -15,6 +17,8 @@ export function SessionList({
   onSelect,
   busy,
   hasMore, loadingMore, loading, loadError, onLoadMore, onReload,
+  includeArchived, onIncludeArchived,
+  canManage,
 }: {
   sessions: SessionSummary[];
   currentId: string | null;
@@ -27,8 +31,23 @@ export function SessionList({
   loadError?: Error | null;
   onLoadMore?: () => void;
   onReload?: () => void;
+  includeArchived?: boolean;
+  onIncludeArchived?: (value: boolean) => void;
+  canManage?: boolean;
 }) {
   useLocale();
+  const client = useQueryClient();
+  const [editing, setEditing] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const manage = useMutation({
+    mutationFn: ({ session, patch }: { session: SessionSummary; patch: { title?: string; archived?: boolean } }) =>
+      patchSession(session.id, { ...patch, expected_context_version: session.context_version }),
+    onSuccess: (_updated, { session }) => {
+      setEditing(null);
+      client.invalidateQueries({ queryKey: ["sessions"] });
+      client.invalidateQueries({ queryKey: ["session", session.id] });
+    },
+  });
   return (
     <aside className="conversation-rail" aria-label={t("会话列表")}>
       <button
@@ -40,6 +59,8 @@ export function SessionList({
       >
         {t("新对话")}
       </button>
+      <label className="check"><input type="checkbox" data-testid="include-archived-sessions" checked={Boolean(includeArchived)} onChange={event => onIncludeArchived?.(event.target.checked)} />{t("显示已归档会话")}</label>
+      {manage.isError ? <p className="notice error" role="alert"><ErrorMessage error={manage.error} /></p> : null}
       <ul className="session-list" data-testid="session-list">
         {sessions.map((session) => (
           <li key={session.id}>
@@ -51,12 +72,20 @@ export function SessionList({
             >
               <span className="session-title">
                 {session.title || t("未命名会话")}
+                {session.archived_at ? ` · ${t("已归档")}` : ""}
               </span>
               <span className="muted small">
                 {formatDate(session.updated_at)}
                 {session.active_turn_id ? t(" · 进行中") : ""}
               </span>
             </button>
+            {canManage ? editing === session.id ? <form className="stack" onSubmit={event => { event.preventDefault(); manage.mutate({ session, patch: { title: title.trim() } }); }}>
+              <input aria-label={t("会话名称")} data-testid="session-title-input" value={title} maxLength={200} onChange={event => setTitle(event.target.value)} disabled={manage.isPending} autoFocus />
+              <div className="row-actions"><button type="submit" disabled={!title.trim() || manage.isPending}>{t("保存")}</button><button type="button" onClick={() => setEditing(null)} disabled={manage.isPending}>{t("取消")}</button></div>
+            </form> : <div className="row-actions">
+              <button type="button" className="ghost small" data-testid={`rename-session-${session.id}`} disabled={manage.isPending} onClick={() => { setEditing(session.id); setTitle(session.title); manage.reset(); }}>{t("重命名")}</button>
+              <button type="button" className="ghost small" data-testid={`archive-session-${session.id}`} disabled={manage.isPending || Boolean(session.active_turn_id)} onClick={() => manage.mutate({ session, patch: { archived: !session.archived_at } })}>{session.archived_at ? t("恢复会话") : t("归档会话")}</button>
+            </div> : null}
           </li>
         ))}
         {sessions.length === 0 && !loading && !loadError ? (

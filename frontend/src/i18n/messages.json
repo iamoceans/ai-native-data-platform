@@ -2014,5 +2014,117 @@
   "平台管理": {
     "en": "Manage platform",
     "zh-CN": "平台管理"
+  },
+  "显示已归档会话": {
+    "en": "Show archived conversations",
+    "zh-CN": "显示已归档会话"
+  },
+  "会话名称": {
+    "en": "Conversation name",
+    "zh-CN": "会话名称"
+  },
+  "保存": {
+    "en": "Save",
+    "zh-CN": "保存"
+  },
+  "取消": {
+    "en": "Cancel",
+    "zh-CN": "取消"
+  },
+  "重命名": {
+    "en": "Rename",
+    "zh-CN": "重命名"
+  },
+  "恢复会话": {
+    "en": "Restore conversation",
+    "zh-CN": "恢复会话"
+  },
+  "归档会话": {
+    "en": "Archive conversation",
+    "zh-CN": "归档会话"
+  },
+  "会话已归档，恢复后可继续提问。": {
+    "en": "This conversation is archived. Restore it to continue.",
+    "zh-CN": "会话已归档，恢复后可继续提问。"
+  },
+  "修改密码": {
+    "en": "Change password",
+    "zh-CN": "修改密码"
+  },
+  "修改后将退出所有设备，请使用新密码重新登录。": {
+    "en": "Changing your password signs out all devices. Sign in again with the new password.",
+    "zh-CN": "修改后将退出所有设备，请使用新密码重新登录。"
+  },
+  "当前密码": {
+    "en": "Current password",
+    "zh-CN": "当前密码"
+  },
+  "新密码（至少 12 个字符）": {
+    "en": "New password (at least 12 characters)",
+    "zh-CN": "新密码（至少 12 个字符）"
+  },
+  "确认新密码": {
+    "en": "Confirm new password",
+    "zh-CN": "确认新密码"
+  },
+  "两次输入的新密码不一致。": {
+    "en": "The new passwords do not match.",
+    "zh-CN": "两次输入的新密码不一致。"
+  },
+  "修改密码并退出": {
+    "en": "Change password and sign out",
+    "zh-CN": "修改密码并退出"
+  },
+  "已保存的查询": {
+    "en": "Saved queries",
+    "zh-CN": "已保存的查询"
+  },
+  "载入只替换编辑器内容，点击运行后才会执行查询。": {
+    "en": "Loading replaces the editor content. A query runs only when you choose Run query.",
+    "zh-CN": "载入只替换编辑器内容，点击运行后才会执行查询。"
+  },
+  "查询名称": {
+    "en": "Query name",
+    "zh-CN": "查询名称"
+  },
+  "保存当前 SQL": {
+    "en": "Save current SQL",
+    "zh-CN": "保存当前 SQL"
+  },
+  "查询已保存": {
+    "en": "Query saved",
+    "zh-CN": "查询已保存"
+  },
+  "还没有保存的查询。": {
+    "en": "No saved queries yet.",
+    "zh-CN": "还没有保存的查询。"
+  },
+  "数据源不可用": {
+    "en": "Data source unavailable",
+    "zh-CN": "数据源不可用"
+  },
+  "载入编辑器": {
+    "en": "Load into editor",
+    "zh-CN": "载入编辑器"
+  },
+  "加载更多已保存查询": {
+    "en": "Load more saved queries",
+    "zh-CN": "加载更多已保存查询"
+  },
+  "删除": {
+    "en": "Delete",
+    "zh-CN": "删除"
+  },
+  "重试": {
+    "en": "Retry",
+    "zh-CN": "重试"
+  },
+  "current password is incorrect": {
+    "en": "The current password is incorrect.",
+    "zh-CN": "当前密码不正确。"
+  },
+  "new password must differ from current password": {
+    "en": "The new password must differ from the current password.",
+    "zh-CN": "新密码不能与当前密码相同。"
   }
 }

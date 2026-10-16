@@ -377,7 +377,11 @@ and defaults new fields to an empty display name, browser locale/timezone and
 settings version 1. `/settings` edits only the signed-in account. A 409 on save
 means another tab/device changed its version; inspect the retained form, then
 choose Reload settings to discard it and fetch the latest version. Password
-rotation remains `python -m app.cli set-password` with the documented CLI inputs.
+rotation is available in Settings with current-password verification; the CLI
+`python -m app.cli set-password` remains available to operators. Self-service
+rotation signs out all existing sessions and deletes the current cookies. The
+user must sign in with the new password. Login/session issuance uses the same
+user lock as rotation, preventing a racing old-password login from escaping it.
 
 Spark cancellation uses a separate bounded HS2 connection for CancelOperation.
 Both execution and control transports must reach the same Thrift server. A cancel

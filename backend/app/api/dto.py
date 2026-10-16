@@ -11,7 +11,7 @@ import json
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from typing_extensions import TypeAliasType
 
 # Named recursive type (PEP 695 style via typing_extensions) so schema
@@ -108,6 +108,11 @@ class ProfileUpdate(StrictModel):
 class LoginResponse(BaseModel):
     profile: ProfileResponse
     csrf_token: str
+
+
+class PasswordChange(StrictModel):
+    current_password: SecretStr = Field(min_length=1, max_length=1024, repr=False)
+    new_password: SecretStr = Field(min_length=12, max_length=1024, repr=False)
 
 
 # ---------------------------------------------------------------------------

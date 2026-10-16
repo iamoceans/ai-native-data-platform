@@ -1941,3 +1941,100 @@ production filter/send behavior was not modified to make the test pass. Profile
 OpenAPI was finally tightened so an explicitly null display name is rejected by
 the request schema as well as validation; the affected 13 integration cases and
 static suite were rerun, and frontend types/build regenerated.
+
+## 2026-10-16 Continued TODO — workspace management, passwords and contracts
+
+Implemented after the user asked to continue the backlog:
+
+- Conversation rename, archive/restore, include-archived browsing, preserved
+  conflict drafts and read-only archived transcripts. Management actions require
+  the existing analysis capability and send the current context version. Owner,
+  busy and version checks remain server-authoritative.
+- Saved SQL frontend save/list/load/delete and pagination. Loading fills SQL and
+  datasource without executing, and unavailable sources cannot load. Tests assert
+  that saving/loading creates no query job or run request.
+- Self-service password change with current-password check, secret DTO fields,
+  new-password length/reuse validation, CSRF and bounded failures, audit and
+  atomic revocation of all old sessions. Cookies are actually deleted. Login now
+  holds the user lock through verification/session creation, serializing with
+  rotation. A real NOWAIT lock probe during controlled login verification and
+  subsequent rotation verify that the issued session is revoked.
+- Actual quota boundaries (50 skills, 20 versions) and idempotent hash replay at
+  capacity, plus dedicated session SSE framing/replay/ownership/idle contracts.
+  The SSE tests found and fixed an empty-idle stream waiting until its duration
+  limit because it had never seen an event; it now sends stream.end immediately.
+
+Executed verification so far:
+
+```bash
+UV_CACHE_DIR=/tmp/aind-uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 520 passed, 2 dependency deprecation warnings, 11.74s
+uv run --project backend --frozen pytest backend/tests/integration/test_password_change.py backend/tests/integration/test_workspace_actions.py backend/tests/integration/test_skills_api.py -q --tb=short
+# 15 passed, 2 dependency warnings, 20.14s (before adding the concurrent-login probe)
+cd frontend
+npm run build
+# exit 0: OpenAPI-generated types, TypeScript, production Vite bundle
+npm run test:unit
+# 12 passed
+# Disposable live API + query/agent workers + frontend; deterministic provider:
+npx playwright test
+# 9 passed, 1.3m
+```
+
+The live settings journey changes a disposable viewer's password, verifies a
+second device receives 401, signs in with the replacement and returns to the
+unchanged administrator. The new workspace journey persists rename/archive/restore
+and saves/loads/deletes a real SQL template. Four new mocked browser cases cover
+management/conflict retention, saved SQL pagination without execution, and password
+confirmation/failure/success. The logout selector was narrowed to its exact label
+after the new password form introduced a second button containing “退出”; the
+previous 61-pass/one-failure mock and 8-pass/one-failure live runs are superseded
+by the complete reruns, with all assertions retained.
+
+Two quota tests initially expected HTTP 422; inspection confirmed SKILL_TOO_LARGE
+maps to HTTP 413, and they now assert that existing protocol contract. One service
+matrix and a focused password batch were inadvertently started on the same
+disposable control database; clean_db truncation caused fixture collisions. Those
+runs were stopped and are not acceptance evidence. The full matrix is rerun alone;
+run database pytest batches serially for each AIND_DATABASE_URL. This affected only
+the disposable integration database, not the separately provisioned live-service
+history or pre-existing databases.
+
+Doris/DataHub skips and the deferred DeepSeek/A09 remain unchanged. No multi-worker
+load/soak, Spark read-only authorization/shared-HMS lineage, semantic memory,
+team-scope memory or model-driven tool selection is claimed by this round.
+
+Final browser and focused checks for this round:
+
+```bash
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm --prefix frontend run test:regression
+# 62 passed, 3.3m
+# After the last guard against loading a template before active-query detail arrives:
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm --prefix frontend run test:regression -- workspace-management.spec.ts
+# 4 passed, 15.2s
+uv run --project backend --frozen pytest backend/tests/integration/test_password_change.py -q --tb=short
+# 5 passed, 2 dependency warnings, 9.02s
+```
+
+The concurrent-login probe initially assumed the outer executor's thread name was
+also the FastAPI handler thread name. FastAPI runs sync handlers in its own worker
+thread, so its event never fired. The probe now gates the first verification call
+instead; its real PostgreSQL NOWAIT check then confirms the held user lock. This
+was a test synchronization correction, not a relaxation of the lock assertion.
+The intermediate matrix's 119 passes / one failed probe is superseded by the
+subsequent isolated full-matrix run recorded below. No database test batches ran
+concurrently during that final matrix.
+
+Final isolated service matrix (same pinned PG/MySQL/TLS and standalone Spark
+fixtures as the preceding round):
+
+```bash
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q --tb=short
+# 120 passed, 14 skipped, 28 deselected, 2 dependency warnings, 210.54s
+```
+
+This supersedes the interrupted shared-database batches and the failed test-thread
+probe. The 14 skips remain 13 Doris-dependent cases and one deployed DataHub case;
+three newly added pure SSE contracts account for the deselection increase from
+25 to 28 (they pass in the static suite). No test assertion or skip condition was
+removed to obtain the final result.

@@ -69,7 +69,7 @@ test('switching accounts does not inherit preferences and failed saves preserve 
   const other = await context.newPage();
   await other.goto('/settings');
   await expect(other.getByTestId('settings-username')).toHaveText('alice');
-  await page.getByRole('button', { name: '退出' }).click();
+  await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(other.getByTestId('login-username')).toBeVisible();
   await page.getByTestId('login-username').fill('bob');
   await page.getByTestId('login-password').fill('password');

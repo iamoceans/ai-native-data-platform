@@ -26,12 +26,15 @@ High-priority implementation requested in this round:
 
 Remaining medium/low product and verification items (not implemented in this round):
 
-- [ ] Conversation rename/archive/restore UI and archived-session browsing
-      (the backend interfaces already exist).
-- [ ] Saved SQL frontend save/list/reuse workflow (backend interfaces exist).
-- [ ] Self-service password change; the existing CLI remains the supported path.
+- [x] Conversation rename/archive/restore UI and archived-session browsing.
+      Current archived transcripts remain readable and retain their composer draft.
+- [x] Saved SQL frontend save/list/reuse/delete workflow with pagination; loading
+      never executes the statement and unavailable source entries cannot load.
+- [x] Self-service password change with current-password verification, bounded
+      failed attempts, audit, cookie deletion and revocation of all prior sessions.
 - [ ] Explain templates populated from stored evidence; current replies quote it.
-- [ ] Skills quota boundary tests and dedicated session SSE contract tests.
+- [x] Actual 50-skill / 20-version quota boundaries and idempotent replay tested;
+      dedicated session SSE replay/framing/ownership/idle-closure contracts added.
 - [ ] Concurrent-session/worker load and soak acceptance, memory throughput and
       cross-analysis paraphrase-race checks.
 - [ ] Spark read-only authorization, shared-HMS listener lineage and browser E2E.
@@ -868,7 +871,8 @@ however complete an earlier phase looks.
       disable / archive, builtin read-only) behind `PermissionGate`, with the
       nav entry, regenerated `openapi.json`/types and `data-testid`s.
 - [x] Session-side pool and layered loading are delivered in P3 below.
-- [ ] Per-user (50) and per-skill (20) quotas are enforced but lack dedicated tests.
+- [x] Per-user (50) and per-skill (20) quota boundaries have dedicated live-DB
+      tests, including rejection and hash replay at the limit.
 
 ### P3 - conversation orchestration
 
@@ -911,7 +915,8 @@ however complete an earlier phase looks.
       against final scope; conflicting metric requirements or missing required
       inputs produce clarification without overwriting explicit UI values.
 - [ ] `explain` does not interpolate numbers into a template (quotes carry them
-      verbatim); session SSE lacks a dedicated contract test beyond integration.
+      verbatim). Session SSE now has dedicated contract tests and an empty-idle
+      real API regression; it closes immediately even when no event ever existed.
 
 ### P4 - the conversational UI
 
@@ -1154,3 +1159,22 @@ Three defects, all fixed on the working copy; evidence in `docs/acceptance.md`,
 
 Final mocked-browser suite: **58 passed** (2.1m). Earlier race failures are
 superseded; commands and details are in the acceptance record.
+
+## 2026-10-16 Continued TODO: workspace management and security
+
+- [x] Conversation rename, archive/restore and archived-session browsing; errors
+      preserve the edit, archived transcripts preserve the unsent question.
+- [x] Saved SQL save/list/load/delete UI, pagination and unavailable-source handling.
+      Loading never executes; query access still requires the gateway checks.
+- [x] Self-service password form and closed CSRF-protected endpoint. Current
+      password verified, bounded failures audited, all sessions revoked atomically.
+      Login holds the same user lock so old-password races cannot escape revocation.
+- [x] Skills limits tested at 50 owned skills / 20 versions, including rejection
+      and idempotent hash replay at capacity (HTTP 413 SKILL_TOO_LARGE).
+- [x] Dedicated session SSE framing/resume/ownership/idle contracts. Empty idle
+      streams now close immediately even without any previous event.
+- [x] Static **520 passed**, frontend units **12 passed**, production build exit 0
+      and live browser journeys **9 passed**. Mocked browsers **62 passed**, followed
+      by **4 passed** for the final template-loading guard. Final serial matrix
+      service matrix: **120 passed / 14 skipped / 28 deselected**, serial run.
+      Shared-DB runs and the failed test synchronization probe are not counted.

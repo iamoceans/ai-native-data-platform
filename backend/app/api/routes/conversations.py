@@ -545,7 +545,7 @@ def session_events(
                     "event: analysis.permission.revoked\n"
                     f'data: {{"analysis_id":"{analysis_id}","session_id":"{session_id}"}}\n\n'
                 )
-            if active is None and not events and not revoked and last_sent:
+            if active is None and not events and not revoked:
                 yield 'event: stream.end\ndata: {"status":"idle"}\n\n'
                 return
             if time.monotonic() - last_heartbeat > SSE_HEARTBEAT_SECONDS:

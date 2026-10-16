@@ -56,6 +56,24 @@ export async function updateProfile(patch: Omit<components["schemas"]["ProfileUp
   return profile;
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiFetch<void>("/api/v1/auth/password", { method: "POST", body: { current_password: currentPassword, new_password: newPassword } });
+  setCsrfToken(null);
+  resetAccountPreferences();
+  notifyAuthenticationChange();
+}
+
+export type SavedQuery = components["schemas"]["SavedQueryResponse"];
+export async function listSavedQueryPage(cursor?: string): Promise<components["schemas"]["SavedQueryListResponse"]> {
+  return apiFetch(`/api/v1/saved-queries${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+}
+export async function saveQuery(body: components["schemas"]["SavedQueryCreate"]): Promise<SavedQuery> {
+  return apiFetch("/api/v1/saved-queries", { method: "POST", body });
+}
+export async function deleteSavedQuery(id: string): Promise<void> {
+  return apiFetch(`/api/v1/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export async function listDatasources(): Promise<Datasource[]> {
   const response = await apiFetch<{ items: Datasource[] }>("/api/v1/datasources");
   return response.items;

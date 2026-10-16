@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.ids import utcnow
@@ -128,6 +128,15 @@ def get_session_by_token_hash(session: Session, token_hash: str) -> AuthSession 
 def revoke_session(session: Session, row: AuthSession) -> None:
     row.revoked_at = utcnow()
     session.flush()
+
+
+def rotate_password(session: Session, user: User, password_hash: str) -> int:
+    user.password_hash = password_hash
+    result = session.execute(update(AuthSession).where(
+        AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None),
+    ).values(revoked_at=utcnow()))
+    session.flush()
+    return int(result.rowcount or 0)
 
 
 def purge_expired_sessions(session: Session) -> int:

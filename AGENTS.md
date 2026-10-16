@@ -83,7 +83,9 @@ Test suites (markers: `integration`, `security`, `contract`):
 
 `make test-integration` stops/starts nothing by itself: stop the compose
 `query-worker` and `agent-worker` first so the host-side test worker owns the
-queue, otherwise you will fight the running workers over claims.
+queue, otherwise you will fight the running workers over claims. Run DB pytest
+batches serially per AIND_DATABASE_URL: clean_db truncates tables and two batches
+cannot safely share that database, even when both use disposable fixtures.
 
 Baseline as of 2026-09-18: **235 static tests pass**; the PostgreSQL core profile
 integration run reported **43 passed / 22 skipped** (skips are the absent MySQL,
@@ -170,6 +172,17 @@ journey **1 passed**, production build exit 0 and schema verification passes.
 Final mocked-browser suite: **58 passed**. Doris/DataHub
 full acceptance remains blocked by disk footprint; Spark secure auth, read-only
 authorization, shared-HMS lineage/E2E and DeepSeek/A09 remain open/deferred.
+
+Continued TODO round (2026-10-16): conversation rename/archive/restore and
+archived browsing, lazy saved-SQL frontend management, self-service password
+rotation with current-password/CSRF checks and all-session revocation are
+implemented. Login and password rotation serialize on the user row. Quota tests
+cover 50 skills / 20 versions; dedicated session SSE contracts include immediate
+empty-idle termination (fixed). Static **520 passed**, frontend units **12 passed**,
+production build exit 0, live browser **9 passed**, mocked browser **62 passed**
+and the final affected browser cases **4 passed**. Final serial service matrix:
+**120 passed / 14 skipped / 28 deselected** (Doris/DataHub absent); see acceptance. No new migration is
+needed beyond d2e6a9f18c40. Remaining infrastructure/model limitations still apply.
 
 ## Invariants - do not break these
 

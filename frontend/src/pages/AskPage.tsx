@@ -15,6 +15,7 @@ import {
   getSession,
   getTurn,
   listMetrics,
+  me,
   listSessionMessagePage,
   retryTurn,
   listSessionPage,
@@ -68,6 +69,7 @@ export function AskPage() {
   const [skillMode, setSkillMode] = useState<"off" | "manual" | "auto">("auto");
   const [pickedSkills, setPickedSkills] = useState<string[]>([]);
   const [scopeCollapsed, setScopeCollapsed] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 820px)").matches);
   useEffect(() => {
@@ -84,14 +86,15 @@ export function AskPage() {
   currentSessionRef.current = sessionId;
 
   const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
+  const profile = useQuery({ queryKey: ["me"], queryFn: me });
   const skills = useQuery({
     queryKey: ["skills"],
     queryFn: () => listSkills(false),
   });
   const sessions = useInfiniteQuery({
-    queryKey: ["sessions"],
+    queryKey: ["sessions", includeArchived],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => listSessionPage(false, pageParam),
+    queryFn: ({ pageParam }) => listSessionPage(includeArchived, pageParam),
     getNextPageParam: page => page.next_cursor || undefined,
   });
 
@@ -370,6 +373,7 @@ export function AskPage() {
     const question = text.trim();
     if (
       !question ||
+      session.data?.archived_at ||
       activeTurnId ||
       send.isPending ||
       legacySubmit.isPending ||
@@ -441,12 +445,15 @@ export function AskPage() {
     startConversation.isPending || retry.isPending;
   // A session in the URL that has not loaded yet is the only reason to hold the
   // send button back; without a session, sending opens one (see onSend).
-  const sendBlocked = busy || !text.trim() || (Boolean(sessionId) && !session.data);
+  const sendBlocked = busy || Boolean(session.data?.archived_at) || !text.trim() || (Boolean(sessionId) && !session.data);
   const turn = activeTurn.data ?? null;
 
   return (
     <div className="conversation">
       <SessionList
+        canManage={profile.data?.capabilities.includes("analysis.create") ?? false}
+        includeArchived={includeArchived}
+        onIncludeArchived={setIncludeArchived}
         sessions={[...new Map((sessions.data?.pages.flatMap(page => page.items) ?? []).map(item => [item.id, item])).values()]}
         hasMore={sessions.hasNextPage}
         loadingMore={sessions.isFetchingNextPage}
@@ -522,12 +529,13 @@ export function AskPage() {
           </section>
 
           <div className="composer">
+            {session.data?.archived_at ? <p className="notice">{t("会话已归档，恢复后可继续提问。")}</p> : null}
             <textarea
               data-testid="conversation-input"
               rows={3}
               placeholder={t("例如：上周收入为什么下降？")}
               value={text}
-              disabled={busy}
+              disabled={busy || Boolean(session.data?.archived_at)}
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey))

@@ -254,3 +254,29 @@ def test_builtins_are_synced_read_only_and_cannot_be_shadowed(skills_env):
     shadow = upload(client, filename="SKILL.md", data=skill_md(name="channel-contribution").encode())
     assert shadow.status_code == 409
     assert shadow.json()["error"]["code"] == "CONFLICT"
+
+
+def test_personal_skill_quota_at_50_preserves_idempotent_replay(skills_env):
+    client = skills_env
+    assert get_settings().skills_per_user_max == 50
+    for index in range(50):
+        response = upload(client, filename='SKILL.md', data=skill_md(name=f'quota-skill-{index}').encode())
+        assert response.status_code == 201, response.text
+    denied = upload(client, filename='SKILL.md', data=skill_md(name='one-too-many').encode())
+    assert denied.status_code == 413 and denied.json()['error']['code'] == 'SKILL_TOO_LARGE'
+    replay = upload(client, filename='SKILL.md', data=skill_md(name='quota-skill-0').encode())
+    assert replay.status_code == 201 and replay.json()['version_count'] == 1
+
+
+def test_skill_version_quota_at_20_preserves_existing_hash(skills_env):
+    client = skills_env
+    assert get_settings().skill_versions_max == 20
+    first = upload(client, filename='SKILL.md', data=skill_md().encode())
+    path = f"/api/v1/skills/{first.json()['id']}/versions"
+    for index in range(2, 21):
+        response = upload(client, filename='SKILL.md', data=skill_md(body=BODY + f'方法说明 {index}\n').encode(), path=path)
+        assert response.status_code == 201 and response.json()['version'] == index
+    denied = upload(client, filename='SKILL.md', data=skill_md(body=BODY + '超出配额\n').encode(), path=path)
+    assert denied.status_code == 413 and denied.json()['error']['code'] == 'SKILL_TOO_LARGE'
+    replay = upload(client, filename='SKILL.md', data=skill_md().encode(), path=path)
+    assert replay.status_code == 201 and replay.json()['version'] == 1

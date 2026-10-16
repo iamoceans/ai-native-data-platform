@@ -111,10 +111,16 @@ are stored per account and restored on other devices; concurrent stale saves
 return a conflict and preserve the unsaved form. Roles and capabilities are read-only.
 The timezone changes displayed timestamps, not metric periods or query semantics.
 Login/logout clears account caches; other workspace tabs reload on authentication
-changes. Password rotation remains a CLI operation.
+changes. Personal settings also offers current-password-verified password rotation; it
+signs out every existing device/session. Login verification and session issuance
+serialize with rotation so an old-password login cannot escape revocation.
 
 The Ask conversation rail loads 20 sessions at a time with **Load more conversations**;
 this is separate from backward pagination of messages inside a conversation.
+Conversations can be renamed, archived and restored; enable Show archived
+conversations to browse them. Archived transcripts stay readable. The SQL
+workspace's Saved queries panel saves private templates, pages through them and
+loads/deletes them; loading fills the editor without executing a query.
 Existing installations must apply migration `d2e6a9f18c40` (`alembic upgrade head`)
 before starting the updated API/workers.
 

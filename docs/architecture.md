@@ -503,3 +503,40 @@ stops launch; cancellation during handle publication is sent again once the hand
 exists. It remains an asynchronous request, not confirmation that the server stopped.
 The live regression checks CANCELED_STATE and a subsequent successful query. This
 standalone NOSASL fixture does not verify shared HMS lineage or source authorization.
+
+### Conversation management, saved SQL and password rotation (2026-10-16)
+
+The conversation rail exposes rename and archive/restore actions to users with
+analysis.create, supplies the current context version and keeps failed edits in
+place. Include archived sessions changes the session-list query key/filter;
+pagination and error handling apply independently to each filter. The current
+archived transcript stays visible with its composer disabled and its unsent draft
+retained. Restoring refetches the session and re-enables its composer; the server
+continues to enforce owner, busy and version checks.
+
+SQL workspace Saved queries is a lazy panel over the existing private CRUD API.
+It names/saves the current SQL and datasource snapshot, pages/deduplicates saved
+rows, loads them into the editor or deletes them. Loading clears previous result
+selection and never submits a query. Missing/disabled source entries cannot load,
+and loading is disabled while an execution is active. Actual query submission
+continues through the same gateway/grant checks.
+
+POST `/auth/password` accepts closed SecretStr current/new password fields,
+requires authentication/CSRF, verifies the current password under a refreshed user
+row lock, rejects reuse and enforces 12..1024 characters on the new password.
+Failed verification is audited and bounded by the existing single-process limiter
+in an account-specific bucket. Successful rotation atomically hashes the new
+password, revokes all existing sessions and audits the revocation count. Response
+cookies are deleted and the client clears state and returns to sign-in. Login now
+locks/refreshes the user before verifying the hash and issuing a session, so a
+racing old-password login either precedes rotation and is revoked, or verifies
+the new hash. Passwords do not enter audit details, error responses or browser
+storage. The logout route also returns the response carrying its cookie deletion.
+
+Dedicated session SSE contract tests cover framing, JSON-safe multiline payloads,
+monotonic replay, lost-owner closure and idle termination. An empty idle session
+now emits stream.end immediately; the former last_sent condition incorrectly
+kept it alive until max_duration if it had never published an event. Live API
+regression covers that empty-session case. Quota tests reach the actual 50 owned
+skills / 20 versions limits, verify SKILL_TOO_LARGE (HTTP 413) and confirm existing
+content-hash replay remains idempotent at the limit.

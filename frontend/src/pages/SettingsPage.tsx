@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { me, updateProfile, type Profile } from "../api/endpoints";
+import { changePassword, me, updateProfile, type Profile } from "../api/endpoints";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale } from "../i18n";
 
@@ -59,6 +60,29 @@ function SettingsForm({ profile, reload }: { profile: Profile; reload: () => Pro
           <button type="button" className="ghost" disabled={save.isPending} onClick={async () => { await reload(); setDirty(false); save.reset(); setSaved(false); }}>{t("重新加载设置")}</button>
         </div>
       </form>
+      <PasswordForm />
     </div>
   );
+}
+
+function PasswordForm() {
+  useLocale();
+  const navigate = useNavigate();
+  const client = useQueryClient();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const change = useMutation({
+    mutationFn: () => changePassword(current, next),
+    onSuccess: () => { setCurrent(""); setNext(""); setConfirm(""); client.clear(); navigate("/login", { replace: true }); },
+  });
+  return <form className="card stack" onSubmit={event => { event.preventDefault(); change.mutate(); }}>
+    <h2>{t("修改密码")}</h2><p className="muted">{t("修改后将退出所有设备，请使用新密码重新登录。")}</p>
+    <label>{t("当前密码")}<input type="password" autoComplete="current-password" data-testid="password-current" value={current} maxLength={1024} disabled={change.isPending} onChange={event => { setCurrent(event.target.value); change.reset(); }} required /></label>
+    <label>{t("新密码（至少 12 个字符）")}<input type="password" autoComplete="new-password" data-testid="password-new" value={next} minLength={12} maxLength={1024} disabled={change.isPending} onChange={event => { setNext(event.target.value); change.reset(); }} required /></label>
+    <label>{t("确认新密码")}<input type="password" autoComplete="new-password" data-testid="password-confirm" value={confirm} disabled={change.isPending} onChange={event => setConfirm(event.target.value)} required /></label>
+    {confirm && confirm !== next ? <p className="notice error">{t("两次输入的新密码不一致。")}</p> : null}
+    {change.isError ? <p className="notice error" role="alert" data-testid="password-error"><ErrorMessage error={change.error} /></p> : null}
+    <button type="submit" className="primary" data-testid="password-submit" disabled={change.isPending || !current || next.length < 12 || next !== confirm || next === current}>{t("修改密码并退出")}</button>
+  </form>;
 }

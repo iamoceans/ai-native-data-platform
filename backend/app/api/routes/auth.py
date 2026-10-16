@@ -13,11 +13,11 @@ from app.api.deps import (
     get_trace_id,
     require_csrf,
 )
-from app.api.dto import LoginRequest, LoginResponse, ProfileResponse, ProfileUpdate
+from app.api.dto import LoginRequest, LoginResponse, PasswordChange, ProfileResponse, ProfileUpdate
 from app.auth import sessions as sessions_service
 from app.auth.ratelimit import LoginRateLimiter
 from app.auth.sessions import AuthContext
-from app.auth.passwords import verify_password
+from app.auth.passwords import hash_password, verify_password
 from app.config import Settings
 from app.constants import ErrorCode
 from app.errors import ApiError
@@ -84,6 +84,11 @@ def login(
         raise ApiError(ErrorCode.RATE_LIMITED, "too many login attempts; try again later")
 
     user = users_repo.get_user_by_username(session, payload.username)
+    if user is not None:
+        # Serialize password verification/session issuance with password rotation.
+        # Otherwise an old-password login can publish a new session just after
+        # rotation revoked the previously existing sessions.
+        user = users_repo.get_user_for_update(session, user.id)
     # Uniform error for unknown user / wrong password / inactive account.
     if user is None or not user.active or not verify_password(user.password_hash, payload.password):
         limiter.record_failure(payload.username, client)
@@ -173,7 +178,8 @@ def logout(
     )
     response.delete_cookie(settings.cookie_name, path="/")
     response.delete_cookie(settings.csrf_cookie_name, path="/")
-    return Response(status_code=204)
+    response.status_code = 204
+    return response
 
 
 @router.get("/me", response_model=ProfileResponse)
@@ -200,3 +206,37 @@ def update_me(
             details={"fields": sorted(changes)},
         )
     return _profile(auth)
+
+
+@router.post("/password", status_code=204)
+def change_password(
+    payload: PasswordChange, request: Request, response: Response,
+    auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+) -> Response:
+    user = users_repo.get_user_for_update(session, auth.user.id)
+    if user is None:
+        raise ApiError(ErrorCode.UNAUTHENTICATED, "account is unavailable")
+    limiter = get_login_limiter(settings)
+    bucket = f"password-change:{user.id}"
+    client = get_client_ip(request)
+    if not limiter.check(bucket, client):
+        raise ApiError(ErrorCode.RATE_LIMITED, "too many password attempts; try again later")
+    if not verify_password(user.password_hash, payload.current_password.get_secret_value()):
+        limiter.record_failure(bucket, client)
+        audit_repo.add_audit(session, actor_id=user.id, action="auth.password.change",
+            resource_type="user", resource_id=str(user.id), trace_id=get_trace_id(request),
+            outcome="denied", details={})
+        session.commit()
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "current password is incorrect")
+    if payload.current_password.get_secret_value() == payload.new_password.get_secret_value():
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "new password must differ from current password")
+    revoked = users_repo.rotate_password(session, user, hash_password(payload.new_password.get_secret_value()))
+    limiter.reset(bucket, client)
+    audit_repo.add_audit(session, actor_id=user.id, action="auth.password.change",
+        resource_type="user", resource_id=str(user.id), trace_id=get_trace_id(request),
+        outcome="success", details={"revoked_sessions": revoked})
+    response.delete_cookie(settings.cookie_name, path="/")
+    response.delete_cookie(settings.csrf_cookie_name, path="/")
+    response.status_code = 204
+    return response

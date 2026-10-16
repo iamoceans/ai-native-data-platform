@@ -16,6 +16,7 @@ import {
 import { ResultTable } from "../components/ResultTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { useQueryEvents } from "../hooks/useQueryEvents";
+import { SavedQueriesPanel } from "../components/SavedQueriesPanel";
 
 const TERMINAL = new Set([
   "SUCCEEDED",
@@ -239,6 +240,9 @@ export function SqlWorkspacePage() {
           </p>
         ) : null}
       </section>
+
+      <SavedQueriesPanel datasourceId={datasourceId} sql={sql} sources={datasources.data ?? []} loadDisabled={submit.isPending || Boolean(queryId && (!detail.data || !TERMINAL.has(detail.data.status)))}
+        onLoad={saved => { setDatasourceId(saved.datasource_id); setSql(saved.sql); setQueryId(null); setPages([]); setCursor(null); setSubmitError(null); setResultError(null); setParams({}); }} />
 
       {queryId && detail.data ? (
         <section className="card">

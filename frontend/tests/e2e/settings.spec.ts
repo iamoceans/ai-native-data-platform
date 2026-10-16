@@ -41,8 +41,21 @@ test('account settings persist on the real API and stay separate from the admini
     await expect(device.getByTestId('language-switcher')).toHaveValue('zh-CN');
     await expect(device.getByTestId('settings-timezone')).toHaveValue('Asia/Singapore');
     await expect(device.getByTestId('settings-display-name')).toHaveValue('Live settings reader');
+    const replacement = `Changed-test-${randomUUID()}`;
+    await page.getByTestId('password-current').fill(password);
+    await page.getByTestId('password-new').fill(replacement);
+    await page.getByTestId('password-confirm').fill(replacement);
+    await page.getByTestId('password-submit').click();
+    await expect(page).toHaveURL(/\/login$/);
+    // The other device's session was revoked as part of the same transaction.
+    expect((await device.request.get('/api/v1/auth/me')).status()).toBe(401);
+    await page.getByTestId('login-username').fill(username);
+    await page.getByTestId('login-password').fill(replacement);
+    await page.getByTestId('login-submit').click();
+    await page.getByTestId('nav-settings').click();
+    await expect(page.getByTestId('settings-username')).toHaveText(username);
   } finally { await fresh.close(); }
-  await page.getByRole('button', { name: '退出' }).click();
+  await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await page.getByTestId('login-username').fill(process.env.E2E_ADMIN_USER ?? 'admin');
   await page.getByTestId('login-password').fill(process.env.E2E_ADMIN_PASSWORD ?? 'dev-admin-password-123');
   await page.getByTestId('login-submit').click();
