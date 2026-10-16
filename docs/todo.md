@@ -31,6 +31,10 @@ Product and verification items (current status):
 
 - [x] Account analysis defaults (metric/dimensions/skill mode), applied only to
       new sessions and subordinate to explicit choices; dates/completeness stay unset.
+- [x] Code-review regressions: format repair checks an isolated budget copy
+      without accumulating temporary reservations; first-question submission
+      inherits unedited session skills; unresolved turn retries keep their
+      idempotency key per session/original turn until success.
 - [x] Shared PostgreSQL login/password failure limits, bounded allocation and
       cross-process persistence; same-host dual API deployment acceptance.
 - [x] Per-poll SSE auth-session/user/grant rechecks and revoked event suppression.

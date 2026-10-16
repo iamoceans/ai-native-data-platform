@@ -3,7 +3,7 @@ import type { ConversationMessage } from "../../src/api/endpoints";
 
 test.use({ locale: "en-US" });
 
-async function platform(page: Page, options: { messages?: number; failed?: boolean; result?: boolean; retryDelay?: number } = {}) {
+async function platform(page: Page, options: { messages?: number; failed?: boolean; result?: boolean; retryDelay?: number; retryFailures?: number } = {}) {
   const retries: { path: string; key?: string }[] = [];
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -39,6 +39,10 @@ async function platform(page: Page, options: { messages?: number; failed?: boole
     if (path.endsWith("/retry")) {
       retries.push({ path, key: request.headers()["idempotency-key"] });
       if (options.retryDelay) await new Promise(resolve => setTimeout(resolve, options.retryDelay));
+      if (retries.length <= (options.retryFailures ?? 0)) {
+        await route.fulfill({ status: 503, json: { error: { code: "INTERNAL_ERROR", message: "response unavailable", retryable: true } } });
+        return;
+      }
       body = { id: "new-turn", session_id: "first", status: "QUEUED" };
     }
     if (path.endsWith("/events")) { await route.fulfill({ contentType: "text/event-stream", body: "" }); return; }
@@ -75,6 +79,37 @@ test("retry submits a new action once without replacing the current question dra
   await expect(page.getByTestId("conversation-input")).toHaveValue("my unsent next question");
   expect(retries[0].path).toBe("/api/v1/sessions/first/turns/failed-turn/retry");
   expect(retries[0].key).toBeTruthy();
+});
+
+test("retry keeps its idempotency key after an ambiguous failure and releases it after success", async ({ page }) => {
+  const { retries } = await platform(page, { failed: true, retryFailures: 1 });
+  await page.getByTestId("conversation-input").fill("unsent question");
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toHaveCount(0);
+  expect(retries).toHaveLength(2);
+  expect(retries[0].key).toBe(retries[1].key);
+  await expect(page.getByTestId("conversation-input")).toHaveValue("unsent question");
+  // The fixture leaves the failed original visible so a later explicit action
+  // can prove that a confirmed success starts a new operation.
+  await page.getByTestId("retry-turn").click();
+  await expect.poll(() => retries.length).toBe(3);
+  expect(retries[2].key).not.toBe(retries[1].key);
+});
+
+test("unresolved retries retain separate keys when switching conversations", async ({ page }) => {
+  const { retries } = await platform(page, { failed: true, retryFailures: 3 });
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  await page.getByTestId("session-second").click();
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  await page.getByTestId("session-first").click();
+  await page.getByTestId("retry-turn").click();
+  await expect.poll(() => retries.length).toBe(3);
+  expect(retries[0].key).not.toBe(retries[1].key);
+  expect(retries[0].key).toBe(retries[2].key);
 });
 
 test("mobile scope is a modal with Escape, focus return and preserved drafts", async ({ page }) => {

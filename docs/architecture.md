@@ -372,6 +372,10 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   replacing explicit scope. Archived or foreign versions cannot load.
 - **Budgets**: a turn has a UTC `deadline_at`, token and model-call allowances;
   the analysis it creates runs on the *remaining* sub-budget, never a fresh one.
+  Each model format attempt checks cumulative actual usage plus the next request
+  on an isolated budget copy. Temporary adapter checks cannot accumulate on a
+  mutable turn budget; the orchestrator's durable reservations stay intact until
+  the caller settles aggregate usage once.
 - **Live updates**: `GET /sessions/{id}/events` streams persisted, monotonic
   events (message/turn/analysis state, skill loads, revocations) with
   `Last-Event-ID` resume; the UI also polls, so a dropped stream degrades to
@@ -379,6 +383,13 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
 - The whole module sits behind `AIND_CONVERSATIONAL_ASK_ENABLED` (default off);
   with it off the turn write API answers 503 `CONVERSATIONAL_DISABLED` and the
   UI falls back to the one-shot analysis path.
+
+The Ask frontend omits unedited skill selections, including the first question
+that creates a session, so account/session defaults apply. Explicit skill edits
+still override inheritance. It retains unresolved retry keys in page memory,
+scoped by session and original turn, across failures and session navigation.
+A confirmed success releases that key for a subsequent explicit retry action;
+page reload/unmount clears the page's retry-key map.
 
 ## Interface localization
 

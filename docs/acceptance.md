@@ -2494,3 +2494,43 @@ Doris/MySQL. Its onboarding `env.sh` still explicitly exports the fake provider;
 no deployed API/worker was restarted, no migration was applied and no full A09
 or large-pool Skill evaluation was run. Earlier missing-binding notes are
 historical and are superseded by the successful request evidence above.
+
+## Code-review fixes — reservation accounting and Ask submission state
+
+Three reproduced defects are fixed:
+
+- The OpenAI-compatible adapter checks each format attempt on a budget copy,
+  including cumulative actual token use and the next request's allowance. It
+  does not accumulate temporary reservations on the mutable TurnBudget, nor
+  discard existing orchestrator reservations. The caller records aggregate
+  usage and the physical model-call count once. Tests include the 450-token
+  false-exhaustion reproduction, genuine output/input shortages and intent
+  settlement after two attempts.
+- An untouched skill selector submits no per-turn override. The first question
+  inherits the newly created session's skill configuration and uses its resolved
+  scope for the legacy fallback. Explicit manual selection still works.
+- Turn retries retain a key per session/original turn after ambiguous failures,
+  including navigation to another conversation and back. A confirmed success
+  releases that key. The map lives in the Ask page and clears on unmount/reload;
+  this is not durable browser retry recovery.
+
+Observed checks:
+
+- `uv run --project backend --frozen pytest backend/tests/unit
+  backend/tests/security backend/tests/contract -q`: **641 passed**, two existing
+  dependency deprecation warnings. The initial focused budget/model batch was
+  **53 passed**.
+- `npm run test:unit` in frontend: **12 passed**.
+- `npm run build` in frontend: **exit 0**, including generated types and TypeScript.
+- `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression --
+  tests/regression/operational.spec.ts
+  tests/regression/conversation-operations.spec.ts
+  tests/regression/ask.spec.ts`: **32 passed** (49.2 s). These use mocked APIs;
+  they cover both off/auto defaults, explicit pinned skills, retry-key reuse and
+  release, conversation isolation, draft preservation and existing Ask behavior.
+- `git diff --check`: **exit 0**.
+
+The first browser launch found port 3018 occupied by the review's temporary Vite
+process. That owned process was stopped, then the suite ran on its own server.
+No DB migration, deployed-service restart, full browser/engine matrix, A09 or
+additional live-model request was performed for these changes.

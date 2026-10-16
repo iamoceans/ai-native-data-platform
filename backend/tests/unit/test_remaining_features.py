@@ -10,6 +10,8 @@ from app.agent.llm import OpenAICompatibleProvider
 from app.agent.planner import PlanningSelection, ObservationSelection
 from app.agent.semantic import embed, similarity, rank_memories
 from app.agent.conversation import explain
+from app.agent.conversation.budget import TurnBudget
+from app.config import Settings
 from app.ids import utcnow
 
 
@@ -49,6 +51,50 @@ def test_repair_respects_remaining_token_budget(monkeypatch):
         provider.generate_structured(messages=[], schema=PlanningSelection,
             budget=AnalysisBudget.start(max_output_tokens=100), max_output_tokens=100)
     assert len(requests) == 1
+
+
+def test_turn_format_repair_does_not_double_reserve_or_discard_prior_reservations(monkeypatch):
+    provider, requests = adapter(monkeypatch, ['bad', '{"dimensions":["country"]}'])
+    budget = TurnBudget.start(Settings(_env_file=None, agent_max_input_tokens=450))
+    budget.input_tokens = 20
+    budget.reserve_model_call(estimated_input=50, max_output=50)
+    before = budget.as_dict()
+    result = provider.generate_structured(
+        messages=[{'role': 'user', 'content': 'x' * 100}], schema=PlanningSelection,
+        budget=budget, max_output_tokens=100,
+    )
+    assert len(requests) == 2 and result.value.dimensions == ['country']
+    assert result.usage.input_tokens == 20 and result.usage.output_tokens == 10
+    assert result.model_calls == 2
+    assert budget.as_dict() == before  # caller settles once; durable reservations survive
+
+
+def test_turn_repair_refuses_a_real_output_budget_shortage(monkeypatch):
+    provider, requests = adapter(monkeypatch, ['bad', '{"dimensions":[]}'])
+    budget = TurnBudget.start(Settings(_env_file=None, agent_max_output_tokens=100))
+    with pytest.raises(BudgetExceeded):
+        provider.generate_structured(messages=[], schema=PlanningSelection, budget=budget, max_output_tokens=100)
+    assert len(requests) == 1
+
+
+def test_turn_model_checks_keep_existing_reservations_charged(monkeypatch):
+    provider, requests = adapter(monkeypatch, ['{"dimensions":[]}'])
+    budget = TurnBudget.start(Settings(_env_file=None, agent_max_input_tokens=450))
+    budget.reserve_model_call(estimated_input=400, max_output=0)
+    with pytest.raises(BudgetExceeded):
+        provider.generate_structured(messages=[], schema=PlanningSelection, budget=budget, max_output_tokens=100)
+    assert requests == [] and budget.reserved_input == 400
+
+
+def test_turn_intent_settles_both_format_attempts_once(monkeypatch):
+    from app.agent.conversation.intent import call_model
+    provider, requests = adapter(monkeypatch, ['bad', '{"intent":"help"}'])
+    budget = TurnBudget.start(Settings(_env_file=None))
+    budget.reserve_model_call(estimated_input=1000, max_output=1400)
+    decision = call_model(provider, messages=[], budget=budget)
+    assert decision.intent == 'help' and len(requests) == 2
+    assert (budget.input_tokens, budget.output_tokens, budget.model_calls) == (20, 10, 2)
+    assert budget.reserved_input == budget.reserved_output == 0
 
 
 def test_domain_vectors_recall_bilingual_synonyms_and_rank_relevance():

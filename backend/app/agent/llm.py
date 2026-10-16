@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
@@ -198,7 +199,6 @@ class OpenAICompatibleProvider:
     ) -> StructuredGeneration:
         request_messages = self._request_messages(messages=messages, schema=schema)
         estimated = sum(len(message.get("content", "")) for message in request_messages) // 4 + 1
-        budget.reserve_model_call(estimated_input=estimated, max_output=max_output_tokens)
         api_key = self._credential()
         total_input = total_output = 0
         for attempt in range(2):
@@ -206,12 +206,15 @@ class OpenAICompatibleProvider:
                 from app.agent.budget import BudgetExceeded
                 raise BudgetExceeded("model_calls")
             budget.ensure_time()
-            if attempt:
-                # Aggregate reservations also protect immutable analysis budgets.
-                budget.reserve_model_call(
-                    estimated_input=total_input + estimated,
-                    max_output=total_output + max_output_tokens,
-                )
+            # Validate each attempt against the caller's original reservation.
+            # TurnBudget is mutable: accumulating temporary checks on it would
+            # charge the first estimate again when reserving a format repair.
+            # The orchestrator's durable in-flight reservation stays intact;
+            # the caller settles the returned aggregate usage once.
+            copy(budget).reserve_model_call(
+                estimated_input=total_input + estimated,
+                max_output=total_output + max_output_tokens,
+            )
             response = httpx.post(
                 f"{self._base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},

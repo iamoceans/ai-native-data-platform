@@ -84,6 +84,7 @@ export function AskPage() {
   const sessionId = routeSessionId ?? null;
   const currentSessionRef = useRef(sessionId);
   currentSessionRef.current = sessionId;
+  const retryKeys = useRef(new Map<string, string>());
 
   const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
@@ -239,7 +240,7 @@ export function AskPage() {
     scope: ScopeDraft;
     patch: ReturnType<typeof scopePatchFromDraft> | null;
     contextVersion: number;
-    skillSelection: { mode: "off" | "manual" | "auto"; version_ids: string[] };
+    skillSelection?: { mode: "off" | "manual" | "auto"; version_ids: string[] };
     idempotencyKey: string;
   };
   const send = useMutation({
@@ -364,7 +365,9 @@ export function AskPage() {
       scope: { ...scope, dimensions: [...scope.dimensions] },
       patch,
       contextVersion,
-      skillSelection: { mode: skillMode, version_ids: [...pickedSkills] },
+      skillSelection: skillsEdited
+        ? { mode: skillMode, version_ids: [...pickedSkills] }
+        : undefined,
       idempotencyKey: crypto.randomUUID(),
     });
   };
@@ -391,7 +394,7 @@ export function AskPage() {
             submitTurn(
               question,
               created.id,
-              draftFromContext({}),
+              draftFromContext(created.resolved_context),
               null,
               created.context_version,
             );
@@ -426,7 +429,8 @@ export function AskPage() {
   const retry = useMutation({
     mutationFn: ({ origin, turnId, key }: { origin: string; turnId: string; key: string }) => retryTurn(origin, turnId, key),
     retry: false,
-    onSuccess: (_turn, { origin }) => {
+    onSuccess: (_turn, { origin, turnId }) => {
+      retryKeys.current.delete(`${origin}/${turnId}`);
       queryClient.invalidateQueries({ queryKey: ["session", origin] });
       queryClient.invalidateQueries({ queryKey: ["session-messages", origin] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -513,7 +517,11 @@ export function AskPage() {
             {messages.error ? <p className="notice error" role="alert"><ErrorMessage error={messages.error} /></p> : null}
             {visibleMessages.map((message) => (
               <MessageRow key={message.id} message={message} busy={busy} onRetry={(turnId) => {
-                if (sessionId && !busy) retry.mutate({ origin: sessionId, turnId, key: crypto.randomUUID() });
+                if (!sessionId || busy) return;
+                const operation = `${sessionId}/${turnId}`;
+                const key = retryKeys.current.get(operation) ?? crypto.randomUUID();
+                retryKeys.current.set(operation, key);
+                retry.mutate({ origin: sessionId, turnId, key });
               }} />
             ))}
             {turn ? <TurnProgress turn={turn} /> : null}
