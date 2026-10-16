@@ -270,11 +270,13 @@ the specification's frozen DDL list) implement the loop in three steps.
    record (a version id such as `4.2.1` is a value the analysis actually
    grouped by; "down 67%" is refused). Every stored row links to its analysis
    and its comparison artifact.
-2. **Recall.** Planning reads the metric's memories back (most-reused first) and
-   puts them in the planner prompt as a labelled, untrusted data block. They
-   influence only which dimensions the model selects, and the existing allowlist
-   validation still decides what is legal. Use is counted (`reuse_count`), so the
-   store converges on the statements that keep earning their place.
+2. **Recall.** Planning reads at most 200 metric candidates in the user's team
+   or personal scope, checks each source's current discover/query grants, then
+   ranks local bilingual domain concept vectors by cosine similarity to the
+   question. Word/character features handle vocabulary outside the concept map;
+   reuse/recency order breaks ties. The best eight enter the prompt as labelled
+   untrusted data, and reuse is counted. This bounded-domain encoder requires no
+   network credential and is not a general pretrained semantic model.
 3. **Curate.** A fresh row is `proposed`: already used as a hint, labelled as
    such in the UI, and confirmable or rejectable by an administrator
    (`POST /memory/{id}/confirm|reject`, audited). A rejected statement is never
@@ -290,10 +292,16 @@ the 业务记忆 panel on the Ask screen (scoped to the selected metric, with
 curation) and `GET /analyses/{id}/memory` on the analysis screen (what this run
 read and what it produced).
 
-Deliberate limits: retrieval is metric-scoped text, not embeddings; statements
-are number-free by construction, so figures still live only in the evidence
-chain; and a second worker would need a claim/lease for extraction before the
-loop could run at that scale.
+Memory scope: each user has zero or one team, managed by administrators through
+`GET/POST /admin/teams` and `PUT /admin/users/{id}/team` (CSRF, capability checked,
+audited). No team means private memories. Migration e4b8a1c79d20 backfills existing
+memories to their source owner, never to a global default. Team changes do not
+reassign historical memories. List/count/curation/prompt injection and historical
+analysis-memory reads all recheck scope and source grants. Extraction snapshots
+the planning team and refuses a changed team; per-scope PostgreSQL transaction
+locks serialize near-duplicate checks. Model extraction already has durable
+claims/leases and fenced apply. Multi-worker throughput and cross-analysis
+paraphrase contention still need load/soak verification.
 
 ## Conversational Ask and skills
 
@@ -403,12 +411,6 @@ Chinese/English interface entry.
 
 ## Not built
 
-- Model-driven plan and tool selection. The planning call may only choose up to
-  three dimensions from the metric's `allowed_dimensions`; the plan's steps come
-  from `comparison_plan()` and the one adaptive extension is rule-driven
-  (`_extend_with_driver_step`: materiality + a declared `driver_decomposition`
-  metric + budget and depth gates). Nothing yet lets a model choose steps or
-  iterate over tools.
 - The shared/dashboard screens are not part of the V1 specification and were
   not invented.
 - The production phases of the specification (sections 31-32): Kyuubi/Spark batch
@@ -540,3 +542,37 @@ kept it alive until max_duration if it had never published an event. Live API
 regression covers that empty-session case. Quota tests reach the actual 50 owned
 skills / 20 versions limits, verify SKILL_TOO_LARGE (HTTP 413) and confirm existing
 content-hash replay remains idempotent at the limit.
+
+### Closed model actions, explanations, memory scope and chart expansion (2026-10-16)
+
+PlanningSelection chooses compare/breakdown (up to three allowlisted dimensions),
+or requests consideration of the declared driver. Explicit user dimensions remain
+binding. After primary query evidence is observed, ObservationSelection chooses
+finish or driver_decomposition. Each stage runs prepare/reserve -> transaction-free
+network -> fenced apply with checkpoint, cancellation and deadline guards. Driver
+execution still needs materiality, a target, metric declaration, remaining query/
+tool budgets and depth; the model cannot bypass these gates or provide arbitrary
+SQL/tools/URLs/code. A refused driver emits an action-skipped event. The offline
+rule path remains deterministic. This is bounded adaptive investigation, not a
+general multi-tool agent. Current real-model A09 acceptance remains deferred.
+
+The OpenAI-compatible adapter validates the closed schema locally and permits at
+most one fresh format-repair request with the original prompt and same schema.
+Invalid model output is never replayed as instructions. Aggregate usage and both
+physical calls are counted; repair obeys remaining token/call/time limits. Analysis
+planning durably reserves both possible attempts before network I/O, and lost
+attempts keep their worst-case charge. Leases cover two bounded requests.
+
+Explain resolves session ownership, current dataset grants and evidence expiry.
+Templates copy baseline/current/change strings from the claim-bound calculation
+artifact, never from model prose or unrelated state. Contributor and driver
+templates explain the stored calculation's meaning and causal limitations. Missing
+artifacts retain a nonnumeric explanation and the existing claim; unavailable or
+expired references cannot supply numbers. Explanations start no new query.
+
+ChartPanel defaults to ten groups ranked by absolute delta. Expand shows the
+loaded window; load-more reads subsequent bounded pages with the existing owner/
+permission checks and retryable errors. Table and bars use the same visible rows,
+exact Decimal strings remain in titles, and hidden/stored-dropped counts stay
+explicit. Admin datasource IDs use mono-id; result table wrapper/name classes have
+styles; unused assistant message classes were removed.

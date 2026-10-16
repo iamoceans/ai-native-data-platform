@@ -191,7 +191,7 @@ export function AdminDatasourcesPage() {
                       ) : null}
                     </th>
                     <td>{datasource.kind}</td>
-                    <td className="mono small">
+                    <td className="mono-id small">
                       {String(datasource.connection_config?.host ?? "?")}:
                       {String(datasource.connection_config?.port ?? "?")}/
                       {String(datasource.connection_config?.database ?? "?")}

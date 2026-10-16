@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.agent.budget import AnalysisBudget
 
@@ -27,6 +27,7 @@ class StructuredGeneration:
     usage: LLMUsage
     model_id: str
     finish_reason: str
+    model_calls: int = 1
 
 
 def read_api_key(path: Path | str) -> str | None:
@@ -173,32 +174,60 @@ class OpenAICompatibleProvider:
             raise RuntimeError(
                 "no LLM credential configured; bind AIND_LLM_API_KEY or a mounted key file"
             )
-        response = httpx.post(
-            f"{self._base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": self._model,
-                "messages": request_messages,
-                "max_tokens": max_output_tokens,
-                "temperature": 0,
-                "response_format": self._response_format_body(schema),
-            },
-            timeout=self._timeout_seconds,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
-        value = schema.model_validate_json(content)
-        usage = payload.get("usage") or {}
-        return StructuredGeneration(
-            value=value,
-            usage=LLMUsage(
-                input_tokens=int(usage.get("prompt_tokens", estimated)),
-                output_tokens=int(usage.get("completion_tokens", 0)),
-            ),
-            model_id=str(payload.get("model", self._model)),
-            finish_reason=str(payload["choices"][0].get("finish_reason", "unknown")),
-        )
+        total_input = total_output = 0
+        for attempt in range(2):
+            if hasattr(budget, "max_model_calls") and budget.model_calls + attempt + 1 > budget.max_model_calls:
+                from app.agent.budget import BudgetExceeded
+                raise BudgetExceeded("model_calls")
+            budget.ensure_time()
+            if attempt:
+                # Aggregate reservations also protect immutable analysis budgets.
+                budget.reserve_model_call(
+                    estimated_input=total_input + estimated,
+                    max_output=total_output + max_output_tokens,
+                )
+            response = httpx.post(
+                f"{self._base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": self._model, "messages": request_messages,
+                    "max_tokens": max_output_tokens, "temperature": 0,
+                    "response_format": self._response_format_body(schema),
+                },
+                timeout=min(self._timeout_seconds, max(0.1, budget.remaining_seconds()))
+                if hasattr(budget, "remaining_seconds") else self._timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            content = payload["choices"][0]["message"]["content"]
+            usage = payload.get("usage") or {}
+            total_input += max(0, int(usage.get("prompt_tokens", estimated)))
+            total_output += max(0, int(usage.get("completion_tokens", max_output_tokens)))
+            try:
+                value = schema.model_validate_json(content)
+            except ValidationError:
+                if attempt:
+                    raise ValueError("model output still violates the closed schema after format repair") from None
+                # Never replay arbitrary model output or validation values as instructions.
+                request_messages = [*request_messages, {"role": "system", "content":
+                    "The previous response was invalid JSON or violated the schema. "
+                    "Generate a corrected object for the original request. Do not add keys. "
+                    + schema_instruction(schema)}]
+                estimated = sum(len(m.get("content", "")) for m in request_messages) // 4 + 1
+                continue
+            if isinstance(budget, AnalysisBudget):
+                budget.record_model_usage(input_tokens=total_input, output_tokens=total_output)
+            elif budget.input_tokens + total_input > budget.max_input_tokens or budget.output_tokens + total_output > budget.max_output_tokens:
+                from app.agent.budget import BudgetExceeded
+                raise BudgetExceeded("model_tokens")
+            return StructuredGeneration(
+                value=value, usage=LLMUsage(total_input, total_output),
+                model_id=str(payload.get("model", self._model)),
+                finish_reason=str(payload["choices"][0].get("finish_reason", "unknown")),
+                model_calls=attempt + 1,
+            )
+        raise AssertionError("unreachable")
+
 
 
 @dataclass(frozen=True)

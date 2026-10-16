@@ -69,6 +69,10 @@ class AnalysisBudget:
         if self.started_monotonic and current - self.started_monotonic > self.max_wall_seconds:
             raise BudgetExceeded("wall_seconds")
 
+    def remaining_seconds(self) -> float:
+        elapsed = time.monotonic() - self.started_monotonic if self.started_monotonic else 0.0
+        return max(0.0, self.max_wall_seconds - elapsed)
+
     def as_dict(self) -> dict[str, int]:
         return {
             "max_input_tokens": self.max_input_tokens,

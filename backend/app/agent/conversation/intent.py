@@ -310,6 +310,7 @@ def call_model(
         output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
         note=f"intent:{PROMPT_VERSION}",
     )
+    budget.model_calls += int(getattr(generated, "model_calls", 1)) - 1
     return parse_decision(generated.value)
 
 

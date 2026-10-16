@@ -300,15 +300,15 @@ def _focus_analysis_id(
 
 
 def _memory_brief(
-    session: Session, metric_key: str | None, *, role_ids: list[uuid.UUID] | None = None
+    session: Session, metric_key: str | None, *, role_ids: list[uuid.UUID] | None = None,
+    user_id: uuid.UUID | None = None, question: str = ""
 ) -> list[dict[str, Any]]:
     if not metric_key:
         return []
-    rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=5)
-    return [
-        {"id": str(row.id), "status": row.status, "statement": row.statement} for row in rows
-        if memory_repo.memory_dataset_actions_ok(session, role_ids=role_ids or [], row=row)
-    ]
+    from app.agent.memory import planner_brief
+    brief, _ = planner_brief(session, metric_key=metric_key, allowed_dimensions=[],
+                             role_ids=role_ids, user_id=user_id, question=question, limit=5)
+    return brief
 
 
 def _evidence_identifiers(session: Session, turn: ConversationTurn, session_row) -> set[str]:
@@ -480,7 +480,7 @@ def _prepare_turn(
     # model answers must not hand the allowance out again (design 10.2).
     try:
         budget.reserve_model_call(
-            estimated_input=settings.agent_max_input_tokens // 4, max_output=700
+            estimated_input=settings.agent_max_input_tokens // 4, max_output=1400
         )
     except BudgetExceeded:
         pass
@@ -534,7 +534,8 @@ def _prepare_turn(
             now=utcnow().isoformat(),
             skill_candidates=skill_record.candidates,
             memory=_memory_brief(
-                session, metric_hint, role_ids=users_repo.role_ids_for_user(session, turn.user_id)
+                session, metric_hint, role_ids=users_repo.role_ids_for_user(session, turn.user_id),
+                user_id=turn.user_id, question=str(user_content.get("text") or "")
             ),
         )
 

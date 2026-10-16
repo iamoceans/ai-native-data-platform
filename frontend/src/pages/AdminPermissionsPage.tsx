@@ -19,6 +19,7 @@ import {
   mockApprovePermissionRequest,
   rejectPermissionRequest,
   updateUserRoles,
+  listAdminTeams, createAdminTeam, updateUserTeam,
   type PermissionRequest,
 } from "../api/endpoints";
 import { PermissionGate } from "../components/PermissionGate";
@@ -48,6 +49,14 @@ export function AdminPermissionsPage() {
     roleIds: [] as string[],
   });
   const [roleName, setRoleName] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const teams = useQuery({ queryKey: ["admin-teams"], queryFn: listAdminTeams });
+  const createdTeam = useMutation({ mutationFn: () => createAdminTeam(teamName.trim()),
+    onSuccess: () => { setTeamName(""); setError(null); queryClient.invalidateQueries({ queryKey: ["admin-teams"] }); },
+    onError: (failure: unknown) => onFailure(failure) });
+  const assignedTeam = useMutation({ mutationFn: (input: { userId: string; teamId: string | null }) => updateUserTeam(input.userId, input.teamId),
+    onSuccess: () => { invalidate(); queryClient.invalidateQueries({ queryKey: ["memory"] }); },
+    onError: (failure: unknown) => onFailure(failure) });
   const [grantForm, setGrantForm] = useState({
     roleId: "",
     datasetId: "",
@@ -238,7 +247,7 @@ export function AdminPermissionsPage() {
             </span>
           </div>
           {error ? (
-            <p className="notice error">
+            <p className="notice error" role="alert">
               <strong>{error.code}</strong> — <ErrorMessage error={error} />
             </p>
           ) : null}
@@ -573,6 +582,13 @@ export function AdminPermissionsPage() {
               {t("创建用户")}
             </button>
           </div>
+          <div className="form-row wrap">
+            <label>{t("新团队名称")} <input data-testid="new-team-name" maxLength={128} value={teamName} onChange={event => setTeamName(event.target.value)} /></label>
+            <button className="ghost" data-testid="create-team" disabled={createdTeam.isPending || !teamName.trim() || teams.isError}
+              onClick={() => createdTeam.mutate()}>{t("创建团队")}</button>
+          </div>
+          {teams.isError ? <p className="notice warn">{t("团队加载失败")} <button onClick={() => teams.refetch()}>{t("重试")}</button></p> : null}
+          <p className="muted small">{t("团队成员共享业务记忆，仍须具备原始数据权限；未加入团队时记忆仅自己可见。")}</p>
           <table className="data-table" data-testid="user-table">
             <thead>
               <tr>
@@ -580,6 +596,7 @@ export function AdminPermissionsPage() {
                 <th scope="col">{t("角色")}</th>
                 <th scope="col">{t("状态")}</th>
                 <th scope="col">{t("调整角色")}</th>
+                <th scope="col">{t("记忆团队")}</th>
               </tr>
             </thead>
             <tbody>
@@ -618,6 +635,12 @@ export function AdminPermissionsPage() {
                       </label>
                     ))}
                   </td>
+                  <td><select aria-label={t("{0} 的记忆团队", { 0: user.username })} data-testid={`team-${user.username}`}
+                    value={user.team_id ?? ""} disabled={assignedTeam.isPending || teams.isPending || teams.isError}
+                    onChange={event => assignedTeam.mutate({ userId: user.id, teamId: event.target.value || null })}>
+                    <option value="">{t("个人记忆")}</option>
+                    {(teams.data?.items ?? []).map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
+                  </select></td>
                 </tr>
               ))}
             </tbody>

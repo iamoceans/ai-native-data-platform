@@ -326,6 +326,8 @@ class MetricListResponse(BaseModel):
 # Business memory: what the platform learned from earlier analyses
 # ---------------------------------------------------------------------------
 class MemoryItem(BaseModel):
+    team_id: uuid.UUID | None = None
+    owner_user_id: uuid.UUID | None = None
     id: uuid.UUID
     metric_key: str
     kind: str
@@ -779,6 +781,7 @@ class UserCreate(StrictModel):
 
 
 class UserResponse(BaseModel):
+    team_id: uuid.UUID | None = None
     id: uuid.UUID
     username: str
     active: bool
@@ -842,3 +845,17 @@ class HealthResponse(BaseModel):
 
 
 CatalogRefreshResponse.model_rebuild()
+
+
+class TeamCreate(StrictModel):
+    name: str = Field(min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$")
+
+class TeamResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+
+class TeamListResponse(BaseModel):
+    items: list[TeamResponse]
+
+class UserTeamUpdate(StrictModel):
+    team_id: uuid.UUID | None

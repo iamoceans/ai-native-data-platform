@@ -24,9 +24,11 @@ source authorization and browser E2E still open.
   deployed. The conversational Ask workspace and skill packages were accepted on
   2026-10-13 (a real-model multi-turn conversation plus the full regression; see
   `docs/acceptance.md`).
-- **Open**: analysis steps are extended by rule rather than by the model choosing
-  steps and tools. Dataset details have a shareable `/datasets/:id` route,
-  accessible directly or from the catalog, with the existing permission checks.
+- **Latest features**: closed model action selection, bounded structured-output
+  repair, evidence explanation templates, team/private business memory with local
+  domain semantic retrieval, and expandable Top-10 charts. Current real-model
+  acceptance remains deferred; see the latest acceptance record.
+  Dataset details have a shareable `/datasets/:id` route with permission checks.
 - Per-milestone checklists and executed evidence live in
   [docs/todo.md](docs/todo.md) and [docs/acceptance.md](docs/acceptance.md);
   anything not executed is marked `not executed` and never counted as passing.
@@ -51,9 +53,9 @@ source authorization and browser E2E still open.
   closed-grammar compiler - the arithmetic is always done by the deterministic
   kernel in `Decimal`, never by a model.
 - **Natural-language questions**: the agent loop (plan -> execute through the
-  gateway -> observe -> synthesize) delegates exactly one decision to the model,
-  namely which allowlisted dimensions to break down. A model never supplies tools,
-  SQL, URLs or code. With no model configured the platform degrades to the
+  gateway -> observe -> synthesize) lets a model choose compare/breakdown and
+  allowlisted dimensions, then finish or request the declared driver decomposition
+  from observed evidence. Arbitrary tools, SQL, URLs and code remain forbidden. With no model configured the platform degrades to the
   deterministic template path and records a warning - it never pretends a model
   was called.
 - **Catalog and lineage**: DataHub (off by default) provides search, context and
@@ -281,15 +283,22 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   observed zero values remain valid. Row presence does not establish full window
   completeness. Older in-flight analyses without row-coverage evidence require
   resubmission; completed historical reports are unchanged.
-- The analysis runner extends its plan by rule; letting the model choose steps or
-  iterate over tools is not implemented.
-- Business memory is ranked text, not embeddings, and is platform-wide rather
-  than per-team. Extraction uses a bounded per-analysis claim and fenced writes;
-  network calls run outside transactions but occupy a worker until their timeout.
-  Broader multi-worker throughput and cross-analysis paraphrase races need testing.
-- Plan replies are validated against a closed schema locally, and a reply that does
-  not validate fails that analysis loudly - there is no format-repair loop, only
-  the SQL repair budget.
+- Model actions are a closed, bounded investigation: initial compare/breakdown,
+  followed by finish or one declared driver decomposition. Deterministic materiality,
+  permissions, query/tool budgets and depth gates still control execution; there
+  is no general arbitrary-tool agent. With no model, the rule path remains available.
+- Memory retrieval uses local bilingual analytics concept vectors plus word/character
+  features, not a general pretrained embedding model. Candidate recall is bounded
+  to 200 metric-scoped rows, filtered by team/private ownership and source grants
+  before semantic ranking. Each user has at most one team; no team means private
+  memory. Existing memory migrates to its source owner's private scope. Team
+  changes do not move historical memory. Apply migration e4b8a1c79d20 before startup.
+  Extraction uses bounded claims, fenced writes and a per-scope transaction lock
+  for duplicate checks. Broader multi-worker throughput and paraphrase races still
+  need load/soak acceptance.
+- Invalid structured model output gets at most one format-repair request, against
+  the same closed schema and token/time budget. Both calls are counted; another
+  invalid response fails visibly. Real DeepSeek/A09 validation remains deferred.
 - The shared/dashboard screens are not part of the V1 specification and were
   not invented.
 - Doris runs the local single-BE profile only; multi-BE topologies, workload groups

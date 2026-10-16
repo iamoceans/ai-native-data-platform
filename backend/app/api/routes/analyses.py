@@ -289,7 +289,8 @@ def get_analysis_memory(
         return [
             MemoryItem(**{**memory_repo.as_dict(resolved[item]), "id": item})
             for item in ids
-            if item in resolved
+            if item in resolved and memory_repo.memory_dataset_actions_ok(
+                session, role_ids=auth.role_ids, row=resolved[item], user_id=auth.user.id)
         ]
 
     return AnalysisMemoryResponse(

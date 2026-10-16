@@ -21,6 +21,14 @@ class PlanningSelection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     dimensions: list[str] = Field(default_factory=list, max_length=3)
+    next_action: Literal["compare", "breakdown", "driver_decomposition", "finish"] = "breakdown"
+
+
+class ObservationSelection(BaseModel):
+    """Only a declared, governed driver tool or finish may follow observations."""
+    model_config = ConfigDict(extra="forbid")
+    next_action: Literal["driver_decomposition", "finish"]
+
 
 
 class InvestigationPlan(BaseModel):

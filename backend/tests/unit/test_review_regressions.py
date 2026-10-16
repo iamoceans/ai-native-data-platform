@@ -304,6 +304,7 @@ def test_memory_prompt_context_uses_current_source_dataset_grants(monkeypatch, g
     monkeypatch.setattr(analyses.analyses_repo, "list_dependencies", lambda *args: [NS(dataset_id=dataset_id)])
     monkeypatch.setattr(datasets, "has_dataset_action", lambda db, roles, id, action:
                         roles == [role_id] and id == dataset_id and action in grants)
+    monkeypatch.setattr(memory, "scope_allowed", lambda *a, **kw: True)
     conversation_context = orchestrator._memory_brief(None, "revenue", role_ids=[role_id])
     planner_context, ids = planner_memory.planner_brief(
         None, metric_key="revenue", allowed_dimensions=[], role_ids=[role_id]

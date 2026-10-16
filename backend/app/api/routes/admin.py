@@ -27,6 +27,10 @@ from app.api.dto import (
     UserListResponse,
     UserResponse,
     UserRolesUpdate,
+    TeamCreate,
+    TeamResponse,
+    TeamListResponse,
+    UserTeamUpdate,
 )
 from app.api.serializers import (
     audit_to_response,
@@ -48,6 +52,7 @@ from app.repositories import datasets as datasets_repo
 from app.repositories import policy as policy_repo
 from app.repositories import queries as queries_repo
 from app.repositories import users as users_repo
+from app.repositories import teams as teams_repo
 from app.results.cursor import decode_list_cursor, encode_list_cursor
 from app.api.serializers import uuid_or_none
 
@@ -595,3 +600,36 @@ def mock_approve_permission_request(
         details={"note": "mock state only; no grant was created"},
     )
     return PermissionRequestResponse(**permission_request_to_response(row))
+
+
+# Team membership controls memory visibility, not dataset grants.
+@router.get("/teams", response_model=TeamListResponse)
+def list_teams(auth: AuthContext = Depends(require_admin), session: Session = Depends(get_db)) -> TeamListResponse:
+    return TeamListResponse(items=[TeamResponse(id=row.id, name=row.name) for row in teams_repo.list_teams(session)])
+
+@router.post("/teams", response_model=TeamResponse, status_code=201)
+def create_team(payload: TeamCreate, request: Request,
+                auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db)) -> TeamResponse:
+    if "admin.manage" not in auth.capabilities:
+        raise ApiError(ErrorCode.FORBIDDEN, "administrator capability required")
+    row = teams_repo.create(session, payload.name)
+    if row is None:
+        raise ApiError(ErrorCode.CONFLICT, "team name already exists")
+    audit_repo.add_audit(session, actor_id=auth.user.id, action="team.create", resource_type="team",
+                         resource_id=str(row.id), trace_id=get_trace_id(request), outcome="SUCCESS", details={"name": row.name})
+    return TeamResponse(id=row.id, name=row.name)
+
+@router.put("/users/{user_id}/team", response_model=UserResponse)
+def assign_team(user_id: uuid.UUID, payload: UserTeamUpdate, request: Request,
+                auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db)) -> UserResponse:
+    if "admin.manage" not in auth.capabilities:
+        raise ApiError(ErrorCode.FORBIDDEN, "administrator capability required")
+    result = teams_repo.assign(session, user_id, payload.team_id)
+    if result is None:
+        raise ApiError(ErrorCode.NOT_FOUND, "user or team not found")
+    user, previous = result
+    audit_repo.add_audit(session, actor_id=auth.user.id, action="user.team.changed", resource_type="user",
+                         resource_id=str(user.id), trace_id=get_trace_id(request), outcome="SUCCESS",
+                         details={"previous": str(previous) if previous else None,
+                                  "team_id": str(payload.team_id) if payload.team_id else None})
+    return UserResponse(**user_to_response(user, users_repo.roles_for_user(session, user.id)))

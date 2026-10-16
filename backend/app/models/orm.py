@@ -33,10 +33,17 @@ class Base(DeclarativeBase):
     pass
 
 
+class Team(Base):
+    __tablename__ = "teams"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("teams.id"), index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     locale: Mapped[str | None] = mapped_column(Text)
@@ -604,6 +611,8 @@ class BusinessMemory(Base):
     """
 
     __tablename__ = "business_memory"
+    team_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("teams.id"), index=True)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     metric_key: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)

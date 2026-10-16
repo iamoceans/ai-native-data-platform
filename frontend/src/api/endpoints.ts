@@ -256,8 +256,8 @@ export type ChartView = {
   empty_state: string;
 };
 
-export async function getChart(chartId: string, limit = 200): Promise<ChartView> {
-  return apiFetch<ChartView>(`/api/v1/charts/${chartId}?limit=${limit}`);
+export async function getChart(chartId: string, limit = 200, offset = 0): Promise<ChartView> {
+  return apiFetch<ChartView>(`/api/v1/charts/${chartId}?limit=${limit}&offset=${offset}`);
 }
 
 export async function drilldownChart(
@@ -278,6 +278,7 @@ export async function drilldownChart(
 // ---------------------------------------------------------------------------
 export type AdminRole = { id: string; name: string; capabilities: string[] };
 export type AdminUser = {
+  team_id?: string | null;
   id: string;
   username: string;
   active: boolean;
@@ -745,4 +746,15 @@ export async function cancelTurn(sessionId: string, turnId: string): Promise<Tur
 
 export function sessionEventsUrl(sessionId: string): string {
   return `/api/v1/sessions/${sessionId}/events`;
+}
+
+
+export async function listAdminTeams(): Promise<{ items: components["schemas"]["TeamResponse"][] }> {
+  return apiFetch("/api/v1/admin/teams");
+}
+export async function createAdminTeam(name: string): Promise<components["schemas"]["TeamResponse"]> {
+  return apiFetch("/api/v1/admin/teams", { method: "POST", body: { name } });
+}
+export async function updateUserTeam(userId: string, teamId: string | null): Promise<components["schemas"]["UserResponse"]> {
+  return apiFetch(`/api/v1/admin/users/${encodeURIComponent(userId)}/team`, { method: "PUT", body: { team_id: teamId } });
 }

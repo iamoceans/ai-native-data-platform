@@ -292,12 +292,16 @@ def planner_brief(
     allowed_dimensions: Sequence[str],
     role_ids: list[uuid.UUID] | None = None,
     limit: int = DEFAULT_RETRIEVAL_LIMIT,
+    user_id: uuid.UUID | None = None,
+    question: str = "",
 ) -> tuple[list[dict[str, Any]], list[uuid.UUID]]:
     """The advisory block for the planner prompt, plus the ids it came from."""
-    rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=limit)
+    rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=200, user_id=user_id)
     rows = [row for row in rows if memory_repo.memory_dataset_actions_ok(
-        session, role_ids=role_ids or [], row=row
+        session, role_ids=role_ids or [], row=row, user_id=user_id
     )]
+    from app.agent.semantic import rank_memories
+    rows = rank_memories(rows, question)[:limit]
     allow = {str(item) for item in allowed_dimensions}
     brief: list[dict[str, Any]] = []
     for row in rows:
@@ -449,9 +453,19 @@ def _apply_extraction(session: Session, *, task, digest: dict, generated) -> dic
     # against the other candidates from this run - so paraphrases reinforce the
     # existing row instead of adding a twin. Rejected rows are part of the
     # comparison too: a rejection stays rejected.
+    owner_id = getattr(task, "user_id", None)
+    raw_team = state.get("memory_team_id")
+    team_id = uuid.UUID(raw_team) if raw_team else None
+    if session is not None:
+        from app.repositories import users as users_repo
+        owner = users_repo.get_user_for_update(session, owner_id)
+        if owner is None or not owner.active or owner.team_id != team_id:
+            return _record_skip(session, task, reason="memory_scope_changed")
+        memory_repo.lock_scope(session, metric_key=metric_key, team_id=team_id, owner_user_id=owner_id)
     existing = memory_repo.list_for_metric(
-        session, metric_key=metric_key, statuses=("proposed", "confirmed", "rejected"), limit=200
+        session, metric_key=metric_key, statuses=("proposed", "confirmed", "rejected"), limit=200, user_id=owner_id
     )
+    existing = [row for row in existing if getattr(row, "team_id", None) == team_id]
     known_signatures = [statement_signature(row.statement) for row in existing]
     fresh_signatures: list[frozenset[str]] = []
     created: list[str] = []
@@ -485,6 +499,7 @@ def _apply_extraction(session: Session, *, task, digest: dict, generated) -> dic
             analysis_id=task.id,
             calculation_id=calculation_id_of(task),
             model_id=generated.model_id,
+            team_id=team_id, owner_user_id=owner_id,
         )
         (created if is_new else reinforced).append(str(row.id))
 
@@ -585,7 +600,7 @@ def run_extraction(session_factory, *, analysis_id: uuid.UUID, settings: Setting
             "status": "extracting", "retryable": True,
             "attempts": int(previous.get("attempts") or 0) + 1,
             "claim_token": token,
-            "lease_until": (utcnow() + timedelta(seconds=max(settings.lease_seconds, int(settings.llm_timeout_seconds) + 15))).isoformat(),
+            "lease_until": (utcnow() + timedelta(seconds=max(settings.lease_seconds, int(settings.llm_timeout_seconds * 2) + 15))).isoformat(),
         }}
         session.commit()
     generated, error = None, None

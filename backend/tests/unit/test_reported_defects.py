@@ -39,7 +39,7 @@ def test_memory_listing_and_counts_use_grants(monkeypatch, allowed):
     monkeypatch.setattr(memory.memory_repo, "list_recent", lambda *args, **kw: checked.append(kw) or [])
     monkeypatch.setattr(memory.memory_repo, "counts", lambda *args, **kw: checked.append(kw) or {})
     roles = [uuid.uuid4()] if allowed else []
-    memory.list_memory(Request({"type": "http"}), _auth=NS(role_ids=roles), session=None)
+    memory.list_memory(Request({"type": "http"}), _auth=NS(role_ids=roles, user=NS(id=uuid.uuid4())), session=None)
     assert all(item.get("role_ids") == roles for item in checked)
 
 

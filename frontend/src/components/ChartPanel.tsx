@@ -1,6 +1,8 @@
 import { t, useLocale, formatNumber } from "../i18n";
 import { useState } from "react";
-import type { ChartView } from "../api/endpoints";
+import { getChart, type ChartView } from "../api/endpoints";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { ErrorMessage } from "./ErrorMessage";
 
 /**
  * Controlled chart rendering (spec section 25).
@@ -42,7 +44,16 @@ export function ChartPanel({
 }) {
   useLocale();
   const [showTable, setShowTable] = useState(false);
-  const { spec, data } = chart;
+  const [expanded, setExpanded] = useState(false);
+  const pages = useInfiniteQuery({
+    queryKey: ["chart-pages", chart.id], initialPageParam: chart.offset,
+    queryFn: ({ pageParam }) => getChart(chart.id, 200, pageParam),
+    initialData: { pages: [chart], pageParams: [chart.offset] }, enabled: false,
+    getNextPageParam: last => last.data.length && last.offset + last.data.length < last.total_points
+      ? last.offset + last.data.length : undefined,
+  });
+  const spec = chart.spec;
+  const data = pages.data.pages.flatMap(page => page.data);
   const unit = spec.encoding.y.unit ?? "";
 
   if (!data.length) {
@@ -60,13 +71,15 @@ export function ChartPanel({
     );
   }
 
+  const ranked = [...data].sort((a, b) => Math.abs(Number(b.delta)) - Math.abs(Number(a.delta)));
+  const visible = expanded ? ranked : ranked.slice(0, 10);
   const values = data.map((row) => Number(row.delta));
   const extent = Math.max(...values.map((value) => Math.abs(value)), 1);
   const drill = spec.interaction.drilldown_dimensions;
   // The bounded read window is not reflected in `truncated` (that flag covers
   // the stored chart's own cap), so the panel reports the missing points itself
   // rather than letting a "共 N 点" footer contradict the rows on screen.
-  const notShown = Math.max(0, chart.total_points - data.length - chart.offset);
+  const notShown = Math.max(0, chart.total_points - visible.length - chart.offset);
   const droppedByCap = chart.truncated ? chart.dropped_points : 0;
 
   return (
@@ -81,6 +94,10 @@ export function ChartPanel({
           {showTable ? t("显示图表") : t("显示表格")}
         </button>
       </div>
+      {data.length > 10 ? <button className="ghost" data-testid="chart-expand"
+        aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+        {expanded ? t("收起为前 10 个分组") : t("展开已加载的全部分组")}
+      </button> : null}
       {showTable ? (
         <table className="chart-table" data-testid="chart-table">
           <caption className="muted small">
@@ -95,7 +112,7 @@ export function ChartPanel({
             </tr>
           </thead>
           <tbody>
-            {data.map((row) => {
+            {visible.map((row) => {
               const share = formatShare(row.net_change_share);
               return (
                 <tr key={row.key}>
@@ -114,7 +131,7 @@ export function ChartPanel({
         </table>
       ) : (
         <ul className="chart-bars" data-testid="chart-bars">
-          {data.map((row) => {
+          {visible.map((row) => {
             const value = Number(row.delta);
             const width = Math.max(
               2,
@@ -168,12 +185,17 @@ export function ChartPanel({
           })}
         </ul>
       )}
+      {expanded && pages.hasNextPage ? <button className="ghost" data-testid="chart-load-more"
+        disabled={pages.isFetchingNextPage} onClick={() => pages.fetchNextPage()}>
+        {pages.isFetchingNextPage ? t("加载中…") : t("加载更多分组")}
+      </button> : null}
+      {pages.error ? <p className="notice error" role="alert"><ErrorMessage error={pages.error} /></p> : null}
       {notShown || droppedByCap ? (
         <p className="notice warn">
           {[
             notShown
               ? t("按变化量从大到小只显示前 {0} 个分组，另有 {1} 个未显示", {
-                  0: data.length,
+                  0: visible.length,
                   1: notShown,
                 })
               : null,
@@ -192,7 +214,7 @@ export function ChartPanel({
           evidence: spec.evidence_ids.length,
           type: spec.data_ref.type,
           id: spec.data_ref.id.slice(0, 8),
-          shown: data.length,
+          shown: visible.length,
           total: chart.total_points,
         })}
       </p>

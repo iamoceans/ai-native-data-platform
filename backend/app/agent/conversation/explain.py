@@ -6,7 +6,7 @@ current discover/query grants on every dataset the analysis depends on - and the
 renders the answer from stored artifacts:
 
 * the model's prose carries no figure (validated by the caller);
-* every number the user sees is copied verbatim from the stored report claim.
+* every number comes verbatim from the stored claim or its bound calculation.
 
 If any reference is not permitted, the whole explanation degrades to a clear
 status instead of falling back to numbers from the transcript (design 6.5:
@@ -16,10 +16,12 @@ status instead of falling back to numbers from the transcript (design 6.5:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.ids import utcnow
 from app.constants import ErrorCode
 from app.repositories import analyses as analyses_repo
 
@@ -54,6 +56,15 @@ def resolve_references(
         if analysis is None or analysis.user_id != user_id or analysis.session_id != session_id:
             dropped.append(f"analysis_not_in_session:{analysis_id}")
             continue
+        expires = (analysis.final_report or {}).get("evidence_available_until")
+        if expires:
+            try:
+                expired = datetime.fromisoformat(str(expires).replace("Z", "+00:00")) <= utcnow()
+            except (ValueError, TypeError):
+                expired = True
+            if expired:
+                dropped.append(f"evidence_expired:{analysis_id}")
+                continue
         if analysis.final_report is None:
             dropped.append(f"no_report:{analysis_id}")
             continue
@@ -82,6 +93,7 @@ def resolve_references(
                 "kind": claims[claim_id].get("kind"),
                 "text": claims[claim_id].get("text"),
                 "value_pointer": claims[claim_id].get("value_pointer"),
+                "explanation": evidence_template(session, analysis, claims[claim_id]),
             }
         )
     return quotes, dropped
@@ -94,7 +106,7 @@ def explanation_message(
     dropped: list[str],
     limitations: list[str] | None = None,
 ) -> dict[str, Any]:
-    """The stored message: model prose plus verbatim quotes from the report."""
+    """The stored message: figure-free prose, claims and evidence templates."""
     return {
         "schema_version": 1,
         "kind": "explanation",
@@ -111,4 +123,32 @@ def status_note(dropped: list[str]) -> str:
         return ""
     if any(item.startswith("permission_revoked") for item in dropped):
         return "相关数据的权限已被收回，无法再引用那次分析的证据。"
+    if any(item.startswith("evidence_expired") for item in dropped):
+        return "引用的分析证据已过期，无法继续引用其中的数字。"
     return "引用的分析或结论已不可用，无法引用其证据。"
+
+
+def evidence_template(session, analysis, claim: dict[str, Any]) -> str:
+    """Numbers remain verbatim strings from the immutable calculation snapshot."""
+    observation = {}
+    try:
+        artifact_id = uuid.UUID(str(claim.get("calculation_id")))
+        artifact = analyses_repo.get_artifact(session, artifact_id)
+        if artifact is not None and artifact.analysis_id == analysis.id:
+            observation = artifact.content or {}
+    except (ValueError, TypeError):
+        pass
+    if claim.get("kind") == "observed_change":
+        totals = observation.get("totals") or observation
+        # Missing historical artifacts retain a nonnumeric template; values
+        # must never be reconstructed from the transcript or other state.
+        if all(key in totals and totals[key] is not None for key in ("baseline", "current", "change")):
+            return (f"基准期为 {totals['baseline']}，当前期为 {totals['current']}；"
+                    f"变化量按当前期减基准期计算，结果为 {totals['change']}。")
+        return "这是两期指标的观测变化；变化量按当前期减基准期计算。"
+    pointer = str(claim.get("value_pointer") or "")
+    if "net_change_share" in pointer:
+        return "净变化占比是该分组变化量除以整体净变化量；反向变化可能产生负占比或超过整体的占比。这是统计贡献，不能单独证明因果关系。"
+    if "effect" in pointer:
+        return "因子效应来自已存的确定性分解计算；展示量效应与单价效应共同解释收入变化，不能单独证明业务因果关系。"
+    return "此结论引用已存的分析证据；未重新查询数据。"

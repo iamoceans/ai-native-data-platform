@@ -208,6 +208,9 @@ def test_c05_explain_answers_from_evidence_without_a_new_query(env):
     quote = message["content"]["quotes"][0]
     assert quote["claim_id"] == claim_id
     assert quote["text"] == report["claims"][0]["text"]  # verbatim from the report
+    evidence = client.get(f"/api/v1/analyses/{analysis_id}/evidence").json()
+    bound = next(item for item in evidence["calculations"] if item["id"] == report["claims"][0]["calculation_id"])
+    assert all(str(bound[key]) in quote["explanation"] for key in ("baseline", "current", "change"))
 
 
 def test_explain_degrades_when_the_reference_is_not_permitted(env):

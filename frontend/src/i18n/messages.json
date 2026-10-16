@@ -2126,5 +2126,49 @@
   "new password must differ from current password": {
     "en": "The new password must differ from the current password.",
     "zh-CN": "新密码不能与当前密码相同。"
+  },
+  "收起为前 10 个分组": {
+    "zh-CN": "收起为前 10 个分组",
+    "en": "Collapse to top 10 groups"
+  },
+  "展开已加载的全部分组": {
+    "zh-CN": "展开已加载的全部分组",
+    "en": "Expand all loaded groups"
+  },
+  "新团队名称": {
+    "zh-CN": "新团队名称",
+    "en": "New team name"
+  },
+  "创建团队": {
+    "zh-CN": "创建团队",
+    "en": "Create team"
+  },
+  "团队加载失败": {
+    "zh-CN": "团队加载失败",
+    "en": "Could not load teams"
+  },
+  "团队成员共享业务记忆，仍须具备原始数据权限；未加入团队时记忆仅自己可见。": {
+    "zh-CN": "团队成员共享业务记忆，仍须具备原始数据权限；未加入团队时记忆仅自己可见。",
+    "en": "Team members share business memory and still need source data permissions. Without a team, memory is private."
+  },
+  "记忆团队": {
+    "zh-CN": "记忆团队",
+    "en": "Memory team"
+  },
+  "{0} 的记忆团队": {
+    "zh-CN": "{0} 的记忆团队",
+    "en": "{0}’s memory team"
+  },
+  "个人记忆": {
+    "zh-CN": "个人记忆",
+    "en": "Private memory"
+  },
+  "加载更多分组": {
+    "zh-CN": "加载更多分组",
+    "en": "Load more groups"
+  },
+  "团队记忆": {
+    "zh-CN": "团队记忆",
+    "en": "Team memory"
   }
 }

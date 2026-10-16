@@ -36,11 +36,13 @@ const STATUS_LABELS: Record<string, string> = {
 function MemoryRow({
   item,
   canCurate,
+  ownerId,
   busy,
   onCurate,
 }: {
   item: MemoryItem;
   canCurate: boolean;
+  ownerId?: string;
   busy: boolean;
   onCurate: (status: "confirmed" | "rejected") => void;
 }) {
@@ -58,6 +60,7 @@ function MemoryRow({
         </span>
       </div>
       <div className="memory-meta">
+        <span className="tag">{item.team_id ? t("团队记忆") : t("个人记忆")}</span>
         <span className={`tag ${item.status === "proposed" ? "warn" : ""}`}>
           {t(STATUS_LABELS[item.status] ?? item.status)}
         </span>
@@ -73,11 +76,11 @@ function MemoryRow({
             seen: Math.max(0, item.seen_count - 1),
           })}
         </span>
-        {item.analysis_id ? (
+        {item.analysis_id && item.owner_user_id === ownerId ? (
           <Link className="muted small" to={`/analyses/${item.analysis_id}`}>
             {t("来源分析")} {item.analysis_id.slice(0, 8)}
           </Link>
-        ) : null}
+        ) : item.analysis_id ? <span className="muted small">{t("来源分析")} {item.analysis_id.slice(0, 8)}</span> : null}
         {canCurate && item.status !== "rejected" ? (
           <span className="row-actions">
             {item.status === "proposed" ? (
@@ -160,6 +163,7 @@ export function MemoryPanel({ metricKey }: { metricKey: string }) {
               key={item.id}
               item={item}
               canCurate={canCurate}
+              ownerId={profile.data?.id}
               busy={curate.isPending}
               onCurate={(status) => curate.mutate({ id: item.id, status })}
             />

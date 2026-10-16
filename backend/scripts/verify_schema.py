@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
     "task_queue",
     "user_roles",
     "users",
+    "teams",
 }
 
 EXPECTED_CONSTRAINTS = {

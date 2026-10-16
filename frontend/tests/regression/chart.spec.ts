@@ -139,3 +139,25 @@ test('stays readable in a narrow panel', async ({page}) => {
   expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/chart-narrow.png', fullPage: true });
 });
+
+test('shows top ten by absolute change, expands and loads the next bounded page', async ({ page }) => {
+  const data = Array.from({ length: 15 }, (_, index) => ({ ...CHART.data[0], key: `group-${index}`, delta: String(index % 2 ? index : -index) }));
+  await fixture(page, { data, total_points: 17 });
+  await expect(page.locator('[data-testid=chart-bars] li')).toHaveCount(10);
+  await expect(page.locator('.chart-label').first()).toHaveText('group-14');
+  await expect(page.getByTestId('chart-panel')).toContainText('另有 7 个未显示');
+  await page.getByTestId('chart-expand').click();
+  await expect(page.locator('[data-testid=chart-bars] li')).toHaveCount(15);
+  await page.route('**/api/v1/charts/chart-1?**', async route => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get('offset')).toBe('15');
+    await route.fulfill({ json: { ...CHART, data: [{ ...data[0], key: 'last-a' }, { ...data[1], key: 'last-b' }], offset: 15, total_points: 17 } });
+  });
+  await page.getByTestId('chart-load-more').click();
+  await expect(page.locator('[data-testid=chart-bars] li')).toHaveCount(17);
+  await expect(page.getByTestId('chart-load-more')).toHaveCount(0);
+  await page.getByTestId('chart-expand').click();
+  await expect(page.locator('[data-testid=chart-bars] li')).toHaveCount(10);
+  await page.getByTestId('chart-toggle-table').click();
+  await expect(page.locator('[data-testid=chart-table] tbody tr')).toHaveCount(10);
+});

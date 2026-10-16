@@ -76,7 +76,7 @@ def test_cancel_during_model_call_is_responsive_and_late_replies_are_discarded(p
                 db.execute(text("SET LOCAL lock_timeout='500ms'"))
                 task = analyses_repo.get_analysis_for_update(db, aid)
                 assert task.status == "UNDERSTANDING"
-                assert task.budget["output_tokens"] == 500
+                assert task.budget["output_tokens"] == 1000
             cancelled = platform.post(f"/api/v1/analyses/{aid}/cancel")
             assert cancelled.status_code == 200, cancelled.text
         finally:
@@ -122,7 +122,7 @@ def test_reclaim_fences_old_worker_and_retains_crashed_call_budget(platform, mon
         assert len(analyses_repo.list_queries(db, aid)) == 2
         assert task.budget["input_tokens"] > reserved["input_tokens"]
         assert task.budget["output_tokens"] > reserved["output_tokens"]
-        assert task.budget["model_calls"] == 2
+        assert task.budget["model_calls"] == 3
 
 
 def test_latest_and_older_pages_are_stable_under_appends_and_cursor_scope(platform):
@@ -258,3 +258,174 @@ Ask for the required scope before analysing.
         content = db.get(AgentMessage, turn.assistant_message_id).content
         assert "dimensions" in content["missing"]
         assert any("明确清空" in question for question in content["questions"])
+
+
+@pytest.mark.parametrize('action,expected', [('compare', []), ('breakdown', ['country'])])
+def test_model_selects_initial_action_and_then_finishes_outside_transactions(platform, monkeypatch, action, expected):
+    from tests.helpers import run_pending_analyses
+    from app.agent.planner import ObservationSelection
+    sid = platform.post('/api/v1/sessions', json={'title':'model actions'}).json()['id']
+    response = platform.post('/api/v1/analyses', headers={'Idempotency-Key':'model-actions'}, json={
+        'session_id':sid,'question':'compare revenue', 'context':{**SCOPE,'dimensions':[], 'data_complete':True}})
+    aid = uuid.UUID(response.json()['analysis_id'])
+    seen = []
+    class Provider(FakeLLMProvider):
+        def generate_structured(self, **kwargs):
+            seen.append(kwargs['schema'].__name__)
+            with session_scope() as db:
+                db.execute(text("SET LOCAL lock_timeout='500ms'"))
+                task = analyses_repo.get_analysis_for_update(db, aid)
+                assert task.status in {'UNDERSTANDING', 'OBSERVING'}
+            return super().generate_structured(**kwargs)
+    provider = Provider([{'dimensions':['country'], 'next_action':action}, {'next_action':'finish'}])
+    monkeypatch.setattr(runner, 'resolve_provider', lambda settings: ProviderResolution(provider=provider))
+    run_pending_analyses()
+    with session_scope() as db:
+        task = db.get(AnalysisTask, aid)
+        assert task.status == 'COMPLETED', task.state
+        assert task.state['dimensions'] == expected
+        assert task.state['observation_action'] == 'finish'
+        assert task.budget['model_calls'] == 2
+        assert len(analyses_repo.list_queries(db, aid)) == 2
+    assert seen == ['PlanningSelection', 'ObservationSelection']
+
+
+def test_memory_team_scope_list_counts_curation_and_historical_reads(platform, monkeypatch):
+    from tests.helpers import run_pending_analyses
+    from fastapi.testclient import TestClient
+    from app.repositories import memory, teams, users
+    from app.models.orm import BusinessMemory, User
+    # Build real query dependencies, then attach memory to their governed evidence.
+    aid, claim = analysis(platform)
+    runner.run_claim(get_session_factory(), claim=claim, settings=get_settings())
+    from tests.helpers import drain_worker
+    drain_worker()
+    run_pending_analyses()
+    owner_id = uuid.UUID(platform.get('/api/v1/auth/me').json()['id'])
+    one = platform.post('/api/v1/admin/teams', json={'name':'Team One'})
+    two = platform.post('/api/v1/admin/teams', json={'name':'Team Two'})
+    assert one.status_code == two.status_code == 201
+    t1,t2 = uuid.UUID(one.json()['id']), uuid.UUID(two.json()['id'])
+    assert platform.post('/api/v1/admin/teams', json={'name':'Team One'}).status_code == 409
+    roles = platform.get('/api/v1/admin/roles').json()
+    role_id = next(row['id'] for row in roles if row['name'] == 'admin')
+    credentials = [('same-team','fixture-team-password1',t1), ('other-team','fixture-team-password2',t2)]
+    others=[]
+    for name,password,team_id in credentials:
+        created = platform.post('/api/v1/admin/users', json={'username':name,'password':password,'role_ids':[role_id]})
+        assert created.status_code == 201, created.text
+        uid=created.json()['id']; others.append(uid)
+        assert platform.put(f'/api/v1/admin/users/{uid}/team',json={'team_id':str(team_id)}).status_code == 200
+    assert platform.put(f'/api/v1/admin/users/{owner_id}/team',json={'team_id':str(t1)}).status_code == 200
+    with session_scope() as db:
+        row,_ = memory.upsert(db, metric_key='fixture_revenue',kind='segment',statement='US revenue declines',
+            dedupe_key='team-test',analysis_id=aid,owner_user_id=owner_id,team_id=t1)
+        mid=row.id
+        private,_=memory.upsert(db, metric_key='fixture_revenue',kind='segment',statement='US private note',
+            dedupe_key='private-test',analysis_id=aid,owner_user_id=owner_id)
+        pid=private.id
+        task=db.get(AnalysisTask,aid);task.state={**task.state,'memory_used_ids':[str(mid)]}
+    assert {row['id'] for row in platform.get('/api/v1/memory').json()['items']} == {str(mid),str(pid)}
+    for index,(name,password,_) in enumerate(credentials):
+        with TestClient(platform.app) as reader:
+            logged = reader.post('/api/v1/auth/login',json={'username':name,'password':password})
+            assert logged.status_code == 200
+            reader.headers['X-CSRF-Token'] = logged.json()['csrf_token']
+            body=reader.get('/api/v1/memory').json()
+            assert [row['id'] for row in body['items']] == ([str(mid)] if index == 0 else [])
+            assert body['counts'] == ({'proposed':1} if index == 0 else {})
+            status=reader.post(f'/api/v1/memory/{mid}/confirm').status_code
+            assert status == (200 if index == 0 else 404)
+    # Leaving the team closes list/curation AND historical analysis-memory reads.
+    platform.put(f'/api/v1/admin/users/{owner_id}/team',json={'team_id':str(t2)})
+    assert [row['id'] for row in platform.get('/api/v1/memory').json()['items']] == [str(pid)]
+    assert platform.post(f'/api/v1/memory/{mid}/reject').status_code == 404
+    assert platform.get(f'/api/v1/analyses/{aid}/memory').json()['used'] == []
+    with session_scope() as db:
+        assert memory.list_for_metric(db,metric_key='fixture_revenue',user_id=None) == []
+
+
+@pytest.mark.parametrize('action,expected_queries', [('finish',2),('driver_decomposition',4)])
+def test_model_can_choose_or_decline_declared_driver_tool(platform, monkeypatch, action, expected_queries):
+    from tests.helpers import run_pending_analyses
+    from app.models.orm import MetricDefinition
+    with session_scope() as db:
+        row=db.scalar(select(MetricDefinition).where(MetricDefinition.metric_key=='fixture_revenue'))
+        row.definition={**row.definition,'driver_decomposition':{'impressions_metric':'fixture_impressions'}}
+        sync_metric_definitions(db,[MetricDefinitionModel.model_validate({
+            'metric_key':'fixture_impressions','version':1,'name':'Impressions','dataset':'public.fixture_metrics',
+            'components':{'impressions':{'aggregation':'sum','column':'impressions'}},'formula':'impressions',
+            'unit':'count','aggregation_kind':'sum','allowed_dimensions':['country','platform']})])
+    provider=FakeLLMProvider([{'dimensions':['country'],'next_action':'driver_decomposition'}, {'next_action':action}])
+    monkeypatch.setattr(runner,'resolve_provider',lambda settings: ProviderResolution(provider=provider))
+    sid=platform.post('/api/v1/sessions',json={'title':'driver selection'}).json()['id']
+    response=platform.post('/api/v1/analyses',headers={'Idempotency-Key':'choose-drivers'},json={
+        'session_id':sid,'question':'why revenue changed', 'context':{
+            **SCOPE,'current_start':'2026-09-09','current_end':'2026-09-11','data_complete':True}})
+    aid=uuid.UUID(response.json()['analysis_id'])
+    run_pending_analyses()
+    with session_scope() as db:
+        task=db.get(AnalysisTask,aid)
+        assert task.status=='COMPLETED', task.state
+        assert task.state['observation_action']==action
+        assert len(analyses_repo.list_queries(db,aid))==expected_queries
+        assert any(step['kind']=='driver_decomposition' for step in task.plan['steps']) == (expected_queries==4)
+
+
+@pytest.mark.parametrize('raises',[False,True])
+def test_cancel_during_observation_decision_fences_late_reply(platform, monkeypatch, raises):
+    from tests.helpers import drain_worker
+    aid,claim=analysis(platform)
+    initial=FakeLLMProvider([{'dimensions':['country']}])
+    monkeypatch.setattr(runner,'resolve_provider',lambda settings: ProviderResolution(provider=initial))
+    runner.run_claim(get_session_factory(),claim=claim,settings=get_settings())
+    drain_worker()
+    with session_scope() as db:
+        claim=queue_repo.claim_next_analysis(db,worker_id='observe-evidence',settings=get_settings())
+    runner.run_claim(get_session_factory(),claim=claim,settings=get_settings())
+    with session_scope() as db:
+        task=db.get(AnalysisTask,aid)
+        assert task.status=='OBSERVING'
+        claim=queue_repo.claim_next_analysis(db,worker_id='observe-decision',settings=get_settings())
+    entered,release=threading.Event(),threading.Event()
+    class Blocking(FakeLLMProvider):
+        def generate_structured(self,**kwargs):
+            entered.set(); assert release.wait(8)
+            if raises: raise RuntimeError('late observation failure')
+            return super().generate_structured(**kwargs)
+    provider=Blocking([{'next_action':'finish'}])
+    monkeypatch.setattr(runner,'resolve_provider',lambda settings: ProviderResolution(provider=provider))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future=executor.submit(runner.run_claim,get_session_factory(),claim=claim,settings=get_settings())
+        try:
+            assert entered.wait(5)
+            with session_scope() as db:
+                db.execute(text("SET LOCAL lock_timeout='500ms'"))
+                task=analyses_repo.get_analysis_for_update(db,aid)
+                assert task.status=='OBSERVING'
+            assert platform.post(f'/api/v1/analyses/{aid}/cancel').status_code==200
+        finally:
+            release.set()
+        assert future.result(timeout=5) is False
+    with session_scope() as db:
+        task=db.get(AnalysisTask,aid)
+        assert task.status=='CANCELLED'
+        assert task.final_report is None
+        assert 'observation_action' not in task.state
+
+
+def test_team_management_requires_admin_and_csrf(admin_client, viewer):
+    from fastapi.testclient import TestClient
+    with TestClient(admin_client.app) as reader:
+        logged=reader.post('/api/v1/auth/login',json=viewer)
+        assert logged.status_code==200
+        reader.headers['X-CSRF-Token']=logged.json()['csrf_token']
+        assert reader.get('/api/v1/admin/teams').status_code==403
+        assert reader.post('/api/v1/admin/teams',json={'name':'Forbidden'}).status_code==403
+        uid=reader.get('/api/v1/auth/me').json()['id']
+        assert reader.put(f'/api/v1/admin/users/{uid}/team',json={'team_id':None}).status_code==403
+    original=admin_client.headers.pop('X-CSRF-Token')
+    try:
+        assert admin_client.post('/api/v1/admin/teams',json={'name':'No csrf'}).status_code==403
+    finally:
+        admin_client.headers['X-CSRF-Token']=original

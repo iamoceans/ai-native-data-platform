@@ -2038,3 +2038,90 @@ probe. The 14 skips remain 13 Doris-dependent cases and one deployed DataHub cas
 three newly added pure SSE contracts account for the deselection increase from
 25 to 28 (they pass in the static suite). No test assertion or skip condition was
 removed to obtain the final result.
+
+
+## 2026-10-16 Remaining features: closed actions, explanations, semantic/team memory and Top-10 charts
+
+Implemented scope:
+
+- Explain checks session ownership, current source grants and report evidence
+  expiry, then renders templates from the claim-bound calculation artifact.
+  Baseline/current/change strings remain verbatim; no arithmetic is delegated to
+  prose and no source query is submitted. Missing historical artifacts retain a
+  nonnumeric method explanation instead of reconstructed values.
+- PlanningSelection chooses compare/breakdown (and up to three allowed dimensions)
+  or consideration of a declared driver. Explicit user dimensions remain binding.
+  A subsequent ObservationSelection chooses finish or driver_decomposition.
+  Materiality/target/metric declaration/depth/query/tool gates still control the
+  only optional extension. Both calls use prepare/reserve, network without a DB
+  session, then fenced apply. Cancellation during either stage discards late
+  successes and errors. This is bounded adaptive analysis, not arbitrary tools.
+- The OpenAI-compatible adapter permits one format-repair request against the
+  original prompt and closed schema. Invalid model output is not replayed as
+  instructions. Aggregate tokens and physical calls are counted, retry obeys
+  token/time/call limits, and planning durably reserves both possible requests
+  within remaining tokens. A crashed request retains its worst-case charge.
+- Local domain semantic retrieval maps bilingual analytics synonyms into sparse
+  concept vectors plus word/character features, ranks by cosine similarity and
+  retains reuse/recency order as a tie-break. Up to 200 metric-scoped candidates
+  are recalled; scope and source grants are filtered before ranking/top-8.
+  This is a bounded-domain local encoder, NOT a general pretrained embedding
+  service, and no external embedding effectiveness claim is made.
+- Migration e4b8a1c79d20 adds teams, users.team_id and memory team/owner columns.
+  Existing source-linked rows become private to their source author; orphans are
+  invisible. Administrators create teams and assign/clear one current team per
+  user in the permissions UI/API, with CSRF, capability checks and audits. Team
+  changes do not move old memories. Lists, counts, curation, prompt recall and
+  historical analysis-memory reads require both current scope and source grants.
+  Extraction refuses team changes (including personal -> team), and serializes
+  duplicate checks with an advisory transaction lock. Shared-memory provenance
+  does not link another author's private analysis as if analysis access were shared.
+- Charts default to ten largest absolute changes, expand/collapse loaded rows and
+  load further bounded pages through the existing permission-checked endpoint.
+  Tables and bars share the same visible rows; exact Decimal strings remain in
+  titles and hidden/stored-dropped counts remain explicit. Chart identity resets
+  expansion. Datasource mono-id, result wrapper/name styles and unused assistant
+  message class tokens were cleaned up.
+
+Executed validation (isolated control/source databases; no concurrent DB pytest
+batches, workers do not consume the test queues):
+
+```bash
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 531 passed (final tree)
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q
+# 127 passed / 15 skipped / 28 deselected (PG/MySQL/TLS)
+# 13 Doris skips, one deployed DataHub skip, one unconfigured standalone Spark skip
+AIND_TEST_SPARK_HOST=127.0.0.1 AIND_TEST_SPARK_PORT=11000 \
+  uv run --project backend --frozen pytest backend/tests/integration/test_spark_cancel_transport.py -q
+# 1 passed, real standalone Spark 3.5.3
+uv run --project backend --frozen pytest backend/tests/integration/test_priority_workflows.py -q
+# 15 passed, final affected checkpoint/budget/team cases
+# Additional final C05 explain + memory visibility + extraction-fencing rerun: 3 passed
+uv run --project backend --frozen python backend/scripts/verify_schema.py
+# schema verification OK: 32 tables, 11 named state checks, 25 indexes
+cd frontend
+npm run build
+# exit 0; generated OpenAPI types, tsc and Vite production bundle pass
+npm run test:unit
+# 12 passed
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression
+# 63 passed / 1 failed: new team error test exposed missing role=alert
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression -- teams.spec.ts chart.spec.ts
+# After role=alert fix: 8 passed, including narrow chart, Top-10/expand/paging,
+# team create conflict preserving the draft, assignment and removal
+```
+
+The full mocked-browser attempt is not counted as 64 passed. Its one failure was
+corrected and the affected cases rerun. The service matrix and standalone Spark
+results are separate runs, not one combined 128-pass matrix. Final focused checks
+cover later membership-change and explanatory evidence assertions. Test cache
+was redirected to /tmp/uv-cache because the default home cache is read-only.
+
+Not executed: current real DeepSeek endpoint/model identity/A09/large candidate-pool
+model choice (explicitly deferred by the user); complete Doris/deployed DataHub;
+Spark source read-only authorization/shared-HMS listener lineage/browser journey;
+DataHub auth-enabled mode; multi-session/worker load and soak; broad paraphrase
+contention; historical report reruns. Existing stored reports remain unchanged.
+Apply the new migration before starting the updated application/workers. These
+results do not claim a new production deployment or new real-model acceptance.

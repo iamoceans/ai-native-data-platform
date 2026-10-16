@@ -1,15 +1,16 @@
 # TODO and stage acceptance record
 
 Project: AI-Native Data Platform (spec v1.0)
-Scope currently delivered: **M0-M6**. Open items are listed per milestone below:
-model-driven step/tool selection (M5). The M6 `/datasets/:id` route is now
-implemented; see the 2026-10-16 dataset deep-link record below.
+Scope currently delivered: **M0-M6**, with closed model action selection and
+team/private memory added on 2026-10-16. The current backlog below is authoritative;
+dated milestone sections retain historical execution records and are superseded
+by later evidence. The `/datasets/:id` route is implemented.
 Rule followed: a stage counts as done only when its gate ran on real services; tests
 that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
-## Current actionable backlog (2026-10-16, after account settings)
+## Current actionable backlog (2026-10-16, after remaining feature implementation)
 
 High-priority implementation requested in this round:
 
@@ -21,10 +22,12 @@ High-priority implementation requested in this round:
       states; distinct from pagination of messages inside a conversation.
 - [x] Reproduce and fix Spark shared-client cancellation response corruption.
 - [~] Full Doris/DataHub acceptance: remains blocked by this 32 GB vfs host's
-      image/storage footprint. Current real PG/MySQL/Spark matrix is **111 passed,
-      14 skipped, 25 deselected**; the skips still need Doris/deployed DataHub.
+      image/storage footprint. Current PG/MySQL/TLS matrix: **127 passed,
+      15 skipped, 28 deselected**. Spark was not configured in that invocation;
+      its real cancellation regression was then run separately: **1 passed**.
+      The other 14 skips still require Doris/deployed DataHub.
 
-Remaining medium/low product and verification items (not implemented in this round):
+Product and verification items (current status):
 
 - [x] Conversation rename/archive/restore UI and archived-session browsing.
       Current archived transcripts remain readable and retain their composer draft.
@@ -32,18 +35,20 @@ Remaining medium/low product and verification items (not implemented in this rou
       never executes the statement and unavailable source entries cannot load.
 - [x] Self-service password change with current-password verification, bounded
       failed attempts, audit, cookie deletion and revocation of all prior sessions.
-- [ ] Explain templates populated from stored evidence; current replies quote it.
+- [x] Explain templates copy bound calculation values, describe contributor/driver meaning, and refuse expired references.
 - [x] Actual 50-skill / 20-version quota boundaries and idempotent replay tested;
       dedicated session SSE replay/framing/ownership/idle-closure contracts added.
 - [ ] Concurrent-session/worker load and soak acceptance, memory throughput and
       cross-analysis paraphrase-race checks.
 - [ ] Spark read-only authorization, shared-HMS listener lineage and browser E2E.
-- [ ] Chat chart Top-N/expand product decision and unused class/style cleanup.
+- [x] Chat chart Top-10 by absolute change, expand/collapse, bounded load-more and class/style cleanup.
 - [ ] Historical affected report reruns; old stored reports are not rewritten.
-- [ ] Model-driven step/tool selection and structured-output format repair.
-- [ ] Memory semantic retrieval and team-level scope/isolation.
-- [ ] Consolidate older historical acceptance notes when reading this file: their
-      original not-executed statements do not override newer executed evidence.
+- [x] Closed initial/observed model action selection and one bounded structured-output repair; deterministic execution gates remain binding.
+- [x] Local bilingual domain semantic vectors, team/private scope, audited membership management and read-time isolation. General pretrained embeddings remain an enhancement.
+- [x] Current backlog and superseded feature notes consolidated. Historical
+      per-stage not-executed statements remain dated records, not current defects.
+- [ ] DataHub authentication-enabled acceptance and full-stack resource proof on
+      a 16 GiB host remain unverified (see README/compatibility limits).
 
 Deferred by the user: DeepSeek v4.1 flash connection, model identity verification,
 real-model A09 and large-pool automatic Skill choice acceptance. Enterprise/HA,
@@ -141,18 +146,15 @@ See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0
       `/admin/permissions` the `.check` pickers (19px) and `.inline-label`
       filter (34px) are on one row; the 576-point chart renders 200 rows with no
       overflow and states the 376 it left out. Nothing was saved or submitted.
-- [ ] Open, product decision: the chart still renders up to 200 two-line rows
-      inside a chat message. A top-N cap (top 10-20 by absolute change, with the
-      existing notice) would read better but changes what the panel shows.
+- [x] Superseded on 2026-10-16: Top-10 default, expansion and subsequent bounded
+      pages are implemented; see the final feature acceptance record.
 - [ ] Not verified: engine matrix, A09 and the deployed Playwright journeys were
       not run for this frontend-only change; the deployed image was built from
       built from the working copy before this change was committed.
 - [x] Top navigation now wraps at narrow widths (delivered with localization);
       the 390px browser layout regression passes, including the settings page.
-- [ ] Left as-is - class names with no rule in `styles.css`:
-      `AdminDatasourcesPage.tsx` asks for `class="mono small"` while only
-      `.mono-id` is defined; `ResultTable.tsx`'s `.result-wrap` / `.col-name` and
-      `.message.assistant` are unstyled.
+- [x] Superseded on 2026-10-16: datasource IDs use mono-id; result-wrap and
+      col-name have styles; unused assistant class tokens are removed.
 
 See `docs/acceptance.md`, "2026-10-15 Shared control styles: native file input
 and leaking label default" and "2026-10-15 Chart panel: values, precision and
@@ -732,10 +734,10 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       (`business_memory`, `app/agent/memory.py`, `GET /memory`,
       `GET /analyses/{id}/memory`). Live two-round check and the two findings it
       produced are recorded in `docs/acceptance.md`.
-- [ ] Memory retrieval is metric-scoped text ranked by reuse, not embeddings: a
-      large store would want a similarity search before the top-8 cut, and
-      statements are still platform-wide rather than per-team. Extraction now has
-      claim/lease fencing; throughput and cross-analysis paraphrase races still
+- [x] Superseded on 2026-10-16: scoped candidate recall now ranks local domain
+      semantic vectors before the top-8 cut, with team/private isolation.
+- [ ] Extraction has claim/lease fencing and per-scope duplicate-check locks;
+      throughput and cross-analysis paraphrase races still
       need multi-worker acceptance.
 - [x] Curation audit detail (fixed 2026-09-29): `memory.confirm` / `memory.reject`
       rows used to log `previous` as the *new* status, because `_curate` read
@@ -914,9 +916,8 @@ however complete an earlier phase looks.
       existing pinned-before-builtin tiers. Selected versions are revalidated
       against final scope; conflicting metric requirements or missing required
       inputs produce clarification without overwriting explicit UI values.
-- [ ] `explain` does not interpolate numbers into a template (quotes carry them
-      verbatim). Session SSE now has dedicated contract tests and an empty-idle
-      real API regression; it closes immediately even when no event ever existed.
+- [x] Superseded on 2026-10-16: explain templates copy bound artifact values;
+      session SSE contracts and empty-idle closure were already delivered.
 
 ### P4 - the conversational UI
 
@@ -1139,7 +1140,8 @@ Three defects, all fixed on the working copy; evidence in `docs/acceptance.md`,
       CSRF and an expected version, locks the user, and audits changed field names.
 - [x] `/settings` plus `/profile` redirect, account entry, draft/error/reload states,
       account-owned header language and formatted timestamp timezone. Read-only
-      roles/capabilities; password change and default analysis settings are not added.
+      roles/capabilities. Password change was delivered in the following round;
+      default analysis preferences remain an optional, unconfirmed extension.
 - [x] Account preferences do not write the guest's browser language key; 401/logout
       reset locale/timezone. Other workspace tabs reload on login/logout so caches
       and preferences from an earlier identity are discarded.
@@ -1178,3 +1180,41 @@ superseded; commands and details are in the acceptance record.
       by **4 passed** for the final template-loading guard. Final serial matrix
       service matrix: **120 passed / 14 skipped / 28 deselected**, serial run.
       Shared-DB runs and the failed test synchronization probe are not counted.
+
+## 2026-10-16 Remaining feature implementation
+
+- [x] Explain templates render bound period-comparison values and contributor/
+      driver interpretation; references check owner/session/grants/expiry. No new
+      query or model arithmetic. Missing artifacts cannot reconstruct numbers.
+- [x] Planning chooses compare/breakdown and allowlisted dimensions. A separate,
+      transaction-free observed-evidence call chooses finish or one declared driver
+      extension. Explicit user scope and deterministic eligibility/budget/depth
+      gates remain binding. Late successes/errors after cancellation are fenced.
+- [x] OpenAI-compatible closed output gets at most one format repair. Both usage
+      totals and physical calls are counted; invalid output is not replayed as
+      instructions. Planning reserves both attempts (bounded by remaining tokens)
+      durably, and crashed requests retain their charge.
+- [x] Domain semantic recall uses local bilingual concept vectors and cosine
+      similarity with word/character fallback; source permission filtering occurs
+      before ranking/top-8 selection. It is not a general pretrained encoder.
+- [x] Migration e4b8a1c79d20 adds teams, user membership, memory team/owner fields;
+      existing source-linked memories become private to their owner. At most one
+      team per user, audited administrator create/assign UI/API, private fallback.
+      List/count/curation/prompt/historical reads recheck scope and source grants.
+      Team changes do not move old memories; extraction refuses changed scope and
+      serializes duplicate checks with a PostgreSQL transaction lock.
+- [x] Charts default to Top-10 absolute change, expand/collapse and load additional
+      bounded pages; table and bars share rows and preserve exact values/counts.
+      Datasource/result/message classes cleaned up. Team/private memory labels
+      avoid linking another author's private analysis as if it were shared.
+- [x] Static **531 passed**; frontend units **12 passed**; production build exit 0.
+      Full service matrix **127 passed / 15 skipped / 28 deselected**, followed by
+      the real standalone Spark cancellation test **1 passed**. Final affected
+      PostgreSQL priority cases **15 passed**; schema verification exit 0:
+      **32 tables / 11 named state checks / 25 required indexes**.
+- [x] Mocked browser full attempt: **63 passed / 1 failed**; the new team test
+      exposed a missing alert role on admin errors. Fixed; final chart/team
+      regressions **8 passed**. Do not describe the earlier run as 64 passed.
+- [~] Not executed: current real-model DeepSeek/A09 (user-deferred), complete
+      Doris/DataHub, Spark read-only/HMS listener/browser acceptance, load/soak,
+      general pretrained semantic evaluation and historical report reruns.

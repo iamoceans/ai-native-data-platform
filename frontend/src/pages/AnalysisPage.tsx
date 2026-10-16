@@ -131,6 +131,7 @@ export function AnalysisPage() {
 
       {chart.data ? (
         <ChartPanel
+          key={chart.data.id}
           chart={chart.data}
           busy={drill.isPending}
           onDrilldown={(dimension, value) => drill.mutate({ dimension, value })}

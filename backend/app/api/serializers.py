@@ -46,6 +46,7 @@ def user_to_response(user: User, roles: list[Role]) -> dict:
     return {
         "id": user.id,
         "username": user.username,
+        "team_id": user.team_id,
         "active": bool(user.active),
         "roles": [role_to_response(role) for role in roles],
         "created_at": user.created_at,

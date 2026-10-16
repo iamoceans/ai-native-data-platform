@@ -7,15 +7,16 @@ analyses strengthen a memory rather than duplicating it.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime
 from typing import Any, Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.ids import utcnow
-from app.models.orm import BusinessMemory
+from app.models.orm import BusinessMemory, User
 
 ACTIVE_STATUSES = ("proposed", "confirmed")
 
@@ -33,6 +34,8 @@ def upsert(
     calculation_id: uuid.UUID | None = None,
     model_id: str | None = None,
     source: str = "model",
+    team_id: uuid.UUID | None = None,
+    owner_user_id: uuid.UUID | None = None,
 ) -> tuple[BusinessMemory, bool]:
     """Insert the statement, or bump the row that already says it.
 
@@ -40,6 +43,8 @@ def upsert(
     curator decision: a ``rejected`` row stays rejected rather than being
     resurrected by the next analysis.
     """
+    scope = str(team_id or owner_user_id or "legacy")
+    dedupe_key = hashlib.sha256(f"{scope}:{dedupe_key}".encode()).hexdigest()
     existing = session.execute(
         select(BusinessMemory).where(BusinessMemory.dedupe_key == dedupe_key)
     ).scalar_one_or_none()
@@ -51,6 +56,8 @@ def upsert(
     row = BusinessMemory(
         id=uuid.uuid4(),
         metric_key=metric_key,
+        team_id=team_id,
+        owner_user_id=owner_user_id,
         kind=kind,
         statement=statement,
         scope_datasets=list(scope_datasets),
@@ -73,6 +80,7 @@ def list_for_metric(
     metric_key: str,
     statuses: Iterable[str] = ACTIVE_STATUSES,
     limit: int = 50,
+    user_id: uuid.UUID | None = None,
 ) -> list[BusinessMemory]:
     """Memories for one metric, most reused first, then freshest.
 
@@ -83,6 +91,7 @@ def list_for_metric(
     rows = session.execute(
         select(BusinessMemory)
         .where(
+            visible_scope(session, user_id),
             BusinessMemory.metric_key == metric_key,
             BusinessMemory.status.in_(tuple(statuses)),
         )
@@ -97,7 +106,7 @@ def list_for_metric(
 
 
 def memory_dataset_actions_ok(
-    session: Session, *, role_ids: list[uuid.UUID], row: BusinessMemory
+    session: Session, *, role_ids: list[uuid.UUID], row: BusinessMemory, user_id: uuid.UUID | None = None
 ) -> bool:
     """Only inject a memory whose source datasets are still granted.
 
@@ -107,6 +116,8 @@ def memory_dataset_actions_ok(
     """
     from app.repositories import analyses as analyses_repo
 
+    if not scope_allowed(session, row=row, user_id=user_id):
+        return False
     if row.analysis_id is None or analyses_repo.get_analysis(session, row.analysis_id) is None:
         return False
     query_ids = [item.id for item in analyses_repo.list_queries(session, row.analysis_id)]
@@ -124,8 +135,9 @@ def list_recent(
     status: str | None = None,
     limit: int = 50,
     role_ids: list[uuid.UUID] | None = None,
+    user_id: uuid.UUID | None = None,
 ) -> list[BusinessMemory]:
-    statement = select(BusinessMemory)
+    statement = select(BusinessMemory).where(visible_scope(session, user_id))
     if metric_key:
         statement = statement.where(BusinessMemory.metric_key == metric_key)
     if status:
@@ -135,7 +147,7 @@ def list_recent(
     ).scalars()
     visible = []
     for row in rows:
-        if role_ids is not None and not memory_dataset_actions_ok(session, role_ids=role_ids, row=row):
+        if role_ids is not None and not memory_dataset_actions_ok(session, role_ids=role_ids, row=row, user_id=user_id):
             continue
         visible.append(row)
         if len(visible) >= limit:
@@ -179,22 +191,22 @@ def set_status(session: Session, row: BusinessMemory, status: str) -> BusinessMe
     return row
 
 
-def counts(session: Session, *, metric_key: str | None = None, role_ids: list[uuid.UUID] | None = None) -> dict[str, int]:
+def counts(session: Session, *, metric_key: str | None = None, role_ids: list[uuid.UUID] | None = None, user_id: uuid.UUID | None = None) -> dict[str, int]:
     """Rows per status, optionally scoped to one metric.
 
     Scoped counts matter because the list endpoint pages at ``limit``; a UI that
     counted only the rows it fetched would under-report a busy store.
     """
     if role_ids is not None:
-        statement = select(BusinessMemory)
+        statement = select(BusinessMemory).where(visible_scope(session, user_id))
         if metric_key:
             statement = statement.where(BusinessMemory.metric_key == metric_key)
         visible_counts: dict[str, int] = {}
         for row in session.execute(statement).scalars():
-            if memory_dataset_actions_ok(session, role_ids=role_ids, row=row):
+            if memory_dataset_actions_ok(session, role_ids=role_ids, row=row, user_id=user_id):
                 visible_counts[row.status] = visible_counts.get(row.status, 0) + 1
         return visible_counts
-    statement = select(BusinessMemory.status, func.count()).group_by(BusinessMemory.status)
+    statement = select(BusinessMemory.status, func.count()).where(visible_scope(session, user_id)).group_by(BusinessMemory.status)
     if metric_key:
         statement = statement.where(BusinessMemory.metric_key == metric_key)
     rows = session.execute(statement).all()
@@ -205,6 +217,8 @@ def as_dict(row: BusinessMemory) -> dict[str, Any]:
     return {
         "id": row.id,
         "metric_key": row.metric_key,
+        "team_id": row.team_id,
+        "owner_user_id": row.owner_user_id,
         "kind": row.kind,
         "statement": row.statement,
         "scope_datasets": list(row.scope_datasets or []),
@@ -224,3 +238,24 @@ def as_dict(row: BusinessMemory) -> dict[str, Any]:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def visible_scope(session: Session, user_id: uuid.UUID | None):
+    if user_id is None:
+        return False  # Missing identity is never platform-wide access.
+    team = select(User.team_id).where(User.id == user_id, User.active.is_(True)).scalar_subquery()
+    return or_(and_(BusinessMemory.team_id.is_(None), BusinessMemory.owner_user_id == user_id),
+               and_(BusinessMemory.team_id.is_not(None), BusinessMemory.team_id == team))
+
+
+def scope_allowed(session: Session, *, row: BusinessMemory, user_id: uuid.UUID | None) -> bool:
+    if user_id is None:
+        return False
+    return bool(session.scalar(select(BusinessMemory.id).where(
+        BusinessMemory.id == row.id, visible_scope(session, user_id))))
+
+
+def lock_scope(session: Session, *, metric_key: str, team_id, owner_user_id) -> None:
+    """Serialize near-duplicate checks across analyses in the same memory scope."""
+    scope = f"memory:{metric_key}:{team_id or owner_user_id}"
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"), {"scope": scope})

@@ -16,8 +16,9 @@ repository and is not modified by work here. Delivered scope: **M0-M6**, with th
 per-milestone notes and open items in `docs/todo.md` and the known limits in
 `README.md` (section "Known limitations").
 M5's real-model evaluation passed on 2026-09-27 (`docs/acceptance.md`). The runner's
-driver decomposition is rule-driven and integration-tested; model-driven step
-selection and iterative tool selection remain open - see `docs/todo.md`. The
+driver decomposition is integration-tested. Model-backed planning now chooses
+closed compare/breakdown actions and, after observations, finish or the declared
+driver action. General arbitrary-tool iteration remains outside scope. The
 `/datasets/:id` deep link is implemented (2026-10-16).
 
 ## Layout
@@ -35,8 +36,8 @@ backend/      FastAPI API + query/agent workers (one image), Alembic, tests
   app/metadata/       DataHub GraphQL adapter, ingestion tasks, recipes, context
   app/results/        Arrow IPC + JSON store, signed cursors
   app/workers/        query_worker, agent_worker (reconciler + analyses + learning)
-  app/models/orm.py   control schema (31 tables: the spec 8 list + business_memory
-                      + conversation_turns + skills/skill_versions)
+  app/models/orm.py   control schema (32 tables: the spec 8 list + business_memory
+                      + conversation_turns + skills/skill_versions + teams)
   migrations/         Alembic (baseline 4f36847b8351 + permission state + business
                       memory + conversation turns + skills)
   tests/              unit / security / contract / integration
@@ -207,8 +208,9 @@ needed beyond d2e6a9f18c40. Remaining infrastructure/model limitations still app
 7. **Data access is default-deny.** `discover`/`query` grants per dataset are
    required even for administrators; grants are checked at search, submit,
    execute, download and stream time, and revocation cancels live queries.
-8. **Model output is constrained**: it may only choose allowlisted dimensions and
-   `relation_id`s. It never supplies tools, SQL, URLs or code, and never does the
+8. **Model output is constrained**: it may only choose closed platform actions,
+   allowlisted dimensions and `relation_id`s. It never supplies arbitrary tools,
+   SQL, URLs or code, and never does the
    arithmetic - the deterministic kernel in `app/analysis/` does, in `Decimal`.
 9. **`ground_truth.json` is evaluation-only.** It is never mounted into metadata or
    agent context.
@@ -254,3 +256,15 @@ needed beyond d2e6a9f18c40. Remaining infrastructure/model limitations still app
   failing scenario by loosening hash or ground-truth checks.
 - The login rate limiter and SSE polling are single-process; multiple API replicas
   need a shared store/fan-out before they are correct.
+
+Remaining feature round (2026-10-16): apply **e4b8a1c79d20** after d2e6a9f18c40.
+Team/private memory has current-grant checks at every read, local bilingual domain
+vectors, and per-scope extraction locks. Closed planning and observation actions
+run outside transactions; structured format repair is bounded to one retry and
+budgeted. Explain templates use bound artifacts; charts show Top-10 with expansion
+and paging. Static **531 passed**, frontend units **12 passed**, build exit 0,
+PG/MySQL/TLS matrix **127 passed / 15 skipped / 28 deselected**, separate live Spark
+**1 passed**, final priority cases **15 passed**, schema verification **32 tables**.
+Mocked browser full attempt **63 passed / 1 failed**; missing admin-error alert
+role fixed and final affected charts/teams **8 passed**. Real DeepSeek/A09 remains
+deferred; remaining infrastructure/load acceptance gaps are in docs/todo.md.

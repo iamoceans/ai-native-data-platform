@@ -693,7 +693,7 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
 
   return (
     <article
-      className={`message ${message.role}`}
+      className={`message${message.role === "user" ? " user" : ""}`}
       data-testid={`message-${kind}`}
     >
       <header className="message-head">
@@ -779,7 +779,7 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
               </ul>
             </details>
           ) : null}
-          {chart.data ? <ChartPanel chart={chart.data} /> : null}
+          {chart.data ? <ChartPanel key={chart.data.id} chart={chart.data} /> : null}
           <SkillUsage
             snapshot={content.skills as Record<string, unknown> | undefined}
           />
@@ -826,13 +826,15 @@ function MetricCatalog({ metrics }: { metrics?: unknown }) {
   );
 }
 
-/** Explanations quote stored claims verbatim; the prose carries no figure. */function ExplanationBody({ content }: { content: Record<string, unknown> }) {
+/** Templates use bound artifacts; model prose carries no figure. */
+function ExplanationBody({ content }: { content: Record<string, unknown> }) {
   useLocale();
   const quotes =
     (content.quotes as {
       claim_id: string;
       text: string;
       analysis_id: string;
+      explanation?: string;
     }[]) ?? [];
   const dropped = (content.dropped_references as string[]) ?? [];
   return (
@@ -846,6 +848,7 @@ function MetricCatalog({ metrics }: { metrics?: unknown }) {
             <li key={`${quote.analysis_id}-${quote.claim_id}`}>
               <span className="tag">{quote.claim_id}</span>
               <span>{quote.text}</span>
+              {quote.explanation ? <p className="muted small">{quote.explanation}</p> : null}
             </li>
           ))}
         </ul>
@@ -875,7 +878,7 @@ function TurnProgress({ turn }: { turn: TurnDetail }) {
   });
   const steps = analysis.data?.steps ?? [];
   return (
-    <article className="message assistant progress" data-testid="turn-progress">
+    <article className="message progress" data-testid="turn-progress">
       <header className="message-head">
         <span className="tag">{t("平台")}</span>
         <StatusBadge status={turn.status} />
