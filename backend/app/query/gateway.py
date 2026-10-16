@@ -112,8 +112,12 @@ def compile_query(
         if exc.code == ErrorCode.DATASET_NOT_REGISTERED:
             raise ApiError(ErrorCode.PERMISSION_DENIED, "dataset not found or not authorized") from exc
         raise
-    if datasource.kind == "spark" and (validated.placeholder_names or parameters):
-        raise ApiError(ErrorCode.SQL_UNSUPPORTED, "Spark parameterized queries are not supported")
+    if datasource.kind == "spark":
+        from app.providers.sql_prep import bind_spark_parameters
+        try:
+            bind_spark_parameters(validated.validated_sql, parameters or {})
+        except ValueError as exc:
+            raise ApiError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
     # Authorization: query + discover on every referenced dataset (spec 12.1).
     for relation in validated.relations:
         ensure_dataset_action(

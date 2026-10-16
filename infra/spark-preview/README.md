@@ -77,3 +77,33 @@ CancelOperation concurrently and verifies both the uncorrupted response and
 server CANCELED_STATE, then a successful SELECT. Shared-client cancellation
 reproduced KeyError(None) before isolation; the new provider uses a separate
 bounded transport and closes it on success/failure.
+
+### Verified TLS and scalar parameter acceptance
+
+A second fixture adds encrypted transport and a short-lived self-signed CA. It
+uses NOSASL and an embedded metastore: it proves certificate verification and
+query/browser execution, not source read-only authorization or shared HMS lineage.
+
+```bash
+uv run --project backend --frozen python infra/spark-preview/setup_tls_fixture.py
+# Public CA: runtime/spark-tls-fixture/ca.pem. Private keystore/password stay ignored.
+# Wait until HiveThriftServer2 reports startup; local port defaults to 11001.
+AIND_TEST_SPARK_HOST=127.0.0.1 AIND_TEST_SPARK_PORT=11000 \
+AIND_TEST_SPARK_TLS_HOST=127.0.0.1 AIND_TEST_SPARK_TLS_PORT=11001 \
+AIND_TEST_SPARK_TLS_CA_CERT="$PWD/runtime/spark-tls-fixture/ca.pem" \
+  uv run --project backend --frozen pytest backend/tests/integration/test_spark_secure_parameters.py -q
+# Requires the normal dedicated test control DB settings.
+docker --host=unix:///var/run/docker.sock stop aind-spark-tls-acceptance
+docker --host=unix:///var/run/docker.sock rm aind-spark-tls-acceptance
+```
+
+Use --output-dir, --name and --port for a distinct fixture. Existing keystores
+are not overwritten. Preserve Docker's configured proxy and CA for image access.
+Certificates expire after two days; remove only the stopped fixture's ignored
+output directory before regenerating. For a deployed browser acceptance register
+and grant a Spark source, set E2E_SPARK_DATASOURCE/E2E_BASE_URL and the standard
+E2E administrator credentials, then run `npm run test:e2e -- spark.spec.ts`.
+
+PLAIN-over-TLS config forwarding is unit-tested, but the fixture does not provide
+a real identity authenticator or authorizer. Accept those against the actual
+source before claiming source authorization support.

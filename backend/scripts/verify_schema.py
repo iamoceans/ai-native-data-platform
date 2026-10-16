@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
     "task_queue",
     "user_roles",
     "users",
+    "auth_rate_limits",
     "teams",
 }
 
@@ -90,6 +91,7 @@ EXPECTED_INDEXES = {
     "uq_skills_builtin_slug",
     "ix_skills_owner",
     "ix_skill_versions_skill",
+    "ix_auth_rate_limits_expires_at",
 }
 
 

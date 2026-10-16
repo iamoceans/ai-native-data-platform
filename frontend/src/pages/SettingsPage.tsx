@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { changePassword, me, updateProfile, type Profile } from "../api/endpoints";
+import { changePassword, listMetrics, me, updateProfile, type Profile } from "../api/endpoints";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale } from "../i18n";
 
@@ -20,7 +20,7 @@ export function SettingsPage() {
 }
 
 function fields(profile: Profile) {
-  return { displayName: profile.display_name ?? "", locale: profile.locale ?? "", timezone: profile.timezone ?? "", version: profile.settings_version ?? 1 };
+  return { displayName: profile.display_name ?? "", locale: profile.locale ?? "", timezone: profile.timezone ?? "", version: profile.settings_version ?? 1, defaults: { metric_key: profile.analysis_defaults?.metric_key ?? null, dimensions: profile.analysis_defaults?.dimensions ?? [], skill_mode: profile.analysis_defaults?.skill_mode ?? "off" as const } };
 }
 
 function SettingsForm({ profile, reload }: { profile: Profile; reload: () => Promise<unknown> }) {
@@ -28,11 +28,12 @@ function SettingsForm({ profile, reload }: { profile: Profile; reload: () => Pro
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(() => fields(profile));
   const [dirty, setDirty] = useState(false);
+  const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
   const [saved, setSaved] = useState(false);
   useEffect(() => { if (!dirty) setDraft(fields(profile)); }, [profile, dirty]);
   const save = useMutation({
     mutationFn: () => updateProfile({ display_name: draft.displayName, locale: draft.locale ? draft.locale as "en" | "zh-CN" : null,
-      timezone: draft.timezone || null, expected_settings_version: draft.version }),
+      timezone: draft.timezone || null, analysis_defaults: draft.defaults, expected_settings_version: draft.version }),
     onSuccess: updated => { queryClient.setQueryData(["me"], updated); setDraft(fields(updated)); setDirty(false); setSaved(true); },
   });
   const edit = (patch: Partial<typeof draft>) => { setDraft(value => ({ ...value, ...patch })); setDirty(true); setSaved(false); save.reset(); };
@@ -53,6 +54,21 @@ function SettingsForm({ profile, reload }: { profile: Profile; reload: () => Pro
         <label>{t("时区")}<input data-testid="settings-timezone" list="settings-timezones" maxLength={128} value={draft.timezone} disabled={save.isPending} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={event => edit({ timezone: event.target.value })} /></label>
         <datalist id="settings-timezones">{["UTC", "Asia/Singapore", "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map(zone => <option key={zone} value={zone} />)}</datalist>
         <p className="muted small">{t("时区留空时跟随浏览器，仅影响时间显示，不改变分析期间。")}</p>
+        <fieldset className="stack"><legend>{t("新会话的分析默认设置")}</legend>
+          <label>{t("默认指标")}<select data-testid="settings-default-metric" value={draft.defaults.metric_key ?? ""}
+            disabled={save.isPending || metrics.isPending || metrics.isError} onChange={event => edit({ defaults: { ...draft.defaults, metric_key: event.target.value || null, dimensions: [] } })}>
+            <option value="">{t("每次选择")}</option>
+            {draft.defaults.metric_key && !metrics.data?.some(metric => metric.metric_key === draft.defaults.metric_key) ? <option value={draft.defaults.metric_key}>{draft.defaults.metric_key}</option> : null}
+            {(metrics.data ?? []).map(metric => <option key={metric.metric_key} value={metric.metric_key}>{metric.name}</option>)}
+          </select></label>
+          {metrics.isError ? <p role="alert"><ErrorMessage error={metrics.error} /><button type="button" onClick={() => metrics.refetch()}>{t("重试")}</button></p> : null}
+          <div className="row-actions">{(metrics.data?.find(metric => metric.metric_key === draft.defaults.metric_key)?.allowed_dimensions ?? []).map(dimension => <label className="check" key={dimension}><input type="checkbox" data-testid={`settings-default-dimension-${dimension}`}
+            checked={draft.defaults.dimensions.includes(dimension)} disabled={save.isPending || (!draft.defaults.dimensions.includes(dimension) && draft.defaults.dimensions.length >= 3)}
+            onChange={event => edit({ defaults: { ...draft.defaults, dimensions: event.target.checked ? [...draft.defaults.dimensions, dimension] : draft.defaults.dimensions.filter(value => value !== dimension) } })} />{dimension}</label>)}</div>
+          <label>{t("默认技能模式")}<select data-testid="settings-default-skills" value={draft.defaults.skill_mode} disabled={save.isPending}
+            onChange={event => edit({ defaults: { ...draft.defaults, skill_mode: event.target.value as "off" | "auto" } })}><option value="off">{t("不加载技能")}</option><option value="auto">{t("自动选择技能")}</option></select></label>
+          <p className="muted small">{t("仅用于新会话；现有会话和显式选择保持优先，不预设日期或数据完整性。")}</p>
+        </fieldset>
         {save.isError ? <div className="notice error" role="alert" data-testid="settings-error"><ErrorMessage error={save.error} /><p>{t("如其他页面已更新设置，请重新加载后再保存。")}</p></div> : null}
         {saved ? <p role="status" data-testid="settings-saved">{t("设置已保存")}</p> : null}
         <div className="row-actions">

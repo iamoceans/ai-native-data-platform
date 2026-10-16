@@ -11,13 +11,13 @@
   one. The token is also mirrored into a readable cookie (`ainative_csrf`) so the SPA
   can recover it after a page reload - a double-submit pattern; the server still
   validates the header against the session hash.
-- Login rate limiting: attempts per (username, client IP) in a moving window. This
-  limiter is in-process; with more than one API replica a shared store is required
-  (noted as a production item). Storage is bounded to 10,000 keys with expired
-  buckets pruned; saturation denies new keys until expiry. The backend image
-  starts Uvicorn with `--no-proxy-headers`, so arbitrary forwarded headers cannot
-  change the limiter key. Native Uvicorn launches must use the same flag. The
-  direct peer IP is used; clients behind one reverse proxy share that peer.
+- Login rate limiting: fixed failure windows per hashed (username, client IP),
+  stored in PostgreSQL and shared across API processes. Check/verify/update is
+  serialized by per-key transaction locks; at most 10,000 live keys are allocated,
+  expired keys are reclaimed and saturation denies new keys until expiry.
+  Successful verification resets the count. The backend image and native Uvicorn
+  launches must use `--no-proxy-headers`, so forwarded headers cannot change the
+  limiter key. Direct peer IPs are used; clients behind one proxy share that peer.
 - Error uniformity: unknown user, wrong password and inactive account return the
   same 401 message; failures are audited with `outcome=denied`. Login denial
   and `outcome=rate_limited` audits commit before raising the HTTP error, so
@@ -148,8 +148,8 @@ interpretation. Real PostgreSQL and browser tests verify isolation and stale sav
 The 2026-10-16 live protocol tests supersede the older pending note for PostgreSQL
 TLS negotiation and MySQL/Doris greeting stalls. They do not establish a deployed
 Doris server acceptance. Spark cancellation now uses a separate HS2 connection,
-verified against real Spark 3.5.3; secure Spark authentication/TLS and read-only
-authorization remain unverified.
+verified against real Spark 3.5.3; verified TLS is now accepted on a real standalone server; PLAIN identity
+verification and source read-only authorization remain unverified.
 
 Self-service password rotation (2026-10-16) requires current credentials and CSRF.
 New passwords are 12..1024 characters, represented as SecretStr in the closed DTO;
@@ -159,8 +159,28 @@ and revokes all sessions in one transaction; login verification/session issuance
 uses the same user row lock so a concurrent old-password login cannot survive
 revocation. Other accounts are unaffected. Cookies are deleted on both password
 change and logout; cross-tab auth notifications trigger the existing cache reset.
-The limiter remains single-process; multi-API scaling still requires shared state.
+The production routes now use PostgreSQL auth_rate_limits (migration
+f6a12c83d095), not the standalone in-memory test helper. Fixed failure windows
+survive new processes; per-key transaction locks serialize check/verify/failure
+updates, and a capacity lock only allocates new keys (at most 10,000 live keys).
+Expired keys are reclaimed on allocation. Limiter locks precede user locks in both
+login and password change; successful verification resets failures. Denied audit
+commits preserve failed attempts. Database failures never fall back to local state.
 
 Saved query templates remain private to their owner. Frontend loading only sets
 editor values, without execution; the Query Gateway remains authoritative for
 SQL/grant validation when the user explicitly runs a loaded template.
+
+Spark scalar binding (2026-10-16) uses SQLGlot AST literals and refuses missing,
+extra, anonymous, nested or nonfinite bindings. It requires an exact Spark AST
+parse round trip after serialization; no string interpolation or Impyla formatting
+is used. The source SQL remains gateway-validated and worker-revalidated. Both
+statement kinds/registered datasets and certificate/hostname verification remain
+binding; PLAIN without TLS is rejected by config and provider checks.
+
+All query/analysis/session SSE loops now check persisted authentication-session
+expiry/revocation and active user state before publishing another poll. Query and
+analysis streams recheck dataset grants before replay; a session stream suppresses
+revoked-analysis events and emits its revocation notification. A model or account
+default never sets dates or verified completeness. Report reruns are CSRF protected,
+owner/capability/grant checked and create a new child; immutable old reports remain.

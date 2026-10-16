@@ -10,7 +10,7 @@ that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
-## Current actionable backlog (2026-10-16, after remaining feature implementation)
+## Current actionable backlog (2026-10-16, after operational completion)
 
 High-priority implementation requested in this round:
 
@@ -22,12 +22,18 @@ High-priority implementation requested in this round:
       states; distinct from pagination of messages inside a conversation.
 - [x] Reproduce and fix Spark shared-client cancellation response corruption.
 - [~] Full Doris/DataHub acceptance: remains blocked by this 32 GB vfs host's
-      image/storage footprint. Current PG/MySQL/TLS matrix: **127 passed,
-      15 skipped, 28 deselected**. Spark was not configured in that invocation;
-      its real cancellation regression was then run separately: **1 passed**.
-      The other 14 skips still require Doris/deployed DataHub.
+      image/storage footprint. Current PG/MySQL/TLS/Spark matrix: **136 passed,
+      14 skipped, 29 deselected**. The 14 skips require Doris/deployed DataHub.
+      Standalone Spark TLS, binding and cancellation are covered; this is not
+      source authorization or shared-HMS lineage acceptance.
 
 Product and verification items (current status):
+
+- [x] Account analysis defaults (metric/dimensions/skill mode), applied only to
+      new sessions and subordinate to explicit choices; dates/completeness stay unset.
+- [x] Shared PostgreSQL login/password failure limits, bounded allocation and
+      cross-process persistence; same-host dual API deployment acceptance.
+- [x] Per-poll SSE auth-session/user/grant rechecks and revoked event suppression.
 
 - [x] Conversation rename/archive/restore UI and archived-session browsing.
       Current archived transcripts remain readable and retain their composer draft.
@@ -38,11 +44,17 @@ Product and verification items (current status):
 - [x] Explain templates copy bound calculation values, describe contributor/driver meaning, and refuse expired references.
 - [x] Actual 50-skill / 20-version quota boundaries and idempotent replay tested;
       dedicated session SSE replay/framing/ownership/idle-closure contracts added.
-- [ ] Concurrent-session/worker load and soak acceptance, memory throughput and
-      cross-analysis paraphrase-race checks.
-- [ ] Spark read-only authorization, shared-HMS listener lineage and browser E2E.
+- [x] Bounded sustained load: 360 conversations / 45 waves, two authors sharing
+      a team, 3 analysis / 2 query / 4 extraction workers; 360 memory extractions
+      converge to one row with no active queue/lease leftovers. Observed 126.776
+      seconds, not overnight endurance or a production SLO claim.
+- [~] Spark verified TLS, scalar parameters and browser E2E pass. Real PLAIN
+      identity verification, read-only source authorization and shared-HMS listener
+      lineage still require an authenticator/authorizer/HMS/DataHub stack.
 - [x] Chat chart Top-10 by absolute change, expand/collapse, bounded load-more and class/style cleanup.
-- [ ] Historical affected report reruns; old stored reports are not rewritten.
+- [x] Audited owner/CSRF/idempotency-checked rerun API/UI create a new child with
+      current contracts and unknown completeness. Actual business reports require
+      an owner-selected scope, not an automatic blanket rewrite of history.
 - [x] Closed initial/observed model action selection and one bounded structured-output repair; deterministic execution gates remain binding.
 - [x] Local bilingual domain semantic vectors, team/private scope, audited membership management and read-time isolation. General pretrained embeddings remain an enhancement.
 - [x] Current backlog and superseded feature notes consolidated. Historical
@@ -95,7 +107,7 @@ See the medium-defects section in `docs/acceptance.md`.
       **108 passed**, including the Skills keyboard file chooser.
 - [~] PostgreSQL/MySQL matrix and local live-service journeys rerun on 2026-10-16.
       Doris/DataHub and real-model A09 remain pending; see the latest record.
-- [ ] Rerun affected historical reports; stored artifacts are not rewritten.
+- [x] Superseded: explicit rerun workflow now preserves original historical artifacts.
       Obsolete in-flight calculation checkpoints require resubmission.
 
 See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0.
@@ -736,8 +748,8 @@ uv run --project backend --frozen python scripts/demo_verify.py --run-dir runtim
       produced are recorded in `docs/acceptance.md`.
 - [x] Superseded on 2026-10-16: scoped candidate recall now ranks local domain
       semantic vectors before the top-8 cut, with team/private isolation.
-- [ ] Extraction has claim/lease fencing and per-scope duplicate-check locks;
-      throughput and cross-analysis paraphrase races still
+- [x] Bounded cross-author throughput/paraphrase acceptance now verifies claims,
+      fencing and per-scope locks. Larger scale and overnight endurance still
       need multi-worker acceptance.
 - [x] Curation audit detail (fixed 2026-09-29): `memory.confirm` / `memory.reject`
       rows used to log `previous` as the *new* status, because `_curate` read
@@ -771,7 +783,8 @@ roadmap table.
 
 - [x] Add Spark source registration, dialect/resolution, worker-only Thrift
       execution, HMS ingestion recipe, single Hive URN mapping and UI fields.
-- [x] Reject Spark parameters until safe server-side binding exists; apply
+- [x] Initial parameter rejection superseded by exact-round-trip AST scalar
+      binding in the operational round; apply
       existing dataset grants and SQL denylist to Spark statements.
 - [x] Real Spark Thrift Server + Hive Metastore + pinned DataHub ingestion cycle
       (2026-09-28, fixture in `infra/spark-preview/`): connection, catalog
@@ -1218,3 +1231,30 @@ superseded; commands and details are in the acceptance record.
 - [~] Not executed: current real-model DeepSeek/A09 (user-deferred), complete
       Doris/DataHub, Spark read-only/HMS listener/browser acceptance, load/soak,
       general pretrained semantic evaluation and historical report reruns.
+
+## 2026-10-16 Operational completion
+
+- [x] Migration f6a12c83d095: account analysis defaults and auth_rate_limits.
+      Defaults seed new conversations only; explicit scope wins and no date or
+      completeness is assumed. UI/profile versioning and active metric validation.
+- [x] Historical rerun UI/API: owner/current grants/CSRF/idempotency checked,
+      current contracts, parent link and unknown completeness; original immutable.
+- [x] Shared login/password failure windows, bounded allocation/reclamation,
+      lock order before user locks, fresh-process and forwarded-header checks.
+- [x] Persisted-event SSE across API instances with ongoing authentication,
+      account-state and dataset-grant checks before replay/publishing.
+- [x] Spark verified TLS, PLAIN-over-TLS configuration and exact-round-trip AST
+      scalar binding. Real TLS/untrusted CA/parameters/cancellation verified;
+      isolated Spark Query Gateway/browser journey passes.
+- [x] Cross-author team memory race and bounded sustained load: 360 conversations,
+      45 waves, 126.776 seconds; 360 extractions converge to one memory. No live
+      queue/lease leftovers. Overnight/high-scale endurance remains unverified.
+- [x] Static 550 passed; full service matrix 136 passed / 14 skipped /
+      29 deselected; final operational subset 7 passed. Frontend units 12 passed,
+      build exit 0, final mocked browsers 66 passed. Live dual-API deployment:
+      10 browser journeys passed, followed by 1 added defaults/rerun journey.
+      Deployed schema: 33 tables / 11 named checks / 26 required indexes.
+- [~] Still external/resource-bound: 13 Doris + deployed DataHub test; GMS auth;
+      Spark actual identity/read-only/shared-HMS listener lineage; 16 GiB proof;
+      real model explicitly deferred. Further general embeddings, multi-host HA,
+      batch/stream/MCP and content-language features remain roadmap extensions.

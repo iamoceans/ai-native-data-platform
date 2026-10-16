@@ -35,6 +35,7 @@ from app.api.dto import (
 )
 from app.api.session_activity import ensure_session_idle
 from app.auth.sessions import AuthContext
+from app.api.stream_auth import stream_session_active
 from app.config import Settings
 from app.constants import ErrorCode, ConversationTurnStatus
 from app.db import get_session_factory
@@ -159,6 +160,14 @@ def create_session(
     if "analysis.create" not in auth.capabilities:
         raise ApiError(ErrorCode.FORBIDDEN, "analysis capability required")
     row = analyses_repo.create_session(session, user_id=auth.user.id, title=payload.title)
+    defaults = dict(getattr(auth.user, "analysis_defaults", {}) or {})
+    scope_defaults = {key: defaults[key] for key in ("metric_key", "dimensions") if defaults.get(key)}
+    if scope_defaults:
+        from app.agent.conversation.context import merge_scope_patch
+        analyses_repo.update_session_scope(session, row,
+            resolved_context=merge_scope_patch({}, scope_defaults, origin="account_preferences"))
+    if not payload.skill_config and defaults.get("skill_mode"):
+        analyses_repo.update_session_scope(session, row, skill_config={"mode": defaults["skill_mode"]})
     if payload.skill_config:
         # Shape only; ids are validated when a turn loads skills (P2/P3).
         analyses_repo.update_session_scope(session, row, skill_config=payload.skill_config)
@@ -496,6 +505,7 @@ def session_events(
     supplied = request.headers.get("Last-Event-ID") or request.query_params.get("last_event_id")
     last_id = int(supplied) if supplied and supplied.isdigit() else 0
     user_id = auth.user.id
+    auth_session_id = auth.session.id
     session_factory = get_session_factory()
 
     def _pairs(poll: Session) -> list[tuple[str, uuid.UUID]]:
@@ -513,6 +523,9 @@ def session_events(
         announced_revoked: set[uuid.UUID] = set()
         while time.monotonic() - started <= SSE_MAX_SECONDS:
             with session_factory() as poll:
+                if not stream_session_active(poll, auth_session_id, user_id):
+                    yield 'event: stream.closed\ndata: {"reason":"session_revoked"}\n\n'
+                    return
                 row = analyses_repo.get_session(poll, session_id)
                 if row is None or row.user_id != user_id:
                     yield 'event: stream.closed\ndata: {"reason":"not_authorized"}\n\n'
@@ -532,7 +545,11 @@ def session_events(
                         poll, role_ids=role_ids, analysis_id=analysis_id
                     )
                 ]
+            revoked_ids = announced_revoked | set(revoked)
             for event in events:
+                if getattr(event, "resource_kind", None) == "analysis" and event.resource_id in revoked_ids:
+                    last_sent = int(event.id)
+                    continue
                 yield (
                     f"id: {event.id}\n"
                     f"event: {event.event_type}\n"

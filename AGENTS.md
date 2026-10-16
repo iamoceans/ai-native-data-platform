@@ -36,8 +36,8 @@ backend/      FastAPI API + query/agent workers (one image), Alembic, tests
   app/metadata/       DataHub GraphQL adapter, ingestion tasks, recipes, context
   app/results/        Arrow IPC + JSON store, signed cursors
   app/workers/        query_worker, agent_worker (reconciler + analyses + learning)
-  app/models/orm.py   control schema (32 tables: the spec 8 list + business_memory
-                      + conversation_turns + skills/skill_versions + teams)
+  app/models/orm.py   control schema (33 tables: the spec 8 list + business_memory
+                      + conversation_turns + skills/skill_versions + teams + auth_rate_limits)
   migrations/         Alembic (baseline 4f36847b8351 + permission state + business
                       memory + conversation turns + skills)
   tests/              unit / security / contract / integration
@@ -254,8 +254,10 @@ needed beyond d2e6a9f18c40. Remaining infrastructure/model limitations still app
 - Demo generation is deterministic per
   `(seed, as_of, days, scale, scenario, generator version)`; never "fix" a
   failing scenario by loosening hash or ground-truth checks.
-- The login rate limiter and SSE polling are single-process; multiple API replicas
-  need a shared store/fan-out before they are correct.
+- Authentication failure limits are shared in PostgreSQL. Acquire limiter locks
+  before user locks. SSE polls persisted events and checks auth sessions/grants
+  before replay; same-host API workers share DB/results/secrets. Multi-host HA
+  still requires shared object storage and separate operational acceptance.
 
 Remaining feature round (2026-10-16): apply **e4b8a1c79d20** after d2e6a9f18c40.
 Team/private memory has current-grant checks at every read, local bilingual domain
@@ -268,3 +270,19 @@ PG/MySQL/TLS matrix **127 passed / 15 skipped / 28 deselected**, separate live S
 Mocked browser full attempt **63 passed / 1 failed**; missing admin-error alert
 role fixed and final affected charts/teams **8 passed**. Real DeepSeek/A09 remains
 deferred; remaining infrastructure/load acceptance gaps are in docs/todo.md.
+
+Operational completion (2026-10-16): migrate to **f6a12c83d095** (33 tables).
+Account metric/dimension/skill defaults seed only new sessions. Owner/idempotency
+reruns create new child reports and reset completeness. Production login/password
+failure limits use PostgreSQL, with limiter-before-user lock order. SSE is DB
+polling across replicas and continuously checks auth sessions/user/grants. Spark
+verified TLS and PLAIN-over-TLS configuration plus exact-round-trip AST scalar
+binding are implemented; actual PLAIN/read-only/shared-HMS lineage remain unverified.
+Static **550 passed**, service matrix **136 passed / 14 skipped / 29 deselected**,
+final operational subset **7 passed**. Two-minute cross-author load: **360 sessions /
+45 waves**, one deduplicated memory, no active queue/lease leftovers. Frontend
+units **12 passed**, build exit 0, mocked browsers **66 passed**; isolated dual-API
+live journeys **10 passed** plus added defaults/rerun **1 passed**. Preserve actual
+remaining infrastructure/model boundaries in docs/todo.md. Native Uvicorn launches
+must use --no-proxy-headers. Test-load fixtures truncate their configured control
+DB and reseed source fixtures: use dedicated disposable databases only.

@@ -15,6 +15,7 @@ pytestmark = pytest.mark.contract
 
 def response(monkeypatch, *, after=0, lost_owner=False, empty=False):
     owner, sid, turn_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    monkeypatch.setattr(routes, 'stream_session_active', lambda *args: True)
     monkeypatch.setattr(routes, '_own_session', lambda *args: None)
     monkeypatch.setattr(routes, 'get_session_factory', lambda: lambda: nullcontext(None))
     ticks = count()
@@ -32,7 +33,7 @@ def response(monkeypatch, *, after=0, lost_owner=False, empty=False):
         return [] if empty else [item for item in events if item.id > after_id]
     monkeypatch.setattr(routes.events_repo, 'events_for_resources', read)
     request = Request({'type': 'http', 'headers': [(b'last-event-id', str(after).encode())], 'query_string': b''})
-    return routes.session_events(sid, request, SimpleNamespace(user=SimpleNamespace(id=owner)), None)
+    return routes.session_events(sid, request, SimpleNamespace(user=SimpleNamespace(id=owner), session=SimpleNamespace(id=uuid.uuid4())), None)
 
 
 def collect(result):
@@ -60,3 +61,11 @@ def test_empty_idle_session_closes_without_waiting_for_an_event(monkeypatch):
 def test_lost_session_ownership_closes_before_publishing_events(monkeypatch):
     parts = collect(response(monkeypatch, lost_owner=True))
     assert parts == [': connected\n\n', 'event: stream.closed\ndata: {"reason":"not_authorized"}\n\n']
+
+
+def test_revoked_authentication_session_closes_before_replay(monkeypatch):
+    result=response(monkeypatch)
+    monkeypatch.setattr(routes,'stream_session_active',lambda *a: False)
+    chunks=collect(result)
+    assert any('session_revoked' in chunk for chunk in chunks)
+    assert not any('id: 10' in chunk for chunk in chunks)

@@ -171,3 +171,8 @@ reset-demo: ## Destructive: rebuild the demo data (requires CONFIRM=demo)
 smoke-full evaluate-live:
 	@echo "target '$@' is planned for a later milestone (see docs/todo.md)"
 	@exit 2
+
+.PHONY: test-load
+SOAK_SECONDS ?= 120
+test-load: ## Bounded real-service multi-session/worker soak; dedicated test DB only
+	AIND_TEST_SOAK_SECONDS=$(SOAK_SECONDS) uv run --project backend --frozen pytest backend/tests/integration/test_operational_todo.py -q -s

@@ -69,7 +69,22 @@ class LoginRequest(StrictModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class AnalysisDefaults(StrictModel):
+    metric_key: str | None = Field(default=None, min_length=2, max_length=128, pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$")
+    dimensions: list[str] = Field(default_factory=list, max_length=3)
+    skill_mode: Literal["off", "auto"] = "off"
+
+    @field_validator("dimensions")
+    @classmethod
+    def valid_dimensions(cls, values: list[str]) -> list[str]:
+        import re
+        if len(set(values)) != len(values) or any(not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,127}", value) for value in values):
+            raise ValueError("dimensions must be unique identifiers")
+        return values
+
+
 class ProfileResponse(BaseModel):
+    analysis_defaults: AnalysisDefaults = Field(default_factory=AnalysisDefaults)
     id: uuid.UUID
     username: str
     roles: list[str]
@@ -81,6 +96,7 @@ class ProfileResponse(BaseModel):
 
 
 class ProfileUpdate(StrictModel):
+    analysis_defaults: AnalysisDefaults = Field(default_factory=AnalysisDefaults)
     expected_settings_version: int = Field(ge=1)
     display_name: str = Field(default="", max_length=80)
     locale: Literal["zh-CN", "en"] | None = None
@@ -545,6 +561,7 @@ class AnalysisContext(StrictModel):
     dimensions: list[str] = Field(default_factory=list, max_length=3)
     filters: dict[str, str] = Field(default_factory=dict)
     data_complete: bool = True
+    completeness: Literal["unknown", "complete", "incomplete"] | None = None
 
     @model_validator(mode="after")
     def validate_periods(self) -> "AnalysisContext":

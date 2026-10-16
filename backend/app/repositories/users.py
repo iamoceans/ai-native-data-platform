@@ -24,7 +24,7 @@ def get_user_for_update(session: Session, user_id: uuid.UUID) -> User | None:
 
 
 def update_profile(session: Session, user: User, changes: dict) -> None:
-    for name in ("display_name", "locale", "timezone"):
+    for name in ("display_name", "locale", "timezone", "analysis_defaults"):
         if name in changes:
             setattr(user, name, changes[name])
     user.settings_version += 1
@@ -144,3 +144,20 @@ def purge_expired_sessions(session: Session) -> int:
         delete(AuthSession).where(AuthSession.expires_at < utcnow())
     )
     return int(result.rowcount or 0)
+
+
+def validate_analysis_defaults(session: Session, defaults: dict) -> None:
+    from app.models.orm import MetricDefinition
+    from app.errors import ApiError
+    from app.constants import ErrorCode
+    metric = defaults.get("metric_key")
+    dims = defaults.get("dimensions") or []
+    if not metric:
+        if dims:
+            raise ApiError(ErrorCode.VALIDATION_ERROR, "default dimensions require a metric")
+        return
+    row = session.scalar(select(MetricDefinition).where(
+        MetricDefinition.metric_key == metric, MetricDefinition.active.is_(True)
+    ).order_by(MetricDefinition.version.desc()).limit(1))
+    if row is None or set(dims) - set(row.definition.get("allowed_dimensions") or []):
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "default metric or dimensions are unavailable")

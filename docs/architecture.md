@@ -300,8 +300,8 @@ reassign historical memories. List/count/curation/prompt injection and historica
 analysis-memory reads all recheck scope and source grants. Extraction snapshots
 the planning team and refuses a changed team; per-scope PostgreSQL transaction
 locks serialize near-duplicate checks. Model extraction already has durable
-claims/leases and fenced apply. Multi-worker throughput and cross-analysis
-paraphrase contention still need load/soak verification.
+claims/leases and fenced apply. Bounded cross-author load/paraphrase verification
+is recorded under Operational completion; broader scale remains unverified.
 
 ## Conversational Ask and skills
 
@@ -526,7 +526,7 @@ continues through the same gateway/grant checks.
 POST `/auth/password` accepts closed SecretStr current/new password fields,
 requires authentication/CSRF, verifies the current password under a refreshed user
 row lock, rejects reuse and enforces 12..1024 characters on the new password.
-Failed verification is audited and bounded by the existing single-process limiter
+Failed verification is audited and bounded by the shared PostgreSQL limiter
 in an account-specific bucket. Successful rotation atomically hashes the new
 password, revokes all existing sessions and audits the revocation count. Response
 cookies are deleted and the client clears state and returns to sign-in. Login now
@@ -576,3 +576,45 @@ permission checks and retryable errors. Table and bars use the same visible rows
 exact Decimal strings remain in titles, and hidden/stored-dropped counts stay
 explicit. Admin datasource IDs use mono-id; result table wrapper/name classes have
 styles; unused assistant message classes were removed.
+
+### Operational completion (2026-10-16)
+
+Migration f6a12c83d095 adds users.analysis_defaults and auth_rate_limits (33 control
+tables). A closed AnalysisDefaults contract holds an active metric, at most three
+unique allowed dimensions and off/auto skill mode. Version-checked profile PATCH
+validates metric/dimension compatibility. New conversations snapshot these values
+with account_preferences field origins; explicit skill_config wins. Existing
+conversations, dates, filters and completeness are not rewritten.
+
+POST /analyses/{id}/rerun reuses the governed creation path, requires a settled
+owner-visible source report, CSRF and an idempotency key, links parent_id, and
+resets completeness to unknown. Current metric compilation and worker permission/
+schema checks still apply. Old reports stay immutable. Malformed old scopes fail
+with a validation error rather than a server exception.
+
+Login/password-change routes share fixed PostgreSQL failure windows. Key locks
+precede user locks; first-use key allocation alone takes a capacity lock and purges
+expired rows. Check, password verification, failure recording/reset and the denial
+audit share a transaction, so new processes cannot reset the limit. The old local
+limiter remains only for standalone callers/tests. SSE already polls persisted DB
+events; no process-local fan-out was needed. Each stream now rechecks current auth
+session and user, and query/analysis grants before replay. Revoked analysis events
+are suppressed in session streams. This supports same-host API workers sharing
+DB/results/secrets; it does not add multi-host HA.
+
+Spark connection config admits NOSASL or PLAIN, optional TLS and CA path. PLAIN
+requires TLS. Impyla receives verify_cert=True, which verifies CA and hostname;
+there is no insecure toggle. Scalar parameters become SQLGlot literal AST nodes,
+with exact parse round-trip equality before execution. Missing/extra/anonymous,
+nested and nonfinite bindings fail closed. Unparameterized statements follow the
+same check. The worker still revalidates the canonical governed statement; no
+model or client adds arbitrary executable SQL through a parameter.
+
+Bounded real-service acceptance uses independent control/source databases and
+3 analysis + 2 query workers. Distinct authors in one team concurrently extract
+near-paraphrases through per-analysis claims and the scope transaction lock,
+exercising the cross-author path rather than only one user's row lock. The
+recorded two-minute sample completed 360 conversations/45 waves and 360 concurrent
+extractions, leaving one memory and no active queue/lease leftovers. A separate
+process test proves shared failure windows survive five fresh interpreter starts.
+Overnight endurance, larger candidate sets and real-model throughput are not proven.

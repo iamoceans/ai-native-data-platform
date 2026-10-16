@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Strict(BaseModel):
@@ -49,6 +49,17 @@ class SparkConnectionConfig(_Strict):
     database: str = Field(min_length=1, max_length=128)
     metastore_host: str = Field(min_length=1, max_length=255)
     metastore_port: int = Field(default=9083, ge=1, le=65535)
+    auth_mechanism: Literal["NOSASL", "PLAIN"] = "NOSASL"
+    use_ssl: bool = False
+    ca_cert: str | None = Field(default=None, min_length=1, max_length=512)
+
+    @model_validator(mode="after")
+    def secure_authentication(self):
+        if self.auth_mechanism == "PLAIN" and not self.use_ssl:
+            raise ValueError("Spark PLAIN authentication requires verified TLS")
+        if self.ca_cert and not self.use_ssl:
+            raise ValueError("CA certificate requires TLS")
+        return self
     connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
 
 

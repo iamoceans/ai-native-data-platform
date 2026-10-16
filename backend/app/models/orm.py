@@ -33,6 +33,13 @@ class Base(DeclarativeBase):
     pass
 
 
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class Team(Base):
     __tablename__ = "teams"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -48,6 +55,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     locale: Mapped[str | None] = mapped_column(Text)
     timezone: Mapped[str | None] = mapped_column(Text)
+    analysis_defaults: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     settings_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")

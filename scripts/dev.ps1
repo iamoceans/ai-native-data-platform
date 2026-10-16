@@ -69,6 +69,10 @@ switch ($Target) {
     "logs" { Invoke-Step { & $docker @($compose + $core + @("logs", "-f", "--tail=100")) } }
     "db-up-dev" { Invoke-Step { & $docker @($composeDev + $core + @("up", "-d", "control-postgres", "source-postgres")) } }
     "test-unit" { Invoke-Step { & $uv run --project backend --frozen pytest backend/tests/unit -m "not integration" } }
+    "test-load" {
+        if (-not $env:AIND_TEST_SOAK_SECONDS) { $env:AIND_TEST_SOAK_SECONDS = "120" }
+        Invoke-Step { & $uv run --project backend --frozen pytest backend/tests/integration/test_operational_todo.py -q -s }
+    }
     "test-security" { Invoke-Step { & $uv run --project backend --frozen pytest backend/tests/security -m "not integration" } }
     "test-integration" {
         & $docker @($composeDev + $core + @("up", "-d", "control-postgres", "source-postgres"))

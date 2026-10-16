@@ -15,7 +15,7 @@ from app.api.deps import (
 )
 from app.api.dto import LoginRequest, LoginResponse, PasswordChange, ProfileResponse, ProfileUpdate
 from app.auth import sessions as sessions_service
-from app.auth.ratelimit import LoginRateLimiter
+from app.auth.ratelimit import LoginRateLimiter, DatabaseLoginRateLimiter
 from app.auth.sessions import AuthContext
 from app.auth.passwords import hash_password, verify_password
 from app.config import Settings
@@ -29,7 +29,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _limiter: LoginRateLimiter | None = None
 
 
-def get_login_limiter(settings: Settings | None = None) -> LoginRateLimiter:
+def get_login_limiter(settings: Settings | None = None, session: Session | None = None) -> LoginRateLimiter | DatabaseLoginRateLimiter:
+    if session is not None:
+        settings = settings or get_settings_dep()
+        return DatabaseLoginRateLimiter(session, settings.login_rate_limit_attempts, settings.login_rate_limit_window_seconds)
     global _limiter
     if _limiter is None:
         settings = settings or get_settings_dep()
@@ -51,6 +54,7 @@ def _profile(auth: AuthContext) -> ProfileResponse:
         roles=auth.role_names,
         capabilities=sorted(auth.capabilities),
         display_name=getattr(auth.user, "display_name", ""),
+        analysis_defaults=getattr(auth.user, "analysis_defaults", {}) or {},
         locale=getattr(auth.user, "locale", None),
         timezone=getattr(auth.user, "timezone", None),
         settings_version=getattr(auth.user, "settings_version", 1),
@@ -67,7 +71,7 @@ def login(
 ) -> LoginResponse:
     client = get_client_ip(request)
     trace_id = get_trace_id(request)
-    limiter = get_login_limiter(settings)
+    limiter = get_login_limiter(settings, session)
     if not limiter.check(payload.username, client):
         audit_repo.add_audit(
             session,
@@ -149,6 +153,7 @@ def login(
             roles=[role.name for role in roles],
             capabilities=sorted(capabilities),
             display_name=user.display_name,
+            analysis_defaults=user.analysis_defaults or {},
             locale=user.locale,
             timezone=user.timezone,
             settings_version=user.settings_version,
@@ -198,6 +203,9 @@ def update_me(
     if user.settings_version != payload.expected_settings_version:
         raise ApiError(ErrorCode.CONFLICT, "settings changed; reload before saving")
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_settings_version"})
+    if "analysis_defaults" in changes:
+        from app.repositories.users import validate_analysis_defaults
+        validate_analysis_defaults(session, changes["analysis_defaults"])
     if changes:
         users_repo.update_profile(session, user, changes)
         audit_repo.add_audit(
@@ -214,14 +222,14 @@ def change_password(
     auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ) -> Response:
-    user = users_repo.get_user_for_update(session, auth.user.id)
-    if user is None:
-        raise ApiError(ErrorCode.UNAUTHENTICATED, "account is unavailable")
-    limiter = get_login_limiter(settings)
-    bucket = f"password-change:{user.id}"
+    limiter = get_login_limiter(settings, session)
+    bucket = f"password-change:{auth.user.id}"
     client = get_client_ip(request)
     if not limiter.check(bucket, client):
         raise ApiError(ErrorCode.RATE_LIMITED, "too many password attempts; try again later")
+    user = users_repo.get_user_for_update(session, auth.user.id)
+    if user is None:
+        raise ApiError(ErrorCode.UNAUTHENTICATED, "account is unavailable")
     if not verify_password(user.password_hash, payload.current_password.get_secret_value()):
         limiter.record_failure(bucket, client)
         audit_repo.add_audit(session, actor_id=user.id, action="auth.password.change",

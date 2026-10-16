@@ -51,6 +51,7 @@ export function AdminDatasourcesPage() {
     database: "",
     metastoreHost: "",
     metastorePort: "9083",
+    sparkAuth: "NOSASL" as "NOSASL" | "PLAIN", sparkTls: false, sparkCa: "",
     secretRef: "",
   });
   const [error, setError] = useState<ApiError | null>(null);
@@ -116,6 +117,7 @@ export function AdminDatasourcesPage() {
           connect_timeout_seconds: 5,
           ...(register.kind === "spark"
             ? {
+                auth_mechanism: register.sparkAuth, use_ssl: register.sparkTls, ca_cert: register.sparkCa || null,
                 metastore_host: register.metastoreHost,
                 metastore_port: Number(register.metastorePort),
               }
@@ -132,6 +134,7 @@ export function AdminDatasourcesPage() {
         database: "",
         metastoreHost: "",
         metastorePort: "9083",
+    sparkAuth: "NOSASL" as "NOSASL" | "PLAIN", sparkTls: false, sparkCa: "",
         secretRef: "",
       });
       setError(null);
@@ -358,6 +361,9 @@ export function AdminDatasourcesPage() {
             </label>
             {register.kind === "spark" ? (
               <>
+                <label>{t("Spark 认证")}<select data-testid="spark-auth" value={register.sparkAuth} onChange={event => setRegister(current => ({ ...current, sparkAuth: event.target.value as "NOSASL" | "PLAIN", sparkTls: event.target.value === "PLAIN" ? true : current.sparkTls }))}><option value="NOSASL">NOSASL</option><option value="PLAIN">PLAIN</option></select></label>
+                <label className="check"><input type="checkbox" data-testid="spark-tls" checked={register.sparkTls} disabled={register.sparkAuth === "PLAIN"} onChange={event => setRegister(current => ({ ...current, sparkTls: event.target.checked, sparkCa: "" }))} />{t("验证 Spark TLS 证书")}</label>
+                {register.sparkTls ? <label>{t("CA 证书路径（留空使用系统信任）")}<input data-testid="spark-ca" value={register.sparkCa} onChange={event => setRegister(current => ({ ...current, sparkCa: event.target.value }))} /></label> : null}
                 <label>
                   {t("Hive Metastore host")}{" "}
                   <input

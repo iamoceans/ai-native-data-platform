@@ -57,17 +57,17 @@ def test_spark_hms_recipe_uses_one_hive_asset_identity(monkeypatch, tmp_path) ->
     assert rendered.expected_datasets == ["demo.orders"]
 
 
-def test_spark_provider_rejects_client_side_parameter_binding() -> None:
+def test_spark_provider_rejects_complex_parameter_values() -> None:
     provider = SparkProvider(
         connection_config=_datasource().connection_config,
         credentials=ProviderCredentials(username="reader", password=""),
     )
     query = ValidatedQuery(
         query_id=uuid.uuid4(), sql="SELECT * FROM demo.orders WHERE id = :id",
-        parameters={"id": "1"}, dataset_ids=(), schema_hashes={},
+        parameters={"id": {"nested": 1}}, dataset_ids=(), schema_hashes={},
         policy_revision=1, max_rows=10, max_bytes=1000, timeout_seconds=5,
     )
-    with pytest.raises(ValueError, match="parameterized"):
+    with pytest.raises(ValueError, match="finite JSON scalars"):
         provider.open_execution(query)
 
 

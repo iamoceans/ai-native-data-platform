@@ -20,6 +20,7 @@ from app.api.dto import (
 )
 from app.api.serializers import query_to_detail
 from app.auth.sessions import AuthContext
+from app.api.stream_auth import stream_session_active
 from app.config import Settings
 from app.constants import TERMINAL_QUERY_STATUSES, DatasetAction, ErrorCode, QueryStatus
 from app.db import get_session_factory
@@ -251,19 +252,25 @@ def query_events(
     last_event_id = request.headers.get("Last-Event-ID") or request.query_params.get("last_event_id")
     last_id = int(last_event_id) if last_event_id and str(last_event_id).isdigit() else 0
     user_id = auth.user.id
+    auth_session_id = auth.session.id
     session_factory = get_session_factory()
 
     def stream():
         yield ": connected\n\n"
         started = time.monotonic()
         last_heartbeat = time.monotonic()
-        last_permission_check = 0.0
         last_sent = last_id
         while True:
             if time.monotonic() - started > SSE_MAX_SECONDS:
                 yield "event: stream.end\ndata: {\"reason\":\"max_duration\"}\n\n"
                 return
+            if not _still_authorized(session_factory, query_id, user_id):
+                yield 'event: stream.closed\ndata: {"reason":"permission_revoked"}\n\n'
+                return
             with session_factory() as poll:
+                if not stream_session_active(poll, auth_session_id, user_id):
+                    yield 'event: stream.closed\ndata: {"reason":"session_revoked"}\n\n'
+                    return
                 oldest = events_repo.oldest_event_id(
                     poll, resource_kind="query", resource_id=query_id
                 )
@@ -289,11 +296,6 @@ def query_events(
             if status in TERMINAL_QUERY_STATUSES and not events:
                 yield "event: stream.end\ndata: {\"status\":\"" + str(status) + "\"}\n\n"
                 return
-            if time.monotonic() - last_permission_check > SSE_PERMISSION_CHECK_SECONDS:
-                last_permission_check = time.monotonic()
-                if not _still_authorized(session_factory, query_id, user_id):
-                    yield "event: stream.closed\ndata: {\"reason\":\"permission_revoked\"}\n\n"
-                    return
             if time.monotonic() - last_heartbeat > SSE_HEARTBEAT_SECONDS:
                 last_heartbeat = time.monotonic()
                 yield ": heartbeat\n\n"

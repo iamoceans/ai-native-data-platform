@@ -2125,3 +2125,92 @@ DataHub auth-enabled mode; multi-session/worker load and soak; broad paraphrase
 contention; historical report reruns. Existing stored reports remain unchanged.
 Apply the new migration before starting the updated application/workers. These
 results do not claim a new production deployment or new real-model acceptance.
+
+## 2026-10-16 Operational completion: defaults, reruns, shared auth, Spark TLS and sustained load
+
+Delivered migration **f6a12c83d095** adds account analysis defaults and shared
+PostgreSQL authentication failure windows. Settings UI/API save an active metric,
+allowed dimensions and off/auto skills; new sessions snapshot preferences below
+explicit input, without inventing dates or completeness. Settled analyses can be
+rerun through the UI/API with owner/capability/source-grant/CSRF/idempotency checks,
+creating a new child under current contracts with unknown completeness. Old reports
+are unchanged. Invalid old scopes give validation errors.
+
+Production login/password verification now locks a shared failure key before the
+user row. Windows survive fresh processes, failed audits preserve counts, expired
+slots are reclaimed and new-key capacity is bounded. A deployed test varied six
+X-Forwarded-For headers against one unknown account and observed
+**401,401,401,401,401,429** with `--no-proxy-headers`. SSE already reads persisted
+events across API instances; no in-process fan-out replacement was necessary.
+Query/analysis/session streams now check auth-session expiry/revocation and active
+user state before another poll, plus current grants before publishing data/events.
+A separate API instance replay/resume and real DB auth revocation test passed.
+
+Spark now supports verified TLS and PLAIN-over-TLS configuration. CA/hostname
+verification is mandatory; plaintext PLAIN is rejected. Scalar parameters become
+AST literals and must preserve the exact Spark AST after serialization; missing,
+extra, anonymous, nested and nonfinite bindings fail closed. There is no Impyla
+string formatting. Real Spark 3.5.3 executed quote/backslash/newline/SQL-fragment
+values unchanged, including through the Query Gateway and browser. Untrusted CA
+rejection and the existing cancellation transport regression passed. PLAIN config
+forwarding is unit-tested; no real identity authenticator was exercised.
+
+Observed commands/results (UV_CACHE_DIR=/tmp/uv-cache, isolated test databases):
+
+```bash
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+# 550 passed, includes Spark attack corpus/AST scalar binding and SSE closure
+# With existing PG/MySQL/TLS + standalone Spark + TLS fixture environment:
+uv run --project backend --frozen pytest backend/tests/integration backend/tests/contract -m integration -q
+# 136 passed / 14 skipped / 29 deselected
+# 13 Doris + 1 deployed DataHub skips; not counted as supported
+AIND_TEST_SOAK_SECONDS=120 uv run --project backend --frozen pytest backend/tests/integration/test_operational_todo.py -q -s
+# Cross-author sustained run: 6 passed (before the additional capacity case)
+# 360 sessions, 45 waves, 126.776 seconds, two authors sharing one team
+# 3 analysis / 2 query workers; 4 extraction workers, 360 extractions in 4.228s
+# exactly one deduplicated memory; no active queue or execution-lease leftovers
+# per-wave p95 processing time 2.855s (fixture/deterministic-provider sample only)
+uv run --project backend --frozen pytest backend/tests/integration/test_operational_todo.py -q
+# Final affected operational suite: 7 passed (includes capacity/expiry reclamation)
+uv run --project backend --frozen python backend/scripts/verify_schema.py
+# Deployed schema verification OK: 33 tables / 11 named state checks / 26 indexes
+cd frontend
+npm run build
+# generated types + tsc + production bundle exit 0
+npm run test:unit
+# 12 passed, after fixing a missing new UI translation
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression
+# Final full mocked-browser suite: 66 passed
+npm run test:e2e
+# Isolated live deployment: 10 passed, including Spark TLS/parameter browser test
+npm run test:e2e -- operations.spec.ts
+# Added live defaults -> inherited scope -> child rerun / unchanged original: 1 passed
+```
+
+The sustained-load test uses real PostgreSQL queries, queues, claims, calculations
+and result files, with deterministic planning and scripted memory extraction.
+Two different users share a team, exercising the scope lock rather than merely
+serializing on one user's row. Five fresh Python processes observed the same
+failure window (three allowed failures followed by two denials); twelve concurrent
+new keys against capacity two admitted exactly two, then reclaimed expired slots.
+`make test-load SOAK_SECONDS=120` and `scripts/dev.ps1 test-load` expose the harness;
+PowerShell execution itself was not verified on this Linux host.
+
+Live validation used **new isolated control/source databases**, API port 18009 with
+two Uvicorn workers, query/agent workers, frontend port 3020 and the separate TLS
+Spark fixture on 11001. Both migrations and source grants were applied there;
+existing working databases and port 18008 were not replaced. Initial browser
+attempts rejected unsafe requests because the new frontend origin was not yet
+in AIND_CORS_ORIGINS; correcting the deployment setting yielded the 10-pass run.
+The TLS fixture setup script is checked in; generated keys/passwords remain in
+ignored runtime directories. It uses NOSASL and embedded HMS and is not a source
+read-only authorizer or shared-HMS lineage deployment.
+
+Remaining/unverified: complete Doris/DataHub and DataHub auth-enabled mode (the
+32 GB vfs host lacks sufficient disk footprint for the full stack); actual Spark
+PLAIN identity verification/read-only authorization/shared-HMS listener lineage;
+16 GiB full-stack proof; overnight/high-scale endurance and real-model throughput;
+user-deferred DeepSeek identity/A09/large-pool Skill evaluation. General pretrained
+embeddings, multi-host HA/object storage and other roadmap integrations are not
+silently claimed. Actual business report reruns still need owner-selected reports;
+no blanket rewrite or replay of every historical artifact was performed.

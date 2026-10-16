@@ -2170,5 +2170,53 @@
   "团队记忆": {
     "zh-CN": "团队记忆",
     "en": "Team memory"
+  },
+  "新会话的分析默认设置": {
+    "zh-CN": "新会话的分析默认设置",
+    "en": "Analysis defaults for new conversations"
+  },
+  "默认指标": {
+    "zh-CN": "默认指标",
+    "en": "Default metric"
+  },
+  "每次选择": {
+    "zh-CN": "每次选择",
+    "en": "Choose each time"
+  },
+  "默认技能模式": {
+    "zh-CN": "默认技能模式",
+    "en": "Default skill mode"
+  },
+  "仅用于新会话；现有会话和显式选择保持优先，不预设日期或数据完整性。": {
+    "zh-CN": "仅用于新会话；现有会话和显式选择保持优先，不预设日期或数据完整性。",
+    "en": "Applies to new conversations only. Existing scope and explicit choices take priority. Dates and completeness are never assumed."
+  },
+  "重新分析": {
+    "zh-CN": "重新分析",
+    "en": "Run analysis again"
+  },
+  "使用当前指标定义重新查询，创建新报告并保留原报告；完整性需重新确认。": {
+    "zh-CN": "使用当前指标定义重新查询，创建新报告并保留原报告；完整性需重新确认。",
+    "en": "Query using the current metric definition and create a new report. The original stays unchanged; completeness needs confirmation."
+  },
+  "Spark 认证": {
+    "zh-CN": "Spark 认证",
+    "en": "Spark authentication"
+  },
+  "验证 Spark TLS 证书": {
+    "zh-CN": "验证 Spark TLS 证书",
+    "en": "Verify Spark TLS certificate"
+  },
+  "CA 证书路径（留空使用系统信任）": {
+    "zh-CN": "CA 证书路径（留空使用系统信任）",
+    "en": "CA certificate path (leave blank for system trust)"
+  },
+  "不加载技能": {
+    "zh-CN": "不加载技能",
+    "en": "Do not load skills"
+  },
+  "自动选择技能": {
+    "zh-CN": "自动选择技能",
+    "en": "Select skills automatically"
   }
 }

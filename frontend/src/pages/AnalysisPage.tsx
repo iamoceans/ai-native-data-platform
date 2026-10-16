@@ -1,15 +1,17 @@
 import { t, useLocale } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   cancelAnalysis,
+  rerunAnalysis,
   drilldownChart,
   getAnalysis,
   getAnalysisEvidence,
   getAnalysisMemory,
   getChart,
 } from "../api/endpoints";
+import { ErrorMessage } from "../components/ErrorMessage";
 import { ChartPanel } from "../components/ChartPanel";
 import { StatusBadge, statusLabel } from "../components/StatusBadge";
 
@@ -37,6 +39,9 @@ export function AnalysisPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const rerunKey = useMemo(() => crypto.randomUUID(), [id]);
+  const rerun = useMutation({ mutationFn: () => rerunAnalysis(id, rerunKey),
+    onSuccess: result => { queryClient.invalidateQueries({ queryKey: ["analyses"] }); navigate(`/analyses/${result.analysis_id}`); } });
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -118,6 +123,11 @@ export function AnalysisPage() {
           {t("Checkpoint")} {detail.data.checkpoint_version}{" "}
           {t("· policy revision")} {detail.data.policy_revision}
         </p>
+        {TERMINAL.has(detail.data.status) ? <>
+          <button className="ghost" data-testid="rerun-analysis" disabled={rerun.isPending || Boolean(detail.data.state?.permission_revoked)} onClick={() => rerun.mutate()}>{t("重新分析")}</button>
+          <p className="muted small">{t("使用当前指标定义重新查询，创建新报告并保留原报告；完整性需重新确认。")}</p>
+          {rerun.isError ? <p className="notice error" role="alert"><ErrorMessage error={rerun.error} /></p> : null}
+        </> : null}
         {!TERMINAL.has(detail.data.status) ? (
           <button
             className="ghost"

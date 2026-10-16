@@ -2623,6 +2623,60 @@
         }
       }
     },
+    "/api/v1/analyses/{analysis_id}/rerun": {
+      "post": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Rerun Analysis",
+        "operationId": "rerun_analysis_api_v1_analyses__analysis_id__rerun_post",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/charts/{chart_id}": {
       "get": {
         "tags": [
@@ -3709,6 +3763,22 @@
             "type": "boolean",
             "title": "Data Complete",
             "default": true
+          },
+          "completeness": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "complete",
+                  "incomplete"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completeness"
           }
         },
         "additionalProperties": false,
@@ -3759,6 +3829,44 @@
           "context"
         ],
         "title": "AnalysisCreate"
+      },
+      "AnalysisDefaults": {
+        "properties": {
+          "metric_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 2,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Key"
+          },
+          "dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Dimensions"
+          },
+          "skill_mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "auto"
+            ],
+            "title": "Skill Mode",
+            "default": "off"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AnalysisDefaults"
       },
       "AnalysisDetail": {
         "properties": {
@@ -6146,6 +6254,9 @@
       },
       "ProfileResponse": {
         "properties": {
+          "analysis_defaults": {
+            "$ref": "#/components/schemas/AnalysisDefaults"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -6217,6 +6328,9 @@
       },
       "ProfileUpdate": {
         "properties": {
+          "analysis_defaults": {
+            "$ref": "#/components/schemas/AnalysisDefaults"
+          },
           "expected_settings_version": {
             "type": "integer",
             "minimum": 1.0,
@@ -7347,6 +7461,33 @@
             "minimum": 1.0,
             "title": "Metastore Port",
             "default": 9083
+          },
+          "auth_mechanism": {
+            "type": "string",
+            "enum": [
+              "NOSASL",
+              "PLAIN"
+            ],
+            "title": "Auth Mechanism",
+            "default": "NOSASL"
+          },
+          "use_ssl": {
+            "type": "boolean",
+            "title": "Use Ssl",
+            "default": false
+          },
+          "ca_cert": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ca Cert"
           },
           "connect_timeout_seconds": {
             "type": "integer",

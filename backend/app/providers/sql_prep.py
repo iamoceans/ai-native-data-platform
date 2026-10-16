@@ -51,3 +51,26 @@ def prepare_driver_sql(sql: str, *, kind: str) -> str:
     for sentinel, binding in bindings:
         prepared = prepared.replace(sentinel, binding)
     return prepared
+
+
+def bind_spark_parameters(sql: str, parameters: dict) -> str:
+    """Bind scalar values as AST literals, then require an exact AST round trip.
+
+    Impyla does not offer server-side binding. No value is interpolated into SQL
+    text. A serializer/parser disagreement fails closed before source execution.
+    """
+    import math
+    tree = sqlglot.parse_one(sql, read="spark")
+    placeholders = list(tree.find_all(exp.Placeholder))
+    if {item.name for item in placeholders} != set(parameters):
+        raise ValueError("Spark parameters must match named placeholders exactly")
+    for item in placeholders:
+        value = parameters[item.name]
+        if not isinstance(value, (str, int, float, bool, type(None))) or isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("Spark parameters must be finite JSON scalars")
+        item.replace(exp.convert(value))
+    rendered = tree.sql(dialect="spark")
+    reparsed = sqlglot.parse(rendered, read="spark")
+    if len(reparsed) != 1 or reparsed[0] != tree:
+        raise ValueError("Spark literal binding did not preserve the validated AST")
+    return rendered

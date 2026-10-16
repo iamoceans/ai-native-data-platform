@@ -13,7 +13,8 @@ gateway, and DataHub supplies the catalog, context and lineage. A Spark Thrift
 Server adapter for a shared Hive Metastore is available as an external-service
 integration: its connector, cancellation and timeout paths were accepted against
 a real Spark/Hive stack on 2026-09-28/29, with Spark job lineage, read-only
-source authorization and browser E2E still open.
+source authorization and shared-HMS listener lineage still open; a standalone
+TLS browser journey is now verified.
 
 ## Status
 
@@ -123,7 +124,7 @@ Conversations can be renamed, archived and restored; enable Show archived
 conversations to browse them. Archived transcripts stay readable. The SQL
 workspace's Saved queries panel saves private templates, pages through them and
 loads/deletes them; loading fills the editor without executing a query.
-Existing installations must apply migration `d2e6a9f18c40` (`alembic upgrade head`)
+Existing installations must apply migration `f6a12c83d095` (`alembic upgrade head`)
 before starting the updated API/workers.
 
 ## Quick start (core profile)
@@ -271,12 +272,15 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
 ## Known limitations
 
 - Spark/Hive requires an existing shared Hive Metastore and Spark Thrift Server.
-  The adapter accepts only NOSASL connections and non-parameterized SQL. Spark
+  The adapter supports verified TLS, NOSASL and PLAIN-over-TLS configuration,
+  and finite JSON scalar parameters bound as AST literals with an exact parse
+  round trip. Real TLS, parameter execution and a browser journey are verified;
+  real PLAIN identity verification remains unverified. Spark
   does not expose a transactional read-only session here; deploy a read-only
   source identity and enforce a server-side query timeout. The connector,
   cancellation and timeout paths were accepted live on 2026-09-28/29; Spark job
-  lineage, read-only source authorization and browser E2E coverage still need
-  live acceptance. See the
+  lineage, read-only source authorization and shared-HMS listener lineage still need
+  live acceptance; the standalone TLS browser journey does not prove either. See the
   [Spark/Hive runbook](docs/runbook.md#spark--hive-shared-metastore-preview).
 - Analysis comparisons require matching rows in both periods for every required
   source. Empty input yields a PARTIAL report explaining the affected period;
@@ -292,10 +296,12 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   to 200 metric-scoped rows, filtered by team/private ownership and source grants
   before semantic ranking. Each user has at most one team; no team means private
   memory. Existing memory migrates to its source owner's private scope. Team
-  changes do not move historical memory. Apply migration e4b8a1c79d20 before startup.
+  changes do not move historical memory. Apply migration f6a12c83d095 before startup (includes e4b8a1c79d20).
   Extraction uses bounded claims, fenced writes and a per-scope transaction lock
-  for duplicate checks. Broader multi-worker throughput and paraphrase races still
-  need load/soak acceptance.
+  for duplicate checks. A bounded 120-second deterministic-provider soak completed
+  360 conversations across two authors, 3 analysis/2 query workers and 4 memory
+  extractors, with one deduplicated memory and no active lease/queue leftovers.
+  This is a local acceptance sample, not an overnight or production SLO claim.
 - Invalid structured model output gets at most one format-repair request, against
   the same closed schema and token/time budget. Both calls are counted; another
   invalid response fails visibly. Real DeepSeek/A09 validation remains deferred.
@@ -307,9 +313,11 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   authentication) and DataHub profiling is disabled in the recipes; column-level
   lineage is out of scope.
 - Local HTTP deployment only, with loopback binding as the compensating control
-  (set `AIND_COOKIE_SECURE=true` behind TLS); the login rate limiter and SSE
-  polling are single-process, so multiple API replicas need a shared store and
-  fan-out first.
+  (set `AIND_COOKIE_SECURE=true` behind TLS). Login/password failure windows are
+  shared in PostgreSQL with bounded key allocation and cross-process serialization.
+  SSE polls persisted events, rechecks sessions/grants before replay, and works
+  across same-host API workers; no in-memory event fan-out is required. Multi-host
+  HA/shared object storage remain outside this local deployment.
 - Sensitive-data protection is column-name based at registration; there is no
   general column/row rewriting engine, by design.
 - The full stack (DataHub + Doris + app) can exceed the memory ceiling of a 16 GiB
@@ -335,3 +343,16 @@ security model's explicit non-goals are in [docs/security.md](docs/security.md).
 Apache License 2.0 - see [LICENSE](LICENSE). Third-party components (PostgreSQL,
 MySQL, Doris, DataHub, and the dependencies pinned in `backend/uv.lock` and
 `frontend/package-lock.json`) keep their own licenses.
+
+Account analysis defaults (metric, up to three allowed dimensions and off/auto
+skills) are saved in personal settings and seed new conversations only. Explicit
+choices and existing conversations take priority; dates and completeness are never
+assumed. Analysis pages can rerun a settled report into a new child analysis with
+current permissions/metric definitions and idempotency; the old report stays
+unchanged and completeness resets to unknown. Apply Alembic head before startup.
+
+For repeatable bounded acceptance on dedicated disposable test databases:
+`make test-load SOAK_SECONDS=120` (PowerShell: set AIND_TEST_SOAK_SECONDS and run
+`scripts/dev.ps1 test-load`). These pytest fixtures truncate the configured test
+control tables; never point them at a user's working database. Spark TLS fixture
+setup and acceptance commands are in infra/spark-preview/README.md.

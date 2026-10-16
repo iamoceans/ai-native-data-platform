@@ -1,8 +1,8 @@
 """Spark Thrift Server provider for tables in a shared Hive Metastore.
 
-The gateway owns SQL and grant validation. This provider never interpolates
-parameters: Impyla's DB-API binding is client-side, so Spark currently accepts
-only statements without placeholders.
+The gateway owns SQL and grant validation. Scalar parameters use AST literals
+with an exact parse round trip, never Impyla string formatting. TLS always verifies
+the server certificate and PLAIN authentication requires encrypted transport.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ from app.providers.base import (
     Namespace, ProviderCapabilities, ProviderCredentials, TableRef, TableSchema,
     ValidatedQuery,
 )
+
+from app.providers.sql_prep import bind_spark_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +72,17 @@ class SparkProvider:
         )
 
     def _connect(self, *, timeout_seconds: int | None = None):
+        auth = self._config.get("auth_mechanism", "NOSASL")
+        tls = bool(self._config.get("use_ssl", False))
+        if auth not in {"NOSASL", "PLAIN"} or auth == "PLAIN" and not tls:
+            raise ValueError("Spark PLAIN authentication requires verified TLS")
+        options = {"use_ssl": True, "verify_cert": True, "ca_cert": self._config.get("ca_cert")} if tls else {}
         return connect(
             host=self._config["host"], port=int(self._config["port"]),
             database=self._config["database"],
             timeout=timeout_seconds or int(self._config["connect_timeout_seconds"]),
-            auth_mechanism="NOSASL", user=self._credentials.username,
-            password=self._credentials.password,
+            auth_mechanism=auth, user=self._credentials.username,
+            password=self._credentials.password, **options,
         )
 
     def test_connection(self) -> ConnectionHealth:
@@ -150,8 +157,7 @@ class SparkProvider:
         return TableSchema(ref=ref, columns=columns, schema_hash=hashlib.sha256(payload.encode()).hexdigest())
 
     def open_execution(self, query: ValidatedQuery) -> ExecutionHandle:
-        if query.parameters:
-            raise ValueError("Spark parameterized queries are not supported")
+        bound_sql = bind_spark_parameters(query.sql, query.parameters)
         # Impyla applies one socket timeout to connect and subsequent RPCs.
         # Result fetches need at least the query deadline to avoid failing a
         # healthy long-running SELECT while the worker monitors cancellation.
@@ -168,16 +174,15 @@ class SparkProvider:
             raise
         return ExecutionHandle(
             query_id=query.query_id, dialect="spark", worker_id="", fencing_token=0,
-            native={"connection": connection, "cursor": cursor},
+            native={"connection": connection, "cursor": cursor, "bound_sql": bound_sql},
         )
 
     def execute(self, handle: ExecutionHandle, query: ValidatedQuery) -> Iterator[list[tuple]]:
-        if query.parameters:
-            raise ValueError("Spark parameterized queries are not supported")
+        bound_sql = bind_spark_parameters(query.sql, query.parameters)
         cursor = handle.native["cursor"]
         if handle.native.get("cancel_requested"):
             raise SparkOperationCancelled("operation cancelled before submission")
-        cursor.execute_async(query.sql)
+        cursor.execute_async(bound_sql)
         # Cancellation can arrive while ExecuteStatement is publishing its
         # operation handle. Send it once the handle exists as well.
         if handle.native.get("cancel_requested"):
@@ -229,10 +234,9 @@ class SparkProvider:
             ) from exc
 
     def explain(self, handle: ExecutionHandle, query: ValidatedQuery) -> dict[str, Any]:
-        if query.parameters:
-            raise ValueError("Spark parameterized queries are not supported")
+        bound_sql = bind_spark_parameters(query.sql, query.parameters)
         cursor = handle.native["cursor"]
-        cursor.execute(f"EXPLAIN {query.sql}")
+        cursor.execute(f"EXPLAIN {bound_sql}")
         return {"plan": "\n".join(str(row[0]) for row in cursor.fetchall()),
                 "estimated_rows": None, "estimated_bytes": None}
 

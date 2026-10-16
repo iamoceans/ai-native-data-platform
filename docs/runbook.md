@@ -300,8 +300,13 @@ can create its own local metastore and would produce a different catalog.
 1. Add both service hosts to `AIND_SOURCE_HOST_ALLOWLIST`. Supply a source
    identity restricted to read-only table access in
    `infra/local-secrets/<ref>.json` as `username` and `password`. The first
-   adapter release supports `NOSASL` only; secure authentication/TLS modes are
-   pending. Keep Thrift endpoints on a private network.
+   adapter supports `NOSASL`, verified TLS and `PLAIN` over verified TLS. Set
+   `use_ssl=true` and optional `ca_cert` (mounted path on every API/query worker;
+   blank uses system trust). Certificates and hostnames are always verified.
+   `auth_mechanism=PLAIN` requires TLS and a server configured with a real
+   authenticator; only protocol forwarding is unit-tested for PLAIN so far.
+   Finite scalar query parameters use validated AST literals, never string
+   interpolation. Keep Thrift endpoints on a private network.
 2. Configure Spark Thrift Server with
    `spark.sql.thriftServer.queryTimeout=120s` and
    `spark.sql.thriftServer.interruptOnCancel=true`, and verify the runtime
@@ -387,3 +392,29 @@ Spark cancellation uses a separate bounded HS2 connection for CancelOperation.
 Both execution and control transports must reach the same Thrift server. A cancel
 request is not a stop confirmation; terminal state still comes from execution
 monitoring. The 2026-10-16 acceptance record contains the real RPC race regression.
+
+### Local replicated API and bounded operational acceptance (2026-10-16)
+
+Apply `alembic upgrade head` (f6a12c83d095) before updated API/worker startup.
+Same-host API workers must use the same control DB, results directory, secret
+mounts and cursor/cookie settings. Uvicorn `--workers 2 --no-proxy-headers` is the native launch configuration.
+Authentication failure windows and task events live in PostgreSQL; SSE does not
+need an in-memory fan-out bus. Set the frontend origin in AIND_CORS_ORIGINS;
+otherwise browser CSRF rejects unsafe requests even when direct API reads work.
+This does not provide multi-host HA or a shared object store.
+
+Use dedicated disposable control AND source databases for `make test-load`;
+clean_db truncates test tables and source fixtures reseed their own database.
+Stop workers that could consume those test queues. `SOAK_SECONDS` defaults to 120
+and can be extended (the test accepts at most 3600); AIND_TEST_LOAD_SESSIONS defaults
+to 8 per wave (2..32). The test uses 3 analysis, 2 query and 4 extraction workers,
+two authors sharing a team, real source queries and a deterministic model. It
+checks terminal success, empty live queues/leases and cross-author paraphrase
+convergence. LOAD_ACCEPTANCE contains actual durations; it is not a production SLO.
+
+For old reports, use the analysis page's rerun control or
+POST /analyses/{id}/rerun with CSRF and Idempotency-Key. It reuses the original
+question/windows/filters, current metric contracts and current permissions, writes
+a new parent-linked report, and resets completeness to unknown. Restore an archived
+conversation first; in-flight analyses must settle before rerun. Do not bulk-rewrite
+historical artifacts or assume an old complete window is still verified.

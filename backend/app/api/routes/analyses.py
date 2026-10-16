@@ -24,6 +24,7 @@ from app.api.dto import (
 )
 from app.api.session_activity import ensure_session_idle
 from app.auth.sessions import AuthContext
+from app.api.stream_auth import stream_session_active
 from app.config import Settings
 from app.constants import ErrorCode
 from app.db import get_session_factory
@@ -330,6 +331,7 @@ def analysis_events(
     supplied = request.headers.get("Last-Event-ID") or request.query_params.get("last_event_id")
     last_id = int(supplied) if supplied and supplied.isdigit() else 0
     user_id = auth.user.id
+    auth_session_id = auth.session.id
     session_factory = get_session_factory()
 
     def stream():
@@ -339,9 +341,16 @@ def analysis_events(
         last_sent = last_id
         while time.monotonic() - started <= SSE_MAX_SECONDS:
             with session_factory() as poll:
+                if not stream_session_active(poll, auth_session_id, user_id):
+                    yield 'event: stream.closed\ndata: {"reason":"session_revoked"}\n\n'
+                    return
                 task = analyses_repo.get_analysis(poll, analysis_id)
                 if task is None or task.user_id != user_id:
                     yield 'event: stream.closed\ndata: {"reason":"not_authorized"}\n\n'
+                    return
+                from app.repositories import users as users_repo
+                if not analyses_repo.analysis_dataset_actions_ok(poll, role_ids=users_repo.role_ids_for_user(poll, user_id), analysis_id=analysis_id):
+                    yield 'event: stream.closed\ndata: {"reason":"permission_revoked"}\n\n'
                     return
                 events = events_repo.events_after(
                     poll, resource_kind="analysis", resource_id=analysis_id, after_id=last_sent
@@ -368,3 +377,28 @@ def analysis_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/analyses/{analysis_id}/rerun", response_model=AnalysisSubmitResponse, status_code=202)
+def rerun_analysis(
+    analysis_id: uuid.UUID, request: Request, response: Response,
+    auth: AuthContext = Depends(require_csrf), session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    idempotency_key: str = Header(min_length=1, max_length=128, alias="Idempotency-Key"),
+) -> AnalysisSubmitResponse:
+    from app.api.dto import AnalysisContext
+    original = _own_analysis(session, auth, analysis_id)
+    if original.status not in TERMINAL_ANALYSIS_STATUSES:
+        raise ApiError(ErrorCode.CONFLICT, "only settled analyses may be rerun")
+    _ensure_evidence_permission(session, auth, analysis_id)
+    fields = set(AnalysisContext.model_fields)
+    context = {key: value for key, value in (original.context or {}).items() if key in fields}
+    context.update(completeness="unknown", data_complete=False)
+    from pydantic import ValidationError
+    try:
+        validated_context = AnalysisContext.model_validate(context)
+    except ValidationError as exc:
+        raise ApiError(ErrorCode.VALIDATION_ERROR, "historical scope cannot be rerun; create a new analysis") from exc
+    payload = AnalysisCreate(session_id=original.session_id, parent_id=original.id,
+                             question=original.question, context=validated_context)
+    return create_analysis(payload, request, response, auth, session, settings, idempotency_key)

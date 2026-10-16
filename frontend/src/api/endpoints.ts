@@ -49,7 +49,7 @@ export async function me(): Promise<Profile> {
 
 // OpenAPI's default-valued display_name is optional on PATCH, even though the
 // generator treats non-null defaults as required properties.
-export async function updateProfile(patch: Omit<components["schemas"]["ProfileUpdate"], "display_name"> & { display_name?: string }): Promise<Profile> {
+export async function updateProfile(patch: Omit<components["schemas"]["ProfileUpdate"], "display_name" | "analysis_defaults"> & { display_name?: string; analysis_defaults?: components["schemas"]["AnalysisDefaults"] }): Promise<Profile> {
   const profile = await apiFetch<Profile>("/api/v1/auth/me", { method: "PATCH", body: patch });
   applyAccountPreferences(profile);
   notifyAccountPreferences(profile.id);
@@ -757,4 +757,9 @@ export async function createAdminTeam(name: string): Promise<components["schemas
 }
 export async function updateUserTeam(userId: string, teamId: string | null): Promise<components["schemas"]["UserResponse"]> {
   return apiFetch(`/api/v1/admin/users/${encodeURIComponent(userId)}/team`, { method: "PUT", body: { team_id: teamId } });
+}
+
+
+export async function rerunAnalysis(analysisId: string, key: string): Promise<components["schemas"]["AnalysisSubmitResponse"]> {
+  return apiFetch(`/api/v1/analyses/${encodeURIComponent(analysisId)}/rerun`, { method: "POST", headers: { "Idempotency-Key": key } });
 }
