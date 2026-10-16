@@ -2214,3 +2214,229 @@ user-deferred DeepSeek identity/A09/large-pool Skill evaluation. General pretrai
 embeddings, multi-host HA/object storage and other roadmap integrations are not
 silently claimed. Actual business report reruns still need owner-selected reports;
 no blanket rewrite or replay of every historical artifact was performed.
+
+## 2026-10-16 Spark PLAIN identity over verified TLS
+
+The remaining identity-verification TODO is now exercised against actual Spark
+3.5.3, Impyla 0.24.0 and Hive CUSTOM authentication (SASL PLAIN on the wire).
+`infra/spark-preview/setup_tls_fixture.py --auth PLAIN` compiles the checked-in
+single-identity Scala authenticator using the compiler/Hive API already bundled
+in the pinned Spark image. No additional image or dependency download is needed.
+The isolated loopback fixture used port 11002, container
+`aind-spark-plain-acceptance` and ignored `runtime/validation/spark-plain-v2/`.
+Existing Spark instances, APIs, workers and user databases were left in place.
+
+Private credential/config/keystore files use mode 0600. Credentials are random
+and never printed, passed as command-line literals or committed. The server
+compares username and a salted password digest in constant time. Generation
+refuses nonempty directories and paths outside ignored runtime/.
+
+Observed commands/results:
+
+- `uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q`:
+  **550 passed**, 2 existing warnings, 7.97 seconds.
+- With the existing dedicated control DB configuration and all three Spark
+  fixture prefixes configured (`AIND_TEST_SPARK_*`, `AIND_TEST_SPARK_TLS_*`,
+  `AIND_TEST_SPARK_PLAIN_*`), run
+  `uv run --project backend --frozen pytest backend/tests/integration/test_spark_plain_auth.py backend/tests/integration/test_spark_cancel_transport.py backend/tests/integration/test_spark_secure_parameters.py -q`:
+  **10 passed**, 11 pinned-Thrift hostname-verification deprecation warnings,
+  5.73 seconds. PLAIN credentials are supplied only through
+  `AIND_TEST_SPARK_PLAIN_CREDENTIALS_FILE`; see the fixture README for setup.
+
+The five new identity cases prove valid login and exact hostile-string/scalar
+parameter execution; wrong username, wrong password and empty password rejected
+by SASL before a query session; and an untrusted server certificate rejected with
+an actual `SSLCertVerificationError` retained as the Thrift exception's cause.
+The cancellation race test now runs for NOSASL and PLAIN, with an independently
+TLS/authenticated cancel transport, an intact concurrent status reply, server
+CANCELED_STATE and a subsequent successful SELECT. Existing NOSASL/TLS scalar
+and untrusted-certificate cases also pass. The fixture helper allows ten seconds
+for a cold Spark session/metadata initialization; it does not relax TLS checks.
+
+This is a custom **test** authenticator with one ephemeral identity, root server
+process and embedded metastore, not an enterprise identity service or source
+read-only authorizer. Full Doris/DataHub, auth-enabled GMS, shared-HMS listener
+lineage, 16 GiB full-stack proof and user-deferred DeepSeek/A09 were not run in
+this round. No product API, schema migration or frontend behavior changed, so
+frontend/browser and the full service matrix were not rerun.
+
+## 2026-10-16 External security acceptance gates and DataHub failure handling
+
+Implemented executable acceptance for remaining externally supplied services,
+without claiming that unavailable authorization infrastructure is delivered:
+
+- `scripts/verify_spark_readonly.py`: private owner/reader JSON connection files,
+  verified TLS/PLAIN, same endpoint and pre-created dedicated aind_authz_* namespace.
+  The owner seeds a random Parquet table; seven reader mutations must be denied
+  for authorization reasons, with original columns/data readable after every
+  denial. First allowed write, syntax/unsupported/missing-table/transport error or
+  cleanup failure fails. Only its generated tables are cleaned. DELETE/UPDATE
+  unsupported by the fixture are not treated as authorization evidence.
+- `scripts/datahub_token.py --verify-auth`: no writes; explicit HTTP 401/403 for
+  anonymous and random-invalid bearer, followed by valid-token HTTP 200 and the
+  requested dataset field. Private --token-file / DATAHUB_TOKEN inputs added;
+  legacy --token retained. Token storage is private, atomic and preserves extra
+  fields; failed replacement leaves the original secret intact.
+- `DataHubAdapter` now fails with METADATA_UNAVAILABLE for unexpected HTTP status,
+  malformed/missing GraphQL envelope/operation/search fields. Valid empty results
+  and explicit dataset:null retain their meaning. Remote diagnostic text is no
+  longer reflected into public errors. The helper had incorrectly accepted some
+  non-200/empty JSON responses as a verified token; that false success is fixed.
+- Opt-in actual-source tests for read-only policy and authenticated GMS. The GMS
+  case also reads through the platform adapter and pinned search document. Unset
+  external endpoints skip; explicit but partial/broken configuration fails.
+
+Observed checks:
+
+- Full static command `uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q`:
+  **609 passed**, 2 existing warnings, 7.20 seconds. Includes successful mock
+  denial logic, false-positive rejection, namespace guards, cleanup failure,
+  malformed GMS responses, auth path sequencing and atomic-secret replacement.
+- Real Spark PLAIN/TLS combined check before adding the optional source-policy
+  entry point: **11 passed / 1 skipped** (GMS absent), 24.27 seconds. Ten existing
+  identity/binding/cancellation cases plus the negative-control verifier case.
+- Final changed real-service subset
+  `pytest backend/tests/integration/test_spark_readonly_acceptance.py backend/tests/integration/test_datahub_authentication.py -q`:
+  **1 passed / 2 skipped**, 3.05 seconds. The full standalone CLI ran against
+  actual unprotected Spark and returned exit 1 with insert:write_allowed. Owner
+  inspection confirmed no verifier tables remained. The two skips are the absent
+  actual read-only owner/reader configs and absent auth-enabled GMS URL. They are
+  not positive authorization/authentication evidence.
+- `scripts/datahub_token.py --check --gms-url http://127.0.0.1:18080` correctly
+  returned exit 1 and reported the GMS unreachable, without asserting that
+  authentication was enabled. No token was read or written for that check.
+
+No API schema, database migration or frontend change. Frontend/browser, the full
+engine matrix, actual authorizer and GMS, shared-HMS listener lineage, 16 GiB
+resource proof and deferred DeepSeek/A09 were not rerun. Original working services
+and databases remain in place; only the isolated Spark fixture was restarted for
+these tests. Setup/run commands are in the runbook and Spark fixture README.
+
+## 2026-10-16 Effective resource preflight
+
+Fixed the doctor's physical-RAM-only/core-budget-only checks. It now records
+physical bytes and visible process cgroup v1/v2 capacity, honors tighter ancestor
+limits (including zero), reads usage/peak and v2 OOM counters where available,
+and considers Docker VM memory when applying the selected budget. Default core
+and non-strict behavior are retained; --profile full --strict and matching
+Make/PowerShell doctor-full entry points select the existing conservative full
+budget without launching containers/services or changing resource limits.
+
+Observed:
+
+- `uv run --project backend --frozen pytest backend/tests/unit/test_doctor_resources.py -q`:
+  **14 passed**, 0.03 seconds. Covers inherited/unlimited/zero/namespace v1/v2
+  cases, process/Docker capacity, exact RAM/disk byte thresholds and strict full CLI.
+- Full static suite: **623 passed**, 2 existing warnings, 7.45 seconds, using
+  `uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q`.
+- Actual full strict JSON preflight: **exit 1**. Physical 33.3 GiB, visible process
+  limit 32 GiB, Docker memory 33.3 GiB, vfs storage, repository free disk 13.3 GiB.
+  Reported insufficient full-profile repository disk (60 GiB estimate), and the
+  already occupied control/source DB ports. It correctly separates physical and
+  capped memory; the environment was not resized and no working service changed.
+
+No engine/browser/model journeys rerun for this stdlib preflight change. PowerShell
+entry point was added but not executed on this Linux host. Current/peak cgroup
+usage covers the entire executor; neither this report nor mocked smaller-memory
+cases establishes full-stack behavior on a 16 GiB host. Actual authorizer/GMS/
+lineage/resource acceptance and user-deferred DeepSeek remain open.
+
+## 2026-10-16 Larger authorized memory recall
+
+Fixed a candidate-starvation problem: the planner previously selected 200
+high-reuse metric memories before checking source grants. Inaccessible rows could
+consume that window and hide a useful accessible memory. Recall now filters team/
+private scope, active reader, nonempty provenance and current discover/query on
+**every** query dependency in SQL before LIMIT, then ranks at most **1000**
+authorized proposed/confirmed candidates. Grants can come from different roles;
+expired grants do not count. Prompt injection stays capped at **eight**, including
+an oversized internal limit request; zero requests do not touch the database.
+
+Knowledge list and status-count reads use the same source authorization predicate
+in SQL. Each performs one SELECT instead of loading rows and issuing per-row
+  scope/source/grant checks. Missing identity or explicit empty roles fail closed without row access;
+disabled users cannot read private memories through repository calls either.
+Existing single-record read/curation checks remain in place. No API shape,
+migration, dependency or model service was added.
+
+Observed validation:
+
+- Full static suite: **623 passed**, 2 existing warnings, 8.39 seconds:
+  `uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q`.
+- Isolated real PostgreSQL suite: **5 passed**, 2 existing warnings, 9.36 seconds:
+  `uv run --project backend --frozen pytest backend/tests/integration/test_memory_recall_pool.py backend/tests/integration/test_priority_workflows.py::test_memory_team_scope_list_counts_curation_and_historical_reads -q -s`.
+  Dedicated control/source test databases were configured; these fixtures truncate
+  their configured control DB, so never use working databases or concurrent tests.
+- The 1802-row synthetic case has 1051 eligible rows, 650 rows with an ungranted
+  additional dependency, 100 rows lacking provenance and one rejected row. A
+  relevant target below the original top-200 reuse window is retrieved. The ranker
+  receives exactly 1000 authorized candidates, no denied/orphan/rejected rows,
+  and emits eight hints. Retrieval issues exactly **one SQL statement**; list and
+  aggregate counts each issue one additional statement. This is query-count and
+  bounded-recall evidence, not a throughput SLO.
+- Actual DB cases cover expired discover and query separately, both grants split
+  across roles, grant deletion/restoration in the same session, no identity/roles, disabled private owner, another team's/private
+  memory, team departure and historical read/curation isolation. Former mocks
+  were updated to the authorized-repository contract; per-row fake filtering is
+  replaced by actual PostgreSQL list/count-before-LIMIT regression coverage.
+
+The encoder remains the local bilingual domain concept/word/character vector;
+no general pretrained Embedding or real-model evaluation is claimed. Candidate
+selection still has a bounded reuse/recency window, so it is not global semantic
+search over unlimited history. Extraction's near-duplicate comparison retains its
+separate 200-row window. No browser/full-engine/DeepSeek/overnight tests were run
+for this backend retrieval change. Existing external deployment gaps remain open.
+
+## 2026-10-17 Continuous learning and concurrent reuse accounting
+
+A new cold -> learn -> warm loop reproduced a real counter race: all eight
+analyses in the second wave quoted the shared memory, but reuse_count was only
+**2**, instead of **8**. The former SELECT/read/increment/write sequence lost
+updates between planning workers. The previous soak extracted all memory only
+after analyses finished, so it could not reveal this warm-use race.
+
+The repository now increments in SQL in the analysis transaction. Multi-row
+updates acquire locks in ID order, duplicate IDs count once, last_used_at cannot
+move backwards, and rollback removes the increment. A real PostgreSQL regression
+preloads stale ORM instances in four sessions, then concurrently updates three
+shared rows in opposing orders. Every row reaches exactly four uses; a rollback
+adds no committed use and a newer stored timestamp is preserved.
+
+The load fixture now uses stateless scripted model planning and four extractors
+after **each** wave. The next wave must quote the learned ID; every wave checks
+exact cumulative reuse, one deduplicated memory, terminal extraction status and
+no active task queue/execution lease leftovers. Two team members exercise shared
+scope with 3 analysis and 2 query workers. No real-model call is implied.
+
+Observed short checks: the new four-session stale-instance regression **1 passed**
+(2.86 seconds); the initial two-wave smoke **1 passed**, with 16 analyses, eight
+warm uses, reuse_count eight and one memory. Full static validation **623 passed**,
+2 existing warnings, 12.02 seconds. The longer run below uses dedicated disposable
+control/source PostgreSQL databases; working app databases/workers are untouched.
+
+Longer observed run (2026-10-17):
+
+```bash
+AIND_TEST_SOAK_SECONDS=600 uv run --project backend --frozen pytest \
+  backend/tests/integration/test_operational_todo.py \
+  backend/tests/integration/test_memory_recall_pool.py \
+  backend/tests/integration/test_priority_workflows.py::test_memory_team_scope_list_counts_curation_and_historical_reads \
+  -q -s
+```
+
+With isolated test database settings loaded, the final batch reported **13 passed**,
+2 existing warnings, **626.73 seconds**. The continuous portion completed **1480
+analyses / 185 waves in 600.498 seconds**. All **1472 warm analyses** quoted the
+same memory and its reuse_count was **1472**; all 1480 extractions finished,
+near-paraphrases left one memory, and no active task-queue/execution lease was
+left after each wave. Cumulative extraction time across the waves was 25.41 seconds.
+The remainder also reran the large-pool/grant-expiry/team-isolation and multi-row
+counter rollback cases, plus the operational auth/rerun/defaults checks.
+
+Linux quiescent observations after warmup -> final: RSS **139940 -> 141844 KiB**
+(about +1.9 MiB), peak RSS **201604 -> 201604 KiB**, threads **4 -> 4**, open FDs
+**14 -> 14**. These samples do not prove absence of all leaks or overnight
+stability. There was no real model, full Doris/DataHub, source authorizer/GMS or
+16 GiB deployment in this test. Evidence is saved under ignored
+`runtime/validation/learning-soak-20261017.log` and `.json`. Existing external
+acceptance/deferred-model items remain pending.

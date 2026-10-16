@@ -9,12 +9,15 @@ import pytest
 
 from app.providers.base import ProviderCredentials, ValidatedQuery
 from app.providers.spark import SparkProvider
+from tests.spark_helpers import plain_provider
 
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def provider():
+@pytest.fixture(params=["NOSASL", "PLAIN"])
+def provider(request):
+    if request.param == "PLAIN":
+        return plain_provider()
     host = os.environ.get('AIND_TEST_SPARK_HOST')
     if not host:
         pytest.skip('AIND_TEST_SPARK_HOST not configured')

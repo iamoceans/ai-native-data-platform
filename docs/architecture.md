@@ -13,8 +13,10 @@ the worker uses Impyla against Spark Thrift Server. Spark listener events must
 use the same DataHub platform instance and environment to attach job lineage.
 The current GraphQL lineage response exposes granted registered datasets only;
 Spark DataJob nodes are not a separate UI entity yet. The connector path was
-accepted live on 2026-09-28/29 (`docs/acceptance.md`); Spark job lineage,
-read-only source authorization and browser E2E coverage are still open.
+accepted live on 2026-09-28/29 (`docs/acceptance.md`). Standalone TLS browser
+execution and real PLAIN identity checks against a custom test authenticator
+are verified on 2026-10-16. Spark job lineage, read-only source authorization
+and shared-HMS browser acceptance remain open.
 
 ```
 Browser (React SPA, 127.0.0.1:3000)
@@ -270,8 +272,9 @@ the specification's frozen DDL list) implement the loop in three steps.
    record (a version id such as `4.2.1` is a value the analysis actually
    grouped by; "down 67%" is refused). Every stored row links to its analysis
    and its comparison artifact.
-2. **Recall.** Planning reads at most 200 metric candidates in the user's team
-   or personal scope, checks each source's current discover/query grants, then
+2. **Recall.** Planning reads at most 1000 authorized metric candidates in the
+   active user's team or personal scope. A single SQL query checks every source
+   dependency's current discover/query grants before applying LIMIT, then
    ranks local bilingual domain concept vectors by cosine similarity to the
    question. Word/character features handle vocabulary outside the concept map;
    reuse/recency order breaks ties. The best eight enter the prompt as labelled
@@ -610,6 +613,16 @@ nested and nonfinite bindings fail closed. Unparameterized statements follow the
 same check. The worker still revalidates the canonical governed statement; no
 model or client adds arbitrary executable SQL through a parameter.
 
+The standalone fixture now supports Hive CUSTOM authentication with SASL PLAIN
+over verified TLS. The checked-in Scala provider compiles against the compiler
+and Hive API in Spark 3.5.3, checks one random test identity with constant-time
+username/salted-digest comparison and never grants a read-only policy. Generated
+credentials and keystore/config files are private under ignored runtime/; existing
+directories are not overwritten. Ten focused live Spark cases verify valid and
+invalid credentials, TLS rejection, scalar execution and cancellation across an
+independently authenticated transport. This embedded-metastore fixture does not
+establish production identity-service, read-only authorization or HMS lineage.
+
 Bounded real-service acceptance uses independent control/source databases and
 3 analysis + 2 query workers. Distinct authors in one team concurrently extract
 near-paraphrases through per-analysis claims and the scope transaction lock,
@@ -618,3 +631,56 @@ recorded two-minute sample completed 360 conversations/45 waves and 360 concurre
 extractions, leaving one memory and no active queue/lease leftovers. A separate
 process test proves shared failure windows survive five fresh interpreter starts.
 Overnight endurance, larger candidate sets and real-model throughput are not proven.
+
+### External source security gates (2026-10-16)
+
+The Spark read-only verifier uses direct authenticated TLS source connections,
+independent of the platform SQL validator, to avoid mistaking gateway rejection
+for source authorization. Its private owner/reader connection files must address
+the same pre-created aind_authz_* namespace. Owner-seeded random tables isolate
+write probes and cleanup from working data. Seven supported mutation forms must
+receive recognized authorization errors, with original data/columns still readable
+by both identities after every denial; missing objects, syntax errors, timeouts,
+allowed writes and failed cleanup all fail the gate. The actual unprotected
+PLAIN fixture correctly fails on its first INSERT and leaves no test tables.
+Successful real-source authorization acceptance still requires an authorizer.
+
+The DataHub HTTP adapter now rejects unexpected statuses, malformed GraphQL
+objects, missing operation data and malformed search blocks as METADATA_UNAVAILABLE.
+An explicit dataset:null remains not-found and a well-formed empty search remains
+empty. Remote GraphQL/transport diagnostics are not reflected into user-facing
+errors. The token helper applies the same fail-closed principle, accepts private
+file/environment input and atomically replaces its private secret while preserving
+extra fields. Its read-only --verify-auth mode requires explicit anonymous and
+random-invalid-token HTTP denial followed by valid-token GraphQL. A separate
+opt-in actual GMS integration also executes the adapter's pinned search document;
+this is prepared, not proof of a deployed authenticated GMS.
+
+### Resource preflight (2026-10-16)
+
+The stdlib-only doctor preserves physical RAM in total_gib/total_bytes and adds
+visible cgroup v1/v2 limits, current/peak usage and available v2 OOM counters.
+It follows visible ancestors so an unlimited child cannot hide a tighter parent;
+namespace-remapped mounts fall back to the visible mount root. Process capacity
+is the minimum known physical/cgroup memory; Docker daemon memory is separately
+reported and also constrains the preflight budget. Unsupported cgroup layouts
+are reported unavailable, not inferred as a measured limit. Counters cover the
+executor group and all its workloads, not just platform processes.
+
+The default core budget is unchanged. --profile full selects the existing full
+estimate (32 GiB RAM / 60 GiB free repository disk), and --strict returns failure
+when required checks fail. make doctor-full and scripts/dev.ps1 doctor-full expose
+that mode without starting services. These are conservative preflight estimates,
+not proof that a deployed full stack fits a given ceiling or a measurement of the
+Docker daemon's image-storage filesystem.
+
+### Concurrent memory-use accounting (2026-10-17)
+
+Memory reuse now increments in SQL rather than assigning a Python value read
+before concurrent writers commit. Overlapping multi-memory updates take row locks
+in ID order; duplicate IDs count once per invocation. Last-used timestamps never
+move backward, and updates remain part of the analysis transaction, including
+rollback. The warm-learning load fixture extracts after every wave and checks
+that subsequent analyses actually quote the learned memory ID and that cumulative
+reuse matches every warm analysis. This replaces the old extraction-only-at-end
+load shape and exposes counter races that shape could not observe.

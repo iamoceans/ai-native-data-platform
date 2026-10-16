@@ -85,17 +85,14 @@ def test_unauthorized_query_never_introspects(monkeypatch, column):
     loader.assert_not_called()
 
 
-def test_memory_filters_before_limit_and_counts_hide_revoked_rows(monkeypatch):
+def test_memory_missing_identity_or_roles_fails_closed_without_reading_rows():
     from app.repositories import memory as repo
-    rows = [NS(id=i, status="confirmed") for i in range(4)]
-    db = NS(execute=lambda *args: NS(scalars=lambda: iter(rows)))
-    grants = {2, 3}
-    monkeypatch.setattr(repo, "memory_dataset_actions_ok", lambda *args, row, **kw: row.id in grants)
-    assert [r.id for r in repo.list_recent(db, role_ids=[], limit=1)] == [2]
-    assert repo.counts(db, role_ids=[]) == {"confirmed": 2}
-    grants.clear()
-    assert repo.list_recent(db, role_ids=[], limit=1) == []
-    assert repo.counts(db, role_ids=[]) == {}
+    # Filtering-before-LIMIT/count correctness is exercised against actual
+    # PostgreSQL in test_memory_recall_pool, rather than a fake result iterator.
+    for user_id, roles in [(None, None), (None, [uuid.uuid4()]), (uuid.uuid4(), [])]:
+        assert repo.list_for_metric(None, metric_key='revenue', user_id=user_id, role_ids=roles) == []
+        assert repo.list_recent(None, user_id=user_id, role_ids=roles, limit=1) == []
+        assert repo.counts(None, user_id=user_id, role_ids=roles) == {}
 
 
 @pytest.mark.parametrize("limited", [False, True])

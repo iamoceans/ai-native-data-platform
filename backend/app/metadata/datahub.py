@@ -120,7 +120,7 @@ class DataHubAdapter:
             with httpx.Client(timeout=self._settings.datahub_timeout_seconds) as client:
                 response = client.post(self._url, json=payload, headers=headers)
         except httpx.HTTPError as exc:
-            raise DataHubUnavailable(f"DataHub GMS is unreachable: {exc}") from exc
+            raise DataHubUnavailable("DataHub GMS is unreachable") from exc
         if response.status_code == 401 or response.status_code == 403:
             raise DataHubUnavailable(
                 "DataHub GMS rejected the platform token",
@@ -130,16 +130,37 @@ class DataHubAdapter:
             raise DataHubUnavailable(
                 "DataHub GMS returned a server error", {"status": response.status_code}
             )
+        if response.status_code != 200:
+            raise DataHubUnavailable(
+                "DataHub GMS returned an unexpected HTTP status", {"status": response.status_code}
+            )
         try:
             body = response.json()
         except json.JSONDecodeError as exc:
             raise DataHubUnavailable("DataHub GMS returned a non-JSON response") from exc
+        if not isinstance(body, dict):
+            raise DataHubUnavailable("DataHub GMS returned an invalid GraphQL envelope")
         if body.get("errors"):
             raise DataHubUnavailable(
                 "DataHub GraphQL returned errors",
-                {"errors": [str(item.get("message", item)) for item in body["errors"]][:5]},
+                {"error_count": len(body["errors"]) if isinstance(body["errors"], list) else 1},
             )
-        return body.get("data") or {}
+        data = body.get("data")
+        if not isinstance(data, dict):
+            raise DataHubUnavailable("DataHub GMS returned missing or invalid GraphQL data")
+        return data
+
+    @staticmethod
+    def _required_block(data: dict, name: str) -> dict:
+        block = data.get(name)
+        if not isinstance(block, dict):
+            raise DataHubUnavailable("DataHub GMS response is missing the requested object")
+        total, results = block.get("total"), block.get("searchResults")
+        if type(total) is not int or total < 0 or not isinstance(results, list):
+            raise DataHubUnavailable("DataHub GMS returned an invalid search object")
+        if any(not isinstance(item, dict) or not isinstance(item.get("entity"), dict) for item in results):
+            raise DataHubUnavailable("DataHub GMS returned an invalid search result")
+        return block
 
     # ---------------------------------------------------------------- search
     def search(self, query: str, *, start: int = 0, count: int = 20) -> DataHubSearchPage:
@@ -147,7 +168,7 @@ class DataHubAdapter:
             self.query_document("search"),
             {"query": query, "start": start, "count": count},
         )
-        block = data.get("searchAcrossEntities") or {}
+        block = self._required_block(data, "searchAcrossEntities")
         results = block.get("searchResults") or []
         return DataHubSearchPage(
             total=int(block.get("total") or 0),
@@ -158,9 +179,13 @@ class DataHubAdapter:
 
     def get_dataset(self, urn: str) -> DataHubEntity | None:
         data = self._post(self.query_document("dataset"), {"urn": urn})
+        if "dataset" not in data:
+            raise DataHubUnavailable("DataHub GMS response is missing the requested dataset")
         entity = data.get("dataset")
         if entity is None:
             return None
+        if not isinstance(entity, dict):
+            raise DataHubUnavailable("DataHub GMS returned an invalid dataset object")
         parsed = self._parse_entity(entity)
         schema = (entity.get("schemaMetadata") or {})
         parsed.schema_hash = schema.get("hash")
@@ -198,7 +223,7 @@ class DataHubAdapter:
                     self.query_document("lineage"),
                     {"urn": current, "direction": direction.upper(), "count": count, "start": 0},
                 )
-                block = data.get("searchAcrossLineage") or {}
+                block = self._required_block(data, "searchAcrossLineage")
                 for item in block.get("searchResults") or []:
                     entity = item.get("entity") or {}
                     entity_urn = str(entity.get("urn") or "")

@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import uuid
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
@@ -118,7 +119,33 @@ def test_concurrent_sessions_workers_and_sustained_memory_extraction(platform,mo
         assert logged.status_code==200
         identity.headers['X-CSRF-Token']=logged.json()['csrf_token']
         identities=[(platform.cookies,dict(platform.headers)),(identity.cookies,dict(identity.headers))]
-    waves=0;all_ids=[];samples=[]
+    # Stateless scripted planning exercises the real memory-input path without
+    # a live LLM endpoint or shared mutable scripted-output queues.
+    class PlanningProvider:
+        def generate_structured(self, **kwargs):
+            payload = ({'dimensions':['country'], 'next_action':'breakdown'}
+                       if kwargs['schema'].__name__ == 'PlanningSelection' else {'next_action':'finish'})
+            return FakeLLMProvider([payload]).generate_structured(**kwargs)
+    monkeypatch.setattr(runner, 'resolve_provider', lambda settings: ProviderResolution(provider=PlanningProvider()))
+    phrases=['Revenue movement concentrates on US across country and platform groups',
+             'Revenue movement across country and platform concentrates on US']
+    sequence=0;guard=threading.Lock()
+    def provider(settings):
+        nonlocal sequence
+        with guard:index=sequence;sequence+=1
+        return ProviderResolution(provider=FakeLLMProvider([{'memories':[{'kind':'segment','statement':phrases[index%2],'dimensions':['country']}]}]))
+    monkeypatch.setattr(memory,'resolve_provider',provider)
+    waves=0;all_ids=[];samples=[];memory_seconds=0;warm_analyses=0;memory_id=None
+    baseline_resources={}
+    def resources():
+        try:
+            status=Path('/proc/self/status').read_text()
+            values={line.split(':',1)[0]:int(line.split()[1]) for line in status.splitlines()
+                    if line.startswith(('VmRSS:', 'VmHWM:', 'Threads:'))}
+            return {**values,'open_fds':len(list(Path('/proc/self/fd').iterdir()))}
+        except OSError:
+            return {}  # Linux-only observation; never invent a Windows measurement.
+    last_progress=time.monotonic()
     while True:
         def submit(index):
             with TestClient(platform.app) as client:
@@ -130,28 +157,39 @@ def test_concurrent_sessions_workers_and_sustained_memory_extraction(platform,mo
                 assert response.status_code==202,response.text
                 return uuid.UUID(response.json()['analysis_id'])
         with ThreadPoolExecutor(max_workers=4) as clients:ids=list(clients.map(submit,range(count)))
-        wave_start=time.monotonic();counts=_run_workers(ids);samples.append(time.monotonic()-wave_start)
+        wave_start=time.monotonic();_run_workers(ids);samples.append(time.monotonic()-wave_start)
+        if memory_id is not None:
+            with session_scope() as db:
+                states=list(db.scalars(select(AnalysisTask.state).where(AnalysisTask.id.in_(ids))))
+                assert all(state.get('memory_used_ids') == [str(memory_id)] for state in states)
+            warm_analyses+=len(ids)
+        # Learn every wave, so subsequent real analyses recall warm knowledge.
+        before=time.monotonic()
+        with ThreadPoolExecutor(max_workers=4) as extractors:
+            results=list(extractors.map(lambda aid:memory.run_extraction(get_session_factory(),analysis_id=aid,settings=get_settings()),ids))
+        memory_seconds+=time.monotonic()-before
+        assert all(row['status']=='extracted' for row in results),results
+        with session_scope() as db:
+            rows=list(db.scalars(select(BusinessMemory)))
+            assert len(rows)==1,[row.statement for row in rows]
+            memory_id=rows[0].id
+            assert rows[0].reuse_count==warm_analyses
+            states=list(db.scalars(select(AnalysisTask.state).where(AnalysisTask.id.in_(ids))))
+            assert all(state['memory_extraction']['status']=='extracted' for state in states)
         all_ids+=ids;waves+=1
-        # A warm-up plus a second wave checks queue/capacity reuse by default.
+        if waves==2:baseline_resources=resources()
+        if time.monotonic()-last_progress>=30:
+            print('LOAD_PROGRESS '+json.dumps({'sessions':len(all_ids),'waves':waves,
+                  'warm_analyses':warm_analyses,'elapsed_seconds':round(time.monotonic()-started,3),
+                  'process':resources()}),flush=True)
+            last_progress=time.monotonic()
+        # A cold wave plus a second warm wave is the minimum default coverage.
         if waves>=2 and time.monotonic()-started>=duration:break
-    # Real finished analyses, distinct extraction claims and DB sessions.
-    # Closely related phrasings must not create one memory per concurrent run.
-    phrases=['Revenue movement concentrates on US across country and platform groups',
-             'Revenue movement across country and platform concentrates on US']
-    sequence=iter(range(len(all_ids)));guard=threading.Lock()
-    def provider(settings):
-        with guard:index=next(sequence)
-        return ProviderResolution(provider=FakeLLMProvider([{'memories':[{'kind':'segment','statement':phrases[index%2],'dimensions':['country']}]}]))
-    monkeypatch.setattr(memory,'resolve_provider',provider)
-    before=time.monotonic()
-    with ThreadPoolExecutor(max_workers=4) as extractors:
-        results=list(extractors.map(lambda aid:memory.run_extraction(get_session_factory(),analysis_id=aid,settings=get_settings()),all_ids))
-    assert all(row['status']=='extracted' for row in results),results
-    with session_scope() as db:
-        rows=list(db.scalars(select(BusinessMemory)))
-        assert len(rows)==1,[row.statement for row in rows]
     summary={'sessions':len(all_ids),'waves':waves,'elapsed_seconds':round(time.monotonic()-started,3),
-        'wave_seconds':samples,'memory_seconds':round(time.monotonic()-before,3),'memories':len(rows),'workers':{'analysis':3,'query':2,'memory':4},'authors':2}
+        'wave_seconds':samples,'memory_seconds':round(memory_seconds,3),'memories':len(rows),
+        'warm_analyses':warm_analyses,'reuse_count':rows[0].reuse_count,
+        'process_after_warmup':baseline_resources,'process_final':resources(),
+        'workers':{'analysis':3,'query':2,'memory':4},'authors':2}
     print('LOAD_ACCEPTANCE '+json.dumps(summary))
 
 

@@ -56,6 +56,7 @@ function Get-DotEnv {
 
 switch ($Target) {
     "doctor" { Invoke-Step { & $uv run --project backend --frozen python scripts/doctor.py } }
+    "doctor-full" { Invoke-Step { & $uv run --project backend --frozen python scripts/doctor.py --profile full --strict } }
     "setup-secrets" { Invoke-Step { & $uv run --project backend --frozen python scripts/setup_secrets.py } }
     "up-core" {
         Ensure-ComposeNetworks

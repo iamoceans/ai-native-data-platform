@@ -137,6 +137,7 @@ Node.js 20+. Use `make` on WSL2/Linux, or `.\scripts\dev.ps1` on Windows PowerSh
 ```bash
 make setup-secrets   # .env with random passwords, plus source credentials under infra/local-secrets/
 make doctor          # host check: Docker, CPU/memory/disk, ports, secret files
+make doctor-full     # strict full-profile resource preflight; starts no services
 make up-core         # control DB + source DB + API + query worker + agent worker + frontend
 make migrate         # Alembic migrations (idempotent)
 make bootstrap       # roles, capacities and the first administrator (password printed once)
@@ -274,8 +275,10 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
 - Spark/Hive requires an existing shared Hive Metastore and Spark Thrift Server.
   The adapter supports verified TLS, NOSASL and PLAIN-over-TLS configuration,
   and finite JSON scalar parameters bound as AST literals with an exact parse
-  round trip. Real TLS, parameter execution and a browser journey are verified;
-  real PLAIN identity verification remains unverified. Spark
+  round trip. Real TLS, parameter execution and a browser journey are verified.
+  PLAIN identity verification and independently authenticated cancellation also
+  pass against a custom single-identity test authenticator (10 focused Spark
+  tests); production identity-service integration remains deployment-specific. Spark
   does not expose a transactional read-only session here; deploy a read-only
   source identity and enforce a server-side query timeout. The connector,
   cancellation and timeout paths were accepted live on 2026-09-28/29; Spark job
@@ -293,8 +296,10 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   is no general arbitrary-tool agent. With no model, the rule path remains available.
 - Memory retrieval uses local bilingual analytics concept vectors plus word/character
   features, not a general pretrained embedding model. Candidate recall is bounded
-  to 200 metric-scoped rows, filtered by team/private ownership and source grants
-  before semantic ranking. Each user has at most one team; no team means private
+  to 1000 authorized metric-scoped rows. Team/private ownership, active user and
+  every source dependency's discover/query grants are checked in SQL before
+  the candidate LIMIT; semantic ranking injects at most eight statements. Each
+  user has at most one team; no team means private
   memory. Existing memory migrates to its source owner's private scope. Team
   changes do not move historical memory. Apply migration f6a12c83d095 before startup (includes e4b8a1c79d20).
   Extraction uses bounded claims, fenced writes and a per-scope transaction lock
@@ -302,6 +307,11 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
   360 conversations across two authors, 3 analysis/2 query workers and 4 memory
   extractors, with one deduplicated memory and no active lease/queue leftovers.
   This is a local acceptance sample, not an overnight or production SLO claim.
+  A newer ten-minute continuous learning run completed 1480 analyses / 185 waves
+  with 1472 warm recalls and exact atomic reuse accounting, one memory, and stable
+  quiescent thread/file-descriptor counts. It exposed and fixed a concurrent
+  lost-increment bug; it remains bounded local evidence rather than endurance
+  or real-model throughput proof.
 - Invalid structured model output gets at most one format-repair request, against
   the same closed schema and token/time budget. Both calls are counted; another
   invalid response fails visibly. Real DeepSeek/A09 validation remains deferred.
@@ -310,8 +320,12 @@ compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
 - Doris runs the local single-BE profile only; multi-BE topologies, workload groups
   and external catalogs are out of V1 scope.
 - DataHub auth-enabled mode is untested (the pinned quickstart disables GMS
-  authentication) and DataHub profiling is disabled in the recipes; column-level
-  lineage is out of scope.
+  authentication). `scripts/datahub_token.py --verify-auth --token-file ...`
+  and an opt-in integration case now check explicit anonymous/invalid-token
+  rejection and valid-token GraphQL; actual GMS acceptance still requires that
+  deployment. Token storage is private and atomic; invalid HTTP/GraphQL responses
+  fail visibly instead of appearing as empty catalog results. DataHub profiling
+  is disabled in the recipes; column-level lineage is out of scope.
 - Local HTTP deployment only, with loopback binding as the compensating control
   (set `AIND_COOKIE_SECURE=true` behind TLS). Login/password failure windows are
   shared in PostgreSQL with bounded key allocation and cross-process serialization.

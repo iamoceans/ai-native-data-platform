@@ -277,7 +277,8 @@ def test_model_memory_context_excludes_revoked_source_evidence(monkeypatch):
 
     row = NS(id=uuid.uuid4(), kind="segment", status="confirmed", statement="Private segment decline",
              scope_dimensions=[], analysis_id=uuid.uuid4())
-    monkeypatch.setattr(memory.memory_repo, "list_for_metric", lambda *args, **kw: [row])
+    # The repository now applies current grants before the candidate LIMIT.
+    monkeypatch.setattr(memory.memory_repo, "list_for_metric", lambda *args, **kw: [])
     monkeypatch.setattr(memory.memory_repo, "memory_dataset_actions_ok", lambda *args, **kw: False,
                         raising=False)
     assert orchestrator._memory_brief(None, "revenue") == []
@@ -298,7 +299,8 @@ def test_memory_prompt_context_uses_current_source_dataset_grants(monkeypatch, g
     role_id, dataset_id, analysis_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     row = NS(id=uuid.uuid4(), analysis_id=analysis_id, kind="segment", status="confirmed",
              statement="Shared segment observation", scope_dimensions=[])
-    monkeypatch.setattr(memory, "list_for_metric", lambda *args, **kw: [row])
+    monkeypatch.setattr(memory, "list_for_metric", lambda *args, **kw:
+                        [row] if kw.get("role_ids") == [role_id] and grants == {"query", "discover"} else [])
     monkeypatch.setattr(analyses.analyses_repo, "get_analysis", lambda *args: task_for())
     monkeypatch.setattr(analyses.analyses_repo, "list_queries", lambda *args: [NS(id=uuid.uuid4())])
     monkeypatch.setattr(analyses.analyses_repo, "list_dependencies", lambda *args: [NS(dataset_id=dataset_id)])

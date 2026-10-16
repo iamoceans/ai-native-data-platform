@@ -296,3 +296,20 @@ had grown to 7.8 GiB once and 3.3 GiB on another occasion; a restart returns it
 to ~1.2 GiB and the demo data survives in its volumes). Checking
 `MemAvailable` before a full-matrix or multi-container run is worthwhile on this
 host.
+
+## 2026-10-16 Resource preflight correction
+
+Observed on this managed Linux environment: physical RAM **33.3 GiB**
+(35,743,784,960 bytes), visible cgroup v2 hard limit **32 GiB**
+(34,359,738,368 bytes), Docker-reported memory **33.3 GiB**, storage driver **vfs**.
+Repository filesystem **31.5 GiB total / 13.3 GiB free** at observation. The full
+strict doctor returned **exit 1** for the existing full free-disk budget (60 GiB)
+and the already occupied control/source DB ports. The 32 GiB process limit is
+reported separately from physical RAM. The process group's peak/current figures
+include unrelated services/tests; they are not full-platform resource evidence.
+
+The doctor now honors visible v1/v2 ancestor limits and Docker VM memory, supports
+--profile full and preserves default core behavior. Unit cases cover limited
+Docker VMs, inherited and zero cgroup limits, unlimited v1 sentinels, namespace
+mounts, exact byte thresholds and strict CLI failure. This preflight improvement
+does **not** close the outstanding full-stack acceptance on a 16 GiB host.

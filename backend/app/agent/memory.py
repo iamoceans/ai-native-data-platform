@@ -52,6 +52,7 @@ LEARNED_STATUSES = (AnalysisStatus.COMPLETED, AnalysisStatus.PARTIAL)
 MAX_STATEMENT_LENGTH = 280
 MIN_STATEMENT_LENGTH = 6
 DEFAULT_RETRIEVAL_LIMIT = 8
+MAX_RETRIEVAL_CANDIDATES = 1000
 MAX_ATTEMPTS = 3
 
 NUMBER_PATTERN = re.compile(r"\d+(?:[.,]\d+)*")
@@ -296,10 +297,13 @@ def planner_brief(
     question: str = "",
 ) -> tuple[list[dict[str, Any]], list[uuid.UUID]]:
     """The advisory block for the planner prompt, plus the ids it came from."""
-    rows = memory_repo.list_for_metric(session, metric_key=metric_key, limit=200, user_id=user_id)
-    rows = [row for row in rows if memory_repo.memory_dataset_actions_ok(
-        session, role_ids=role_ids or [], row=row, user_id=user_id
-    )]
+    limit = max(0, min(limit, DEFAULT_RETRIEVAL_LIMIT))
+    if not limit:
+        return [], []
+    rows = memory_repo.list_for_metric(
+        session, metric_key=metric_key, limit=MAX_RETRIEVAL_CANDIDATES,
+        user_id=user_id, role_ids=role_ids or [],
+    )
     from app.agent.semantic import rank_memories
     rows = rank_memories(rows, question)[:limit]
     allow = {str(item) for item in allowed_dimensions}
@@ -449,8 +453,8 @@ def _apply_extraction(session: Session, *, task, digest: dict, generated) -> dic
     segment_values = {
         str(value) for values in (digest.get("segment_values") or {}).values() for value in values
     }
-    # Every stored statement is compared against the whole metric history - and
-    # against the other candidates from this run - so paraphrases reinforce the
+    # Compare against a bounded reuse/recency window of metric history and
+    # against the other candidates from this run, so paraphrases reinforce the
     # existing row instead of adding a twin. Rejected rows are part of the
     # comparison too: a rejection stays rejected.
     owner_id = getattr(task, "user_id", None)

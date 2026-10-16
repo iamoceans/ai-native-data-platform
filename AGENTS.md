@@ -286,3 +286,46 @@ live journeys **10 passed** plus added defaults/rerun **1 passed**. Preserve act
 remaining infrastructure/model boundaries in docs/todo.md. Native Uvicorn launches
 must use --no-proxy-headers. Test-load fixtures truncate their configured control
 DB and reseed source fixtures: use dedicated disposable databases only.
+
+Spark identity acceptance (2026-10-16): `setup_tls_fixture.py --auth PLAIN`
+compiles a single-identity CUSTOM authenticator from the Scala source using the
+pinned Spark image's own compiler/Hive API. Output must be below ignored runtime/
+and empty; credentials/config/keystore are private and never printed. Focused
+Spark suites **10 passed** (including authenticated cancellation), static **550
+passed**. Source read-only authorization, production identity-service integration
+and shared-HMS listener lineage remain unverified; this fixture grants no policy.
+
+External security gates (2026-10-16): static **609 passed**; final changed live
+subset **1 passed / 2 skipped**. `scripts/verify_spark_readonly.py` accepts private
+owner/reader connection files for the same dedicated aind_authz_* namespace only;
+its real unprotected-source negative control fails and cleans its own tables.
+`datahub_token.py --verify-auth --token-file ...` writes nothing and checks
+anonymous/invalid denials then valid GraphQL. Token storage is atomic/private;
+DataHub adapter errors are fail-closed and omit raw remote diagnostics. Actual
+source-policy and auth-enabled GMS tests skip when unconfigured and fail on an
+explicit broken configuration. Neither skipped deployment is considered verified.
+
+Resource preflight (2026-10-16): doctor reports physical/process-cgroup/Docker VM
+memory separately; visible v1/v2 ancestors constrain the budget. --profile full
+--strict (make / dev.ps1 doctor-full) selects existing conservative full estimates
+without starting services. Static **623 passed**, resource units **14 passed**;
+actual strict full preflight exited 1 for repository disk/busy DB ports. Process
+limit was 32 GiB despite 33.3 GiB physical. This is not 16 GiB full-stack proof.
+
+Authorized recall (2026-10-16): planner takes at most 1000 authorized candidates,
+with source grants before LIMIT, and injects at most eight. Knowledge list/count
+also filter in SQL; each operation is one query. Missing identity/roles and
+inactive users fail closed. No migration/API change. Static **623 passed**;
+real PostgreSQL recall + team/private regressions **5 passed**, including an
+1802-row candidate-starvation case and grant expiry/split roles. Local semantic
+vectors remain domain-specific; extraction dedupe still has a separate 200-row
+window. General pretrained embeddings/global history search are not claimed.
+
+Continuous learning (2026-10-17): per-wave extraction now precedes the next warm
+analysis wave. This exposed lost reuse increments (8 warm uses recorded as 2).
+Reuse uses atomic SQL updates, stable multi-row ID locks and monotonic last-use
+time; rollback is covered by stale-instance concurrent tests. Static **623
+passed**, final real PostgreSQL batch **13 passed** including 600.498 seconds /
+1480 analyses / 1472 exact warm uses / one deduplicated memory. Quiescent Linux
+threads/FDs stayed 4/14; RSS grew about 1.9 MiB from warmup. This is not overnight
+or real-model proof. make test-load SOAK_SECONDS=600 runs this bounded loop.

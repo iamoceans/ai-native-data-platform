@@ -37,7 +37,7 @@ CASES ?= 10
 SCENARIO ?= ecpm_drop
 DEMO_RUN ?= $(shell ls -td runtime/demo/*/ 2>/dev/null | head -n1 | xargs -r -n1 basename)
 
-.PHONY: help doctor setup-secrets up-core up-full down migrate bootstrap \
+.PHONY: help doctor doctor-full setup-secrets up-core up-full down migrate bootstrap \
         test-core test-unit test-integration test-security smoke-core \
         api-spec types build-core logs ps seed-sources up-full-data \
         demo-generate demo-load demo-lineage metadata-sync demo-verify eval-agent \
@@ -48,6 +48,9 @@ help: ## Show available targets
 
 doctor: ## Check host prerequisites and print a machine report
 	$(UV) scripts/doctor.py
+
+doctor-full: ## Strict full-profile preflight; does not start services
+	$(UV) scripts/doctor.py --profile full --strict
 
 setup-secrets: ## Generate .env and local secret files (idempotent, never overwrites)
 	$(UV) scripts/setup_secrets.py

@@ -48,19 +48,44 @@ Product and verification items (current status):
       a team, 3 analysis / 2 query / 4 extraction workers; 360 memory extractions
       converge to one row with no active queue/lease leftovers. Observed 126.776
       seconds, not overnight endurance or a production SLO claim.
-- [~] Spark verified TLS, scalar parameters and browser E2E pass. Real PLAIN
-      identity verification, read-only source authorization and shared-HMS listener
-      lineage still require an authenticator/authorizer/HMS/DataHub stack.
+- [x] Continuous learn/recall loop: 1480 analyses / 185 waves in 600.498 seconds,
+      1472 warm recalls and exactly 1472 reuse increments, one deduplicated memory.
+      Fixed concurrent reuse lost updates; multi-row lock order and rollback tested.
+      Quiescent thread/FD counts stable; this is still a bounded local sample.
+- [x] Real PLAIN-over-verified-TLS identity acceptance with a custom fixture
+      authenticator: valid credentials execute parameters; wrong username/password
+      and empty password fail SASL; untrusted CA fails TLS; cancellation uses an
+      independently authenticated connection. Focused Spark suites: **10 passed**.
+- [~] Spark verified TLS, scalar parameters and browser E2E pass. Read-only
+      source authorization and shared-HMS listener lineage still require an
+      authorizer/HMS/DataHub stack. The custom test identity is not a production
+      authentication service or proof of source authorization.
 - [x] Chat chart Top-10 by absolute change, expand/collapse, bounded load-more and class/style cleanup.
 - [x] Audited owner/CSRF/idempotency-checked rerun API/UI create a new child with
       current contracts and unknown completeness. Actual business reports require
       an owner-selected scope, not an automatic blanket rewrite of history.
 - [x] Closed initial/observed model action selection and one bounded structured-output repair; deterministic execution gates remain binding.
 - [x] Local bilingual domain semantic vectors, team/private scope, audited membership management and read-time isolation. General pretrained embeddings remain an enhancement.
+- [x] Memory recall expanded to 1000 authorized candidates with SQL permission
+      filtering before LIMIT, at most eight injected statements, and single-query
+      list/count filtering. A real 1802-row case recovers a target outside the old
+      200-row window; expired/missing grants and disabled users remain excluded.
 - [x] Current backlog and superseded feature notes consolidated. Historical
       per-stage not-executed statements remain dated records, not current defects.
 - [ ] DataHub authentication-enabled acceptance and full-stack resource proof on
       a 16 GiB host remain unverified (see README/compatibility limits).
+- [x] Resource preflight now distinguishes physical RAM, visible cgroup v1/v2
+      limits and Docker VM memory, and checks the selected core/full budget.
+      `doctor-full` fails on insufficient capacity without starting services.
+      This fixes preflight reporting; it is not 16 GiB full-stack acceptance.
+- [x] Executable external security gates: Spark seven-write denial verifier
+      with dedicated-schema guards and cleanup, and DataHub anonymous/invalid/
+      valid-token checks plus an opt-in adapter integration case. The real
+      unprotected Spark negative control fails as required; genuine authorizer
+      and auth-enabled GMS acceptance remain pending, not inferred from mocks.
+- [x] DataHub adapter and token helper reject error HTTP statuses, malformed
+      GraphQL envelopes and missing operation data instead of reporting an empty
+      catalog/success. File/environment token input and private atomic storage added.
 
 Deferred by the user: DeepSeek v4.1 flash connection, model identity verification,
 real-model A09 and large-pool automatic Skill choice acceptance. Enterprise/HA,
@@ -1258,3 +1283,33 @@ superseded; commands and details are in the acceptance record.
       Spark actual identity/read-only/shared-HMS listener lineage; 16 GiB proof;
       real model explicitly deferred. Further general embeddings, multi-host HA,
       batch/stream/MCP and content-language features remain roadmap extensions.
+
+## 2026-10-16 Continued acceptance: Spark PLAIN identity
+
+- [x] Reproducible isolated CUSTOM-authenticator fixture using SASL PLAIN over
+      verified TLS, with random private credentials and the existing pinned image.
+- [x] Correct credentials execute bound scalars; wrong username/password and
+      empty password fail at SASL; untrusted CA failure retains a certificate cause.
+- [x] Independent authenticated cancellation preserves concurrent status replies,
+      reaches CANCELED_STATE and leaves subsequent queries usable.
+- [x] Focused actual Spark suites **10 passed**; static suite **550 passed**.
+- [~] Production identity services, source read-only authorization and shared-HMS
+      listener lineage remain separate deployment acceptance. Doris/DataHub,
+      auth-enabled GMS, 16 GiB resource proof and deferred DeepSeek/A09 unchanged.
+
+See the matching Spark PLAIN section in `docs/acceptance.md`; dated NOSASL-only
+and PLAIN-unverified notes above are superseded only for this identity fixture.
+
+## 2026-10-16 Continued TODO: external security gates
+
+- [x] Source read-only verifier with dedicated catalog/own-table guards, seven
+      recognizable write denials, unchanged reads and mandatory cleanup.
+- [x] Real unprotected Spark negative control cannot pass; CLI detects allowed
+      INSERT and cleans its tables. This is not real read-only policy acceptance.
+- [x] GMS three-path auth verifier, private token input, atomic token storage and
+      a separate actual-adapter integration entry point independent of Doris.
+- [x] DataHub HTTP/GraphQL false-empty/false-token-success defects fixed.
+- [x] Static **609 passed**; final changed service subset **1 passed / 2 skipped**.
+- [ ] Actual source authorizer and authenticated GMS remain unavailable; those
+      two optional acceptance cases skipped. Resource/full-stack/lineage and
+      user-deferred model gaps remain as described in the current backlog.

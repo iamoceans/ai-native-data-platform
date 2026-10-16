@@ -104,6 +104,73 @@ output directory before regenerating. For a deployed browser acceptance register
 and grant a Spark source, set E2E_SPARK_DATASOURCE/E2E_BASE_URL and the standard
 E2E administrator credentials, then run `npm run test:e2e -- spark.spec.ts`.
 
-PLAIN-over-TLS config forwarding is unit-tested, but the fixture does not provide
-a real identity authenticator or authorizer. Accept those against the actual
-source before claiming source authorization support.
+### PLAIN identity acceptance over verified TLS
+
+The same generator can start an isolated server with Hive CUSTOM authentication
+and SASL PLAIN on the wire. Its one random test identity is checked against a
+salted digest using constant-time comparison. It compiles the checked-in Scala
+authenticator using the compiler and Hive API already in the pinned Spark image;
+no additional image or Maven download is needed.
+
+```bash
+uv run --project backend --frozen python infra/spark-preview/setup_tls_fixture.py \
+  --auth PLAIN --port 11002 --name aind-spark-plain-acceptance \
+  --output-dir runtime/spark-plain-fixture
+# Wait for HiveThriftServer2 startup. Never print credentials.json.
+AIND_TEST_SPARK_PLAIN_HOST=127.0.0.1 AIND_TEST_SPARK_PLAIN_PORT=11002 \
+AIND_TEST_SPARK_PLAIN_CA_CERT="$PWD/runtime/spark-plain-fixture/ca.pem" \
+AIND_TEST_SPARK_PLAIN_CREDENTIALS_FILE="$PWD/runtime/spark-plain-fixture/credentials.json" \
+  uv run --project backend --frozen pytest \
+    backend/tests/integration/test_spark_plain_auth.py \
+    backend/tests/integration/test_spark_cancel_transport.py -q
+# Requires the normal dedicated test control DB settings. The NOSASL cancellation
+# variant skips unless AIND_TEST_SPARK_HOST is configured separately.
+docker --host=unix:///var/run/docker.sock stop aind-spark-plain-acceptance
+docker --host=unix:///var/run/docker.sock rm aind-spark-plain-acceptance
+```
+
+Generated credentials, password configuration and keystore are private files;
+output directories must be empty and below the repository's ignored runtime/.
+The fixture uses a custom single-identity test authenticator, root process and
+embedded metastore. It is not a production identity service, read-only authorizer
+or shared-HMS lineage deployment. Production deployments still need their own
+source authentication and authorization acceptance.
+
+### Source read-only authorization gate
+
+PLAIN authenticates a caller; this fixture has no source authorizer. Use the
+following verifier against a deployment that actually enforces a read-only
+identity. The included unprotected fixture is a negative control and must fail.
+
+Pre-create a dedicated `aind_authz_acceptance` database on that source. Give the
+owner identity create/insert/read/drop privileges there and the reader only
+SELECT/metadata privileges. Put each connection in a private ignored JSON file
+with `host`, `port`, `user`, `password`, `database`, `auth_mechanism: "PLAIN"`,
+`use_ssl: true` and optional `ca_cert`. Both files must address the same endpoint
+and the same `aind_authz_*` database. These are Impyla connection files, not the
+platform's credential-reference format. Never pass passwords as arguments.
+
+```bash
+uv run --project backend --frozen python scripts/verify_spark_readonly.py \
+  --reader-config infra/local-secrets/spark-authz-reader.json \
+  --owner-config infra/local-secrets/spark-authz-owner.json
+```
+
+The owner seeds a uniquely named Parquet table. The reader must retrieve its
+known row and receive recognizable authorization errors for INSERT, INSERT
+OVERWRITE, TRUNCATE, ALTER ADD COLUMN, RENAME, CREATE AS SELECT and DROP. After
+each denial both identities must still read the original columns/row. Syntax,
+unsupported-operation, missing-table and transport errors fail the gate. The
+verifier stops on the first allowed write and always attempts owner cleanup of
+its three generated table names. Cleanup failure also fails the gate. No tables
+outside this dedicated namespace are changed. DELETE/UPDATE on this Parquet
+fixture are not authorization proof and are not counted as denial cases.
+
+For the integration entry point set
+`AIND_TEST_SPARK_READONLY_READER_FILE` / `AIND_TEST_SPARK_READONLY_OWNER_FILE`
+and run `backend/tests/integration/test_spark_readonly_acceptance.py`. With neither
+file configured that deployment case skips; partial configuration or a failed
+explicit endpoint fails. A separate real PLAIN-fixture case proves the verifier
+rejects the unprotected server and removes its test tables. Mocked successful
+policy tests prove verifier logic only; actual read-only source acceptance
+remains pending until an authorizer is available.

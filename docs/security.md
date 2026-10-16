@@ -148,8 +148,11 @@ interpretation. Real PostgreSQL and browser tests verify isolation and stale sav
 The 2026-10-16 live protocol tests supersede the older pending note for PostgreSQL
 TLS negotiation and MySQL/Doris greeting stalls. They do not establish a deployed
 Doris server acceptance. Spark cancellation now uses a separate HS2 connection,
-verified against real Spark 3.5.3; verified TLS is now accepted on a real standalone server; PLAIN identity
-verification and source read-only authorization remain unverified.
+verified against real Spark 3.5.3; verified TLS and real PLAIN identity rejection/
+acceptance now pass on the standalone custom-authenticator fixture. Source
+read-only authorization remains unverified. The dedicated seven-write verifier
+rejects that unprotected fixture and only counts recognizable authorization
+denials, unchanged reads and successful cleanup as acceptance of a real policy.
 
 Self-service password rotation (2026-10-16) requires current credentials and CSRF.
 New passwords are 12..1024 characters, represented as SecretStr in the closed DTO;
@@ -184,3 +187,30 @@ analysis streams recheck dataset grants before replay; a session stream suppress
 revoked-analysis events and emits its revocation notification. A model or account
 default never sets dates or verified completeness. Report reruns are CSRF protected,
 owner/capability/grant checked and create a new child; immutable old reports remain.
+
+DataHub external failures (2026-10-16): neither the adapter nor token helper treats
+HTTP errors/redirects, malformed envelopes or missing operation fields as a valid
+empty catalog or authenticated success. Adapter errors omit remote diagnostic
+text, which may contain echoed inputs. The token helper's --verify-auth mode
+writes nothing and requires explicit 401/403 denials for anonymous/random-invalid
+requests plus a valid-token GraphQL result. Outages do not establish authentication.
+Token-file/environment input avoids putting secrets in process arguments; the
+legacy option remains compatible. Storage uses a private temporary file, fsync
+and atomic replacement, preserving the old secret if replacement fails. This
+local contract coverage does not establish actual auth-enabled GMS deployment.
+
+Memory recall (2026-10-16) checks team/private scope, active reader and complete
+source provenance in SQL before its 1000-candidate limit. Correlated EXISTS
+requires both current discover and query grants for every dependency, including
+multi-query/multi-dataset analyses; partial/expired grants fail closed and grants
+may combine across roles. Unauthorized memories never enter semantic ranking.
+List and aggregate counts use the same predicate. At most eight statements are
+injected; widening candidates does not widen prompt output or authorize any
+analysis action. Missing identity/roles and disabled owners fail closed. Real
+PostgreSQL tests cover starvation, expirations, split grants and team/private scope.
+
+Concurrent reuse accounting (2026-10-17) remains inside the fenced analysis
+transaction. Atomic increments do not grant visibility or widen advisory context;
+read-time source/team checks still choose eligible IDs. Multi-row locks use a
+stable ID order and last-used time is monotonic. A failed/rolled-back transaction
+cannot leave a committed reuse increment behind.

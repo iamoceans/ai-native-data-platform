@@ -51,7 +51,7 @@ def human_gib(value: int) -> float:
     return round(value / (1024**3), 1)
 
 
-def check_ram() -> dict:
+def physical_ram() -> dict:
     if os.name == "nt":
         code, out = run(
             [
@@ -62,23 +62,106 @@ def check_ram() -> dict:
             ]
         )
         if code == 0 and out.isdigit():
-            return {"total_gib": human_gib(int(out))}
+            return {"total_gib": human_gib(int(out)), "total_bytes": int(out)}
     try:
         pages = os.sysconf("SC_PHYS_PAGES")
         size = os.sysconf("SC_PAGE_SIZE")
-        return {"total_gib": human_gib(pages * size)}
+        return {"total_gib": human_gib(pages * size), "total_bytes": pages * size}
     except (ValueError, OSError, AttributeError):
         meminfo = Path("/proc/meminfo")
         if meminfo.exists():
             match = re.search(r"MemTotal:\s+(\d+) kB", meminfo.read_text())
             if match:
-                return {"total_gib": round(int(match.group(1)) / (1024**2), 1)}
+                total = int(match.group(1)) * 1024
+                return {"total_gib": human_gib(total), "total_bytes": total}
     return {"total_gib": None, "error": "could not determine physical memory"}
+
+
+def check_cgroup(root: Path = Path("/sys/fs/cgroup"), process: Path = Path("/proc/self/cgroup")) -> dict:
+    """Read the visible Linux process memory hierarchy; never modify limits."""
+    def read(path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+
+    def number(path: Path) -> int | None:
+        value = read(path)
+        return int(value) if value and value.isdigit() else None
+
+    for entry in (read(process) or "").splitlines():
+        fields = entry.split(":", 2)
+        if len(fields) != 3:
+            continue
+        _, controllers, group = fields
+        if controllers == "":
+            base, version = root, 2
+            limit_name, usage_name, peak_name = "memory.max", "memory.current", "memory.peak"
+        elif "memory" in controllers.split(","):
+            base, version = root / "memory", 1
+            limit_name = "memory.limit_in_bytes"
+            usage_name, peak_name = "memory.usage_in_bytes", "memory.max_usage_in_bytes"
+        else:
+            continue
+        base = base.resolve()
+        leaf = (base / group.lstrip("/")).resolve()
+        if not leaf.is_relative_to(base) or not leaf.is_dir():
+            # A container may expose its own group as the mount root.
+            leaf = base
+        if not (leaf / limit_name).is_file():
+            continue
+        limits = []
+        current = leaf
+        while True:
+            limit = number(current / limit_name)
+            # v1 uses a near-LONG_MAX sentinel for an unlimited group.
+            if limit is not None and 0 <= limit < 2**60:
+                limits.append(limit)
+            if current == base:
+                break
+            current = current.parent
+        result = {
+            "version": version, "scope": "visible process memory hierarchy",
+            "limit_bytes": min(limits) if limits else None,
+            "current_bytes": number(leaf / usage_name), "peak_bytes": number(leaf / peak_name),
+        }
+        if version == 2:
+            result["events"] = {
+                key: int(value) for line in (read(leaf / "memory.events") or "").splitlines()
+                for key, _, value in [line.partition(" ")] if value.isdigit()
+            }
+        return result
+    return {"version": None, "scope": "unavailable", "limit_bytes": None}
+
+
+def check_ram() -> dict:
+    report = physical_ram()
+    report["cgroup"] = check_cgroup()
+    capacities = [value for value in (report.get("total_bytes"), report["cgroup"]["limit_bytes"])
+                  if isinstance(value, int) and value >= 0]
+    report["effective_bytes"] = min(capacities) if capacities else None
+    report["effective_gib"] = human_gib(min(capacities)) if capacities else None
+    return report
+
+
+def resource_problems(report: dict, profile: str) -> list[str]:
+    budget = RESOURCE_BUDGET[profile]
+    capacities = [report["ram"].get("effective_bytes"), report["docker"].get("memory_bytes")]
+    capacities = [value for value in capacities if isinstance(value, int) and value >= 0]
+    problems = []
+    if report["ram"].get("effective_bytes") is None or not capacities or min(capacities) < budget["ram_gib"] * 1024**3:
+        problems.append(f"effective RAM below {profile} budget ({budget['ram_gib']} GiB)")
+    disk = report["disk"]["repo"]
+    free_bytes = disk.get("free_bytes", disk["free_gib"] * 1024**3)
+    if free_bytes < budget["disk_gib"] * 1024**3:
+        problems.append(f"repo disk free below {profile} budget ({budget['disk_gib']} GiB)")
+    return problems
 
 
 def check_disk(path: Path) -> dict:
     usage = shutil.disk_usage(path)
-    return {"path": str(path), "free_gib": human_gib(usage.free), "total_gib": human_gib(usage.total)}
+    return {"path": str(path), "free_gib": human_gib(usage.free), "total_gib": human_gib(usage.total),
+            "free_bytes": usage.free, "total_bytes": usage.total}
 
 
 def check_port(port: int) -> bool:
@@ -101,6 +184,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="AI-Native Data Platform doctor")
     parser.add_argument("--json", action="store_true", help="print machine-readable report only")
     parser.add_argument("--strict", action="store_true", help="exit 1 when a required check fails")
+    parser.add_argument("--profile", choices=tuple(RESOURCE_BUDGET), default="core", help="resource budget to check")
     args = parser.parse_args()
 
     report: dict = {
@@ -120,6 +204,7 @@ def main() -> int:
         "ports": {},
         "secrets": check_secrets(),
         "budget": RESOURCE_BUDGET,
+        "selected_profile": args.profile,
     }
 
     docker_path = shutil.which("docker")
@@ -127,8 +212,13 @@ def main() -> int:
     if docker_path:
         code, out = run([docker_path, "version", "--format", "{{.Client.Version}}"])
         report["docker"]["client_version"] = out if code == 0 else f"error: {out}"
-        code, out = run([docker_path, "info", "--format", "{{.ServerVersion}}"])
-        report["docker"]["server_version"] = out if code == 0 else None
+        code, out = run([docker_path, "info", "--format",
+                         '{"server_version":"{{.ServerVersion}}","memory_bytes":{{.MemTotal}},"storage_driver":"{{.Driver}}"}'])
+        if code == 0:
+            try:
+                report["docker"].update(json.loads(out))
+            except (ValueError, TypeError):
+                code = 1
         report["docker"]["daemon"] = code == 0
         code, out = run([docker_path, "compose", "version", "--short"])
         report["docker"]["compose_version"] = out if code == 0 else None
@@ -136,11 +226,7 @@ def main() -> int:
     for label, port in PORTS.items():
         report["ports"][label] = "in-use" if check_port(port) else "free"
 
-    problems: list[str] = []
-    if report["ram"]["total_gib"] is None or report["ram"]["total_gib"] < RESOURCE_BUDGET["core"]["ram_gib"]:
-        problems.append(f"RAM below core budget ({RESOURCE_BUDGET['core']['ram_gib']} GiB)")
-    if report["disk"]["repo"]["free_gib"] < RESOURCE_BUDGET["core"]["disk_gib"]:
-        problems.append(f"repo disk free below core budget ({RESOURCE_BUDGET['core']['disk_gib']} GiB)")
+    problems = resource_problems(report, args.profile)
     if not report["docker"].get("daemon"):
         problems.append("Docker daemon is not reachable")
     for label, state in report["ports"].items():
@@ -157,10 +243,13 @@ def main() -> int:
         print("== AI-Native Data Platform doctor ==")
         print(f"host        : {report['platform']['system']} {report['platform']['release']} ({report['platform']['machine']})")
         print(f"cpu         : {report['cpu_count']} logical cores")
-        print(f"ram         : {report['ram'].get('total_gib')} GiB total   (core budget >= 6, full >= 32)")
+        print(f"ram         : {report['ram'].get('total_gib')} GiB physical, {report['ram'].get('effective_gib')} GiB process capacity")
+        print(f"profile     : {args.profile} (RAM >= {RESOURCE_BUDGET[args.profile]['ram_gib']} GiB, disk >= {RESOURCE_BUDGET[args.profile]['disk_gib']} GiB)")
         print(f"disk repo   : {report['disk']['repo']['free_gib']} GiB free of {report['disk']['repo']['total_gib']} GiB")
         docker = report["docker"]
         print(f"docker      : client={docker.get('client_version')} server={docker.get('server_version')} compose={docker.get('compose_version')}")
+        if isinstance(docker.get("memory_bytes"), int):
+            print(f"docker ram  : {human_gib(docker['memory_bytes'])} GiB daemon capacity; driver={docker.get('storage_driver')}")
         print("ports       : " + ", ".join(f"{k}={v}" for k, v in report["ports"].items()))
         print(f"secrets     : {report['secrets']}")
         if problems:

@@ -304,7 +304,9 @@ can create its own local metastore and would produce a different catalog.
    `use_ssl=true` and optional `ca_cert` (mounted path on every API/query worker;
    blank uses system trust). Certificates and hostnames are always verified.
    `auth_mechanism=PLAIN` requires TLS and a server configured with a real
-   authenticator; only protocol forwarding is unit-tested for PLAIN so far.
+   authenticator. Real PLAIN login/rejection and authenticated cancellation are
+   verified with the custom test authenticator in `infra/spark-preview/README.md`;
+   accept your production identity service and authorizer separately.
    Finite scalar query parameters use validated AST literals, never string
    interpolation. Keep Thrift endpoints on a private network.
 2. Configure Spark Thrift Server with
@@ -331,7 +333,8 @@ can create its own local metastore and would produce a different catalog.
    recipe uses `hive-metastore` in Thrift mode and maps the resulting `hive`
    URN back to the single registered table. Confirm the ingestion task reports
    `mapped == expected`, then check catalog search and a bounded SELECT in the
-   SQL workspace. Named SQL parameters are rejected for Spark in this phase.
+   SQL workspace. Finite scalar named parameters use exact-round-trip AST
+   binding; missing/extra/anonymous, nested and nonfinite values are rejected.
 5. For Spark **job** lineage, install DataHub's Spark listener on the job's
    Spark runtime. Set `spark.datahub.metadata.dataset.platformInstance` to
    the datasource's `ainative-<first eight UUID characters>`, set
@@ -349,7 +352,9 @@ verified against a real stack: `infra/spark-preview/` (Hive 3.1.3 + Spark
 sync mapped every table to one `hive` URN (`mapped 3/3`) - see
 `docs/acceptance.md` (2026-09-28/29). Still outstanding before treating the
 integration as accepted: a view edge and a Spark job edge (the listener above),
-read-only source authorization, and browser E2E. A separate HiveServer2
+read-only source authorization, and shared-HMS browser E2E. Standalone TLS browser
+execution and PLAIN identity/cancellation acceptance are recorded separately;
+neither proves source authorization or listener lineage. A separate HiveServer2
 execution connector is not part of this preview: Hive and Spark tables in the
 shared Metastore appear once as assets, and SQL currently runs through Spark
 Thrift Server.
@@ -418,3 +423,74 @@ question/windows/filters, current metric contracts and current permissions, writ
 a new parent-linked report, and resets completeness to unknown. Restore an archived
 conversation first; in-flight analyses must settle before rerun. Do not bulk-rewrite
 historical artifacts or assume an old complete window is still verified.
+
+### DataHub authentication-enabled acceptance
+
+The pinned quickstart defaults to `METADATA_SERVICE_AUTH_ENABLED=false`.
+After enabling authentication on your deployed GMS and provisioning a PAT, use a
+private file rather than placing the token in process arguments:
+
+```bash
+uv run --project backend --frozen python scripts/datahub_token.py \
+  --gms-url http://127.0.0.1:18080 --verify-auth \
+  --token-file infra/local-secrets/datahub.json
+```
+
+This mode writes nothing. It requires anonymous and random-invalid bearer calls
+to return HTTP 401/403, then requires the valid token to return HTTP 200 and the
+expected GraphQL dataset field (an explicit null is a valid missing dataset).
+Timeouts, redirects, other HTTP statuses and malformed/error envelopes fail;
+an unreachable endpoint does not establish that authentication is enabled.
+The normal verify/store mode accepts `--token-file` or `DATAHUB_TOKEN` and
+atomically replaces the secret with a private file while preserving extra JSON
+fields. `--token` remains a compatibility option. Without explicit input,
+`--verify-auth` uses the existing `--secrets-dir/datahub.json`.
+
+For actual GMS integration set `AIND_TEST_DATAHUB_AUTH_URL` and
+`AIND_TEST_DATAHUB_AUTH_TOKEN_FILE`, then run
+`backend/tests/integration/test_datahub_authentication.py` with the normal test
+control DB settings. It checks the three auth paths and the platform's actual
+pinned search document/adapter. An unset URL skips; an explicitly configured but
+unhealthy endpoint, absent token or failed GraphQL request fails. This independent
+case does not require Doris, but does not replace ingestion/lineage acceptance.
+
+For source-side Spark read-only acceptance see the dedicated namespace verifier
+in `infra/spark-preview/README.md`. Authentication-only fixtures must fail that
+gate; passing a mocked policy does not establish source authorization.
+
+### Resource limits before full-stack bring-up
+
+Use `make doctor-full` or `.\scripts\dev.ps1 doctor-full` for strict full-profile
+preflight. The direct command is:
+
+```bash
+uv run --project backend --frozen python scripts/doctor.py --profile full --strict --json
+```
+
+The report separates physical memory, effective process capacity and Docker daemon
+memory (important for Docker Desktop/WSL2). Linux cgroup v1/v2 visible limits and
+usage/peak/OOM counters are read without changing limits. Full selects the existing
+conservative 32 GiB RAM / 60 GiB repository free-disk estimate; default doctor keeps
+the core budget and non-strict behavior. Missing/busy ports, secrets and Docker
+checks still apply. Existing services can therefore produce busy-port findings.
+
+This command starts nothing. Passing is only a prerequisite check, not source
+acceptance, overnight load proof or evidence for a 16 GiB full deployment. Repo
+free space does not measure a remote Docker VM's image-storage disk; verify that
+separately before large pulls. Process-group peak usage includes other workloads.
+
+### Continuous learning and warm-recall load
+
+`make test-load SOAK_SECONDS=600` extends the bounded fixture to ten minutes;
+PowerShell uses `$env:AIND_TEST_SOAK_SECONDS="600"` then
+`.\scripts\dev.ps1 test-load`. Use dedicated disposable control and source DBs
+and stop workers on those test queues: the fixtures truncate/reseed them.
+
+Each wave runs real queries with 3 analysis and 2 query workers across two team
+members, then 4 concurrent memory extractors. The next wave must recall the
+learned memory. Scripted planning/extraction exercises the model integration path
+without an external model call. Every completed wave checks the queue/leases,
+one deduplicated memory and exact agreement between warm analyses and reuse_count.
+Linux progress snapshots report process RSS/high-water RSS, threads and open FDs;
+other operating systems report no invented process sample. These observations
+are bounded local evidence, not overnight endurance or a production SLO.

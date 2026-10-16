@@ -89,20 +89,20 @@ def test_expired_evidence_is_not_quoted(monkeypatch):
     assert quotes == [] and dropped == [f'evidence_expired:{aid}']
 
 
-def test_semantic_recall_filters_grants_before_ranking_and_limits(monkeypatch):
+def test_semantic_recall_requests_authorized_candidates_before_ranking(monkeypatch):
     from app.agent import memory
     allowed=NS(id=uuid.uuid4(),kind='segment',status='confirmed',statement='Version note',scope_dimensions=['app_version'])
     denied=NS(id=uuid.uuid4(),kind='segment',status='confirmed',statement='营收下滑地区集中',scope_dimensions=['country'])
     identity=uuid.uuid4()
     captured={}
     def rows(session,**kwargs):
-        captured.update(kwargs);return [denied,allowed]
+        captured.update(kwargs);return [allowed]
     monkeypatch.setattr(memory.memory_repo,'list_for_metric',rows)
     monkeypatch.setattr(memory.memory_repo,'memory_dataset_actions_ok',lambda *a, row, **kw: row.id == allowed.id and kw['user_id']==identity)
     brief,ids=memory.planner_brief(None,metric_key='revenue',allowed_dimensions=['app_version'],
         user_id=identity,question='营收下滑地区集中',limit=1)
     assert ids==[allowed.id] and brief[0]['statement']=='Version note'
-    assert captured['user_id']==identity and captured['limit']==200
+    assert captured['user_id']==identity and captured['limit']==1000 and captured['role_ids']==[]
 
 
 @pytest.mark.parametrize('original,current',[(None,'team'),('team',None),('team','other')])
