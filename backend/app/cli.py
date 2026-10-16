@@ -161,11 +161,12 @@ def cmd_llm_check(args: argparse.Namespace) -> int:
     import time
 
     from app.agent.budget import AnalysisBudget
-    from app.agent.llm import resolve_provider
+    from app.agent.llm import OpenAICompatibleProvider, resolve_provider
     from app.agent.planner import PlanningSelection
-    from app.config import get_settings
 
     settings = get_settings()
+    list_models = getattr(args, "list_models", False)
+    expected_model = getattr(args, "expect_model", None)
     print(f"provider: {settings.llm_provider}")
     print(f"base_url: {settings.llm_base_url}")
     print(f"model:    {settings.llm_model or '(unset)'}")
@@ -177,10 +178,16 @@ def cmd_llm_check(args: argparse.Namespace) -> int:
         print(f"warning:  {resolution.warning}")
     if resolution.provider is None:
         print("no model call was made: the deterministic template path is active")
-        return 0 if settings.llm_provider == "fake" else 1
+        return 0 if settings.llm_provider == "fake" and not (list_models or expected_model) else 1
 
     started = time.monotonic()
     try:
+        if list_models:
+            if not isinstance(resolution.provider, OpenAICompatibleProvider):
+                raise RuntimeError("model discovery requires an OpenAI-compatible endpoint")
+            models = resolution.provider.list_models()
+            print(f"available models: {models}")
+            return 0
         generated = resolution.provider.generate_structured(
             messages=[
                 {
@@ -197,9 +204,17 @@ def cmd_llm_check(args: argparse.Namespace) -> int:
             max_output_tokens=100,
         )
     except Exception as exc:  # noqa: BLE001 - reported to the administrator
-        print(f"FAILED after {time.monotonic() - started:.2f}s: {type(exc).__name__}: {str(exc)[:300]}")
+        # Provider exceptions can echo request headers or response content.
+        # Print only the class, never arbitrary server/transport text.
+        print(f"FAILED after {time.monotonic() - started:.2f}s: {type(exc).__name__}")
         return 1
     latency = time.monotonic() - started
+    if expected_model and generated.reported_model_id != expected_model:
+        print(
+            f"FAILED: expected endpoint model_id={expected_model}; "
+            f"reported={generated.reported_model_id or '(missing)'}"
+        )
+        return 1
     print(
         f"ok: model_id={generated.model_id} latency={latency:.2f}s "
         f"tokens_in={generated.usage.input_tokens} tokens_out={generated.usage.output_tokens} "
@@ -227,6 +242,9 @@ def build_parser() -> argparse.ArgumentParser:
     llm_check = sub.add_parser(
         "llm-check", help="verify the configured LLM endpoint with one structured call"
     )
+    checks = llm_check.add_mutually_exclusive_group()
+    checks.add_argument("--list-models", action="store_true", help="list endpoint model IDs without a completion")
+    checks.add_argument("--expect-model", help="require an exact endpoint-reported model ID")
     llm_check.set_defaults(func=cmd_llm_check)
 
     set_password = sub.add_parser("set-password", help="rotate a local password")

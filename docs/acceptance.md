@@ -2440,3 +2440,27 @@ stability. There was no real model, full Doris/DataHub, source authorizer/GMS or
 16 GiB deployment in this test. Evidence is saved under ignored
 `runtime/validation/learning-soak-20261017.log` and `.json`. Existing external
 acceptance/deferred-model items remain pending.
+# 2026-10-17 — resumed DeepSeek diagnostics; live credentials still unavailable
+
+The user resumed the previously deferred real-model work. The configured
+OpenAI-compatible adapter now supports authenticated `/models` discovery via
+`python -m app.cli llm-check --list-models` and exact endpoint identity verification
+via `--expect-model ID`. Response identity is separate from the configured alias;
+missing or different IDs fail the exact check. Discovery does not issue a chat
+completion. Diagnostic exceptions omit arbitrary server/transport text.
+
+Validation: backend static unit/security/contract suite **637 passed** (two
+existing dependency deprecation warnings); final diagnostics subset after moving
+the mismatch check before the success output **14 passed**. Tests use HTTP
+fixtures, not real models. `git diff --check` passed.
+
+The actual runtime command `PYTHONPATH=backend uv run --project backend --frozen
+python -m app.cli llm-check --list-models` exited **1** before network I/O: the
+configured key file had no usable key and no process credential was injected.
+The cloud draft has a `DEEPSEEK_API_KEY` requirement targeting `AIND_LLM_API_KEY`
+and `api.deepseek.com`, but `has_saved_binding=false`; runtime revision 55 has no
+secret bindings and no applied DeepSeek domain rule. Configuration must be bound
+and published before live checking. Existing `deepseek-chat` configuration is not
+proof of the requested v4.1 flash identity. Current model identity, real A09 and
+large-pool automatic Skill acceptance remain **not executed**. No DB migration,
+service restart or source-data evaluation was performed in this round.

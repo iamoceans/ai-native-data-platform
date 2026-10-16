@@ -200,6 +200,22 @@ than committing credentials. Endpoint, model and credentials are administrator
 configuration that a user question cannot override. Cloud access requires
 `api.deepseek.com`; verify the endpoint-reported model before claiming a version.
 
+For endpoint discovery and exact identity verification (from the repository root):
+
+```bash
+PYTHONPATH=backend uv run --project backend --frozen python -m app.cli llm-check --list-models
+# Replace the example ID with the endpoint's verified ID for the intended model.
+PYTHONPATH=backend uv run --project backend --frozen python -m app.cli llm-check --expect-model VERIFIED_MODEL_ID
+```
+
+Discovery makes only an authenticated `/models` request. The exact check makes
+a structured completion and fails if the response reports a different model ID
+or omits it; a configured alias alone cannot pass. Neither command changes the
+configured model. Cloud secrets and network changes must be bound and published
+before they reach the running instance. As of the 2026-10-17 recheck, the draft's
+`DEEPSEEK_API_KEY` binding was still unsaved and the running instance had no usable
+LLM credential; current v4.1 flash identity/A09 acceptance remains pending.
+
 The second 2026-10-15 review also fixes driver-error skipping, driver percent
 escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock
 order, failed result publication and current result grants. Nonadministrators

@@ -474,6 +474,12 @@ diagnostics inline. On narrow screens the scope panel is a native modal dialog.
 The model adapter accepts a redacted `AIND_LLM_API_KEY` injected by the cloud
 secret proxy, taking precedence over the existing mounted key file. Datasource
 credentials still resolve exclusively through their mounted secret references.
+The management CLI can discover model IDs through authenticated `/models` and
+require an exact endpoint-reported ID on a structured completion. The adapter
+retains `reported_model_id` separately from the configured fallback used by older
+responses; the fallback cannot satisfy identity verification. Diagnostics print
+exception classes without arbitrary transport/server exception text. Cloud draft
+bindings and domain rules do not apply until saved and published.
 
 ### Account preferences and session-list pagination (2026-10-16)
 

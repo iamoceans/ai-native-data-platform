@@ -1,5 +1,13 @@
 # AGENTS.md - AI-Native Data Platform
 
+DeepSeek work resumed on 2026-10-17. `llm-check --list-models` discovers endpoint
+IDs; `llm-check --expect-model ID` requires exact response identity, never a
+configured fallback. Current live check exits before network I/O: the cloud draft
+has no saved DEEPSEEK_API_KEY binding and the current instance lacks the key and
+DeepSeek domain rule. Historical user-deferred notes below are superseded by this
+active configuration blocker. Never claim current v4.1 flash/A09 acceptance until
+real requests succeed and the evaluation runs.
+
 Orientation for agent sessions working in this repository. Read this first, then
 `README.md` (usage) and `docs/architecture.md` (what is actually implemented).
 

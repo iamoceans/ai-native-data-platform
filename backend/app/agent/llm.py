@@ -28,6 +28,9 @@ class StructuredGeneration:
     model_id: str
     finish_reason: str
     model_calls: int = 1
+    # Kept separate from the configured fallback: only endpoint evidence can
+    # establish an exact model identity.
+    reported_model_id: str | None = None
 
 
 def read_api_key(path: Path | str) -> str | None:
@@ -136,6 +139,35 @@ class OpenAICompatibleProvider:
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
 
+    def _credential(self) -> str:
+        api_key = self._api_key or (
+            read_api_key(self._api_key_file) if self._api_key_file is not None else None
+        )
+        if not api_key:
+            raise RuntimeError(
+                "no LLM credential configured; bind AIND_LLM_API_KEY or a mounted key file"
+            )
+        return api_key
+
+    def list_models(self) -> list[str]:
+        """Query the configured endpoint; never infer versions from aliases."""
+        response = httpx.get(
+            f"{self._base_url}/models",
+            headers={"Authorization": f"Bearer {self._credential()}"},
+            timeout=self._timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict)
+            or not isinstance(row.get("id"), str)
+            or not row["id"].strip()
+            for row in rows
+        ):
+            raise ValueError("model list violates the OpenAI-compatible response schema")
+        return sorted({row["id"] for row in rows})
+
     def _request_messages(
         self, *, messages: list[dict[str, str]], schema: type[BaseModel]
     ) -> list[dict[str, str]]:
@@ -167,13 +199,7 @@ class OpenAICompatibleProvider:
         request_messages = self._request_messages(messages=messages, schema=schema)
         estimated = sum(len(message.get("content", "")) for message in request_messages) // 4 + 1
         budget.reserve_model_call(estimated_input=estimated, max_output=max_output_tokens)
-        api_key = self._api_key or (
-            read_api_key(self._api_key_file) if self._api_key_file is not None else None
-        )
-        if not api_key:
-            raise RuntimeError(
-                "no LLM credential configured; bind AIND_LLM_API_KEY or a mounted key file"
-            )
+        api_key = self._credential()
         total_input = total_output = 0
         for attempt in range(2):
             if hasattr(budget, "max_model_calls") and budget.model_calls + attempt + 1 > budget.max_model_calls:
@@ -225,6 +251,9 @@ class OpenAICompatibleProvider:
                 model_id=str(payload.get("model", self._model)),
                 finish_reason=str(payload["choices"][0].get("finish_reason", "unknown")),
                 model_calls=attempt + 1,
+                reported_model_id=payload.get("model")
+                if isinstance(payload.get("model"), str) and payload["model"].strip()
+                else None,
             )
         raise AssertionError("unreachable")
 
