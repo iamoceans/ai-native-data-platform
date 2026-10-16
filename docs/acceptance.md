@@ -2534,3 +2534,32 @@ The first browser launch found port 3018 occupied by the review's temporary Vite
 process. That owned process was stopped, then the suite ran on its own server.
 No DB migration, deployed-service restart, full browser/engine matrix, A09 or
 additional live-model request was performed for these changes.
+
+## Follow-up fixes — exact remaining budgets and retry recovery after reload
+
+Continued review found two remaining boundaries and fixed them:
+
+- Turn usage settlement validates token/call caps before mutation. Child analysis
+  limits now use exact positive remainders after existing reservations; a small
+  remainder is not rounded up to 1000 input tokens / 500 output tokens, and an
+  exhausted call allowance or expired deadline cannot create another allowance.
+  Analysis submission checks the budget before database work. Budget exhaustion
+  during apply rolls back the tentative transition and closes the turn FAILED,
+  rather than leaving it eligible to repeat an already-spent intent call.
+- Unconfirmed turn-retry keys persist in tab-local sessionStorage, namespaced by
+  account/session/original turn. A reload or leaving/reopening Ask in the same
+  tab can restore them. Confirmed success removes just that operation's key.
+  Values are opaque UUIDs; no questions, scope, passwords or API keys are stored.
+  Invalid persisted values are replaced. Disabled storage falls back to memory
+  and cannot provide reload recovery. Retry waits for an identified account.
+
+Observed validation: backend static unit/security/contract suite **650 passed**
+(two existing dependency deprecation warnings), frontend units **17 passed**,
+frontend production build **exit 0**, affected Ask/conversation/operational
+mocked-browser regressions **34 passed** (50.1 s), and `git diff --check` **exit 0**.
+Tests cover exact small remainders, exhausted tokens/calls/time, nonmutating
+overrun refusal, turn settlement before analysis publication, retry reload and
+account isolation, success cleanup, malformed storage and blocked storage.
+The exhausted-turn orchestration case uses a mocked session factory, not a live
+database. No migration, deployed-service restart, full engine/browser matrix,
+A09 or additional real-model call was performed in this follow-up.

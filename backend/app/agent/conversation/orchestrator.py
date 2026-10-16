@@ -371,6 +371,7 @@ def _submit_analysis(
     skill_block: str,
 ) -> None:
     """Create the one analysis this turn owns, with the turn's remaining budget."""
+    analysis_budget = budget.analysis_sub_budget(settings)
     revision = policy_repo.get_revision(session)
     analysis = analyses_repo.create_analysis(
         session,
@@ -379,7 +380,7 @@ def _submit_analysis(
         question=str(_user_content(session, turn).get("text") or ""),
         context=scope.scope_to_analysis_context(merged),
         parent_id=None,
-        budget=budget.analysis_sub_budget(settings),
+        budget=analysis_budget,
         policy_revision=int(revision),
         conversation_turn_id=turn.id,
     )
@@ -783,9 +784,17 @@ def run_turn(session_factory, *, turn_id: uuid.UUID, settings: Settings) -> str:
             message=intent_layer.budget_error(exc),
         )
 
-    with session_factory() as session:
-        status = _apply_turn(session, preparation, resolution, settings=settings, budget=budget)
-        session.commit()
+    try:
+        with session_factory() as session:
+            status = _apply_turn(session, preparation, resolution, settings=settings, budget=budget)
+            session.commit()
+    except BudgetExceeded as exc:
+        # Roll back a tentative ANALYZING transition/queue publication first,
+        # then settle the turn instead of retrying the spent intent call.
+        return _fail_turn(
+            session_factory, turn_id, code=ErrorCode.EXECUTION_ERROR,
+            message=intent_layer.budget_error(exc),
+        )
     return status
 
 

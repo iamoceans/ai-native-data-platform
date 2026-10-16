@@ -3,7 +3,7 @@ import type { ConversationMessage } from "../../src/api/endpoints";
 
 test.use({ locale: "en-US" });
 
-async function platform(page: Page, options: { messages?: number; failed?: boolean; result?: boolean; retryDelay?: number; retryFailures?: number } = {}) {
+async function platform(page: Page, options: { messages?: number; failed?: boolean; result?: boolean; retryDelay?: number; retryFailures?: number; accountId?: string } = {}) {
   const retries: { path: string; key?: string }[] = [];
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -13,7 +13,7 @@ async function platform(page: Page, options: { messages?: number; failed?: boole
     const url = new URL(request.url());
     const path = url.pathname;
     let body: unknown = { items: [] };
-    if (path.endsWith("/auth/me")) body = { username: "reader", roles: [], capabilities: ["analysis.create"] };
+    if (path.endsWith("/auth/me")) body = { id: options.accountId ?? "reader", username: "reader", roles: [], capabilities: ["analysis.create"] };
     const sessions = ["first", "second"].map(id => ({ id, title: id, context_version: 1, active_turn_id: null,
       resolved_context: { metric_key: "revenue", current_start: "2026-09-11" }, skill_config: {}, updated_at: "2026-10-16" }));
     if (path.endsWith("/sessions")) body = { items: sessions };
@@ -106,6 +106,40 @@ test("unresolved retries retain separate keys when switching conversations", asy
   await page.getByTestId("retry-turn").click();
   await expect(page.getByTestId("conversation-error")).toBeVisible();
   await page.getByTestId("session-first").click();
+  await page.getByTestId("retry-turn").click();
+  await expect.poll(() => retries.length).toBe(3);
+  expect(retries[0].key).not.toBe(retries[1].key);
+  expect(retries[0].key).toBe(retries[2].key);
+});
+
+test("unconfirmed retry survives reload and confirmed success clears its stored key", async ({ page }) => {
+  const { retries } = await platform(page, { failed: true, retryFailures: 2 });
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  await page.reload();
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  expect(retries[0].key).toBe(retries[1].key);
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toHaveCount(0);
+  expect(retries[0].key).toBe(retries[2].key);
+  await page.reload();
+  await page.getByTestId("retry-turn").click();
+  await expect.poll(() => retries.length).toBe(4);
+  expect(retries[3].key).not.toBe(retries[0].key);
+});
+
+test("persisted retry keys are private to the signed-in account", async ({ page }) => {
+  const options = { failed: true, retryFailures: 3, accountId: "owner" };
+  const { retries } = await platform(page, options);
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  options.accountId = "other-owner";
+  await page.reload();
+  await page.getByTestId("retry-turn").click();
+  await expect(page.getByTestId("conversation-error")).toBeVisible();
+  options.accountId = "owner";
+  await page.reload();
   await page.getByTestId("retry-turn").click();
   await expect.poll(() => retries.length).toBe(3);
   expect(retries[0].key).not.toBe(retries[1].key);

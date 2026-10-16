@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { analysisPollInterval } from "../api/polling";
+import { forgetTurnRetryKey, pendingTurnRetryKey } from "../api/turnRetries";
 import {
   cancelTurn,
   createAgentSession,
@@ -84,7 +85,6 @@ export function AskPage() {
   const sessionId = routeSessionId ?? null;
   const currentSessionRef = useRef(sessionId);
   currentSessionRef.current = sessionId;
-  const retryKeys = useRef(new Map<string, string>());
 
   const metrics = useQuery({ queryKey: ["metrics"], queryFn: listMetrics });
   const profile = useQuery({ queryKey: ["me"], queryFn: me });
@@ -427,10 +427,10 @@ export function AskPage() {
   };
 
   const retry = useMutation({
-    mutationFn: ({ origin, turnId, key }: { origin: string; turnId: string; key: string }) => retryTurn(origin, turnId, key),
+    mutationFn: ({ origin, turnId, key }: { accountId: string; origin: string; turnId: string; key: string }) => retryTurn(origin, turnId, key),
     retry: false,
-    onSuccess: (_turn, { origin, turnId }) => {
-      retryKeys.current.delete(`${origin}/${turnId}`);
+    onSuccess: (_turn, { accountId, origin, turnId }) => {
+      forgetTurnRetryKey(accountId, origin, turnId);
       queryClient.invalidateQueries({ queryKey: ["session", origin] });
       queryClient.invalidateQueries({ queryKey: ["session-messages", origin] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -516,12 +516,11 @@ export function AskPage() {
             ) : null}
             {messages.error ? <p className="notice error" role="alert"><ErrorMessage error={messages.error} /></p> : null}
             {visibleMessages.map((message) => (
-              <MessageRow key={message.id} message={message} busy={busy} onRetry={(turnId) => {
-                if (!sessionId || busy) return;
-                const operation = `${sessionId}/${turnId}`;
-                const key = retryKeys.current.get(operation) ?? crypto.randomUUID();
-                retryKeys.current.set(operation, key);
-                retry.mutate({ origin: sessionId, turnId, key });
+              <MessageRow key={message.id} message={message} busy={busy || !profile.data?.id} onRetry={(turnId) => {
+                const accountId = profile.data?.id;
+                if (!sessionId || busy || !accountId) return;
+                const key = pendingTurnRetryKey(accountId, sessionId, turnId);
+                retry.mutate({ accountId, origin: sessionId, turnId, key });
               }} />
             ))}
             {turn ? <TurnProgress turn={turn} /> : null}

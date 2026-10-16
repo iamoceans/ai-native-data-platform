@@ -35,6 +35,11 @@ Product and verification items (current status):
       without accumulating temporary reservations; first-question submission
       inherits unedited session skills; unresolved turn retries keep their
       idempotency key per session/original turn until success.
+- [x] Follow-up boundaries: child analyses use exact remaining tokens/calls/time
+      and cannot mint minimum quotas; usage settlement rejects overruns before
+      mutation; exhaustion during apply settles the turn without queueing work.
+      Unconfirmed retry keys survive same-tab reload via account-scoped storage,
+      with in-memory fallback when storage is unavailable.
 - [x] Shared PostgreSQL login/password failure limits, bounded allocation and
       cross-process persistence; same-host dual API deployment acceptance.
 - [x] Per-poll SSE auth-session/user/grant rechecks and revoked event suppression.

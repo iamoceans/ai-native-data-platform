@@ -223,7 +223,11 @@ pending; see the latest acceptance record.
 The subsequent review fixes format-repair budget double reservation, preserves
 account skill defaults on the first Ask question, and reuses unresolved turn-retry
 idempotency keys across failures and session navigation within the Ask page.
-Reloading the page clears those in-memory retry keys.
+Unconfirmed retry keys also survive page reload in the same tab through
+`sessionStorage`, isolated by account/session/original turn. Successful retries
+clear the saved key; disabled browser storage falls back to page-memory recovery.
+Child analyses receive the exact remaining turn allowance, without minimum-token
+top-ups; an exhausted allowance closes the turn before an analysis is queued.
 
 The second 2026-10-15 review also fixes driver-error skipping, driver percent
 escaping, PostgreSQL TLS configuration, MySQL/Doris socket bounds, queue lock

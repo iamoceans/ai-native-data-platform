@@ -92,8 +92,16 @@ class TurnBudget:
         self, *, input_tokens: int, output_tokens: int, note: str | None = None
     ) -> "TurnBudget":
         """Add actual usage and release the reservation; returns self (protocol shape)."""
-        self.input_tokens += max(0, int(input_tokens))
-        self.output_tokens += max(0, int(output_tokens))
+        input_tokens = max(0, int(input_tokens))
+        output_tokens = max(0, int(output_tokens))
+        if self.input_tokens + input_tokens > self.max_input_tokens:
+            raise BudgetExceeded("input_tokens")
+        if self.output_tokens + output_tokens > self.max_output_tokens:
+            raise BudgetExceeded("output_tokens")
+        if self.model_calls + 1 > self.max_model_calls:
+            raise BudgetExceeded("model_calls")
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
         self.model_calls += 1
         self.reserved_input = 0
         self.reserved_output = 0
@@ -110,21 +118,28 @@ class TurnBudget:
     # -- sub-budget ---------------------------------------------------------
     def remaining_seconds(self, *, now: datetime | None = None) -> int:
         remaining = (self.deadline_at - (now or utcnow())).total_seconds()
-        return max(1, int(remaining))
+        return max(0, int(remaining))
 
     def analysis_sub_budget(self, settings: Settings) -> dict[str, Any]:
         """What is left for the analysis: the turn's remainder, never a fresh allowance."""
+        self.ensure_time()
+        input_left = self.max_input_tokens - self.input_tokens - self.reserved_input
+        output_left = self.max_output_tokens - self.output_tokens - self.reserved_output
+        calls_left = self.max_model_calls - self.model_calls
+        seconds_left = min(self.remaining_seconds(), settings.agent_max_wall_seconds)
+        for dimension, remaining in (
+            ("input_tokens", input_left), ("output_tokens", output_left),
+            ("model_calls", calls_left), ("wall_seconds", seconds_left),
+        ):
+            if remaining <= 0:
+                raise BudgetExceeded(dimension)
         return {
-            "max_input_tokens": max(
-                1_000, self.max_input_tokens - self.input_tokens - self.reserved_input
-            ),
-            "max_output_tokens": max(
-                500, self.max_output_tokens - self.output_tokens - self.reserved_output
-            ),
-            "max_tool_calls": max(1, self.max_model_calls - self.model_calls),
+            "max_input_tokens": input_left,
+            "max_output_tokens": output_left,
+            "max_tool_calls": calls_left,
             "max_queries": settings.agent_max_queries,
             "max_sql_repairs": settings.agent_max_sql_repairs,
-            "max_wall_seconds": min(self.remaining_seconds(), settings.agent_max_wall_seconds),
+            "max_wall_seconds": seconds_left,
             "input_tokens": 0,
             "output_tokens": 0,
             "tool_calls": 0,
