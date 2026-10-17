@@ -226,9 +226,13 @@ request-status assertion scoped to the badge) and `docs/todo.md` (main's backlog
 plus the branch's open requests). Verified on the merged tree: static **689
 passed**, frontend unit **17 passed**, typecheck and production build exit 0,
 mocked browser suite **81 passed**, and `frontend/openapi.json` regenerated from
-the merged backend is identical to the merge result. Live deployed journeys, the
-service integration matrix and A09 were **not** run for the merge. See
-`docs/acceptance.md`, the 2026-10-18 merge record.
+the merged backend is identical to the merge result. The stack was then started
+from the merged tree (core plus the MySQL/Doris engines, migrations applied,
+bootstrap complete) and re-verified live: `smoke_core` all checks passed, all
+three datasources HEALTHY through the platform, `llm-check` ok
+(`deepseek-flash`), and the catalog-filter, SQL-workspace, administration and
+analysis journeys **8 passed**. The service integration matrix and A09 were
+**not** run for the merge. See `docs/acceptance.md`, the 2026-10-18 merge record.
 
 ## Invariants - do not break these
 

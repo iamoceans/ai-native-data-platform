@@ -2916,7 +2916,37 @@ npm run test:regression
 # the i18n route table
 ```
 
-Not executed for this merge: the deployed-stack Playwright journeys (the stack
-was not rebuilt), the PostgreSQL/MySQL/Doris service integration matrix and the
-real-model A09. The two branches' own live records remain the evidence for those
-surfaces; nothing here claims they were re-run.
+The live stack was then started from the merged tree: images rebuilt from the
+merged commit, `alembic upgrade head` applied `d2e6a9f18c40 -> e4b8a1c79d20 ->
+f6a12c83d095`, `app.cli bootstrap` reported "bootstrap complete", and the core
+profile was started together with the MySQL/Doris engines (Doris is what the
+`demo.*` datasets live on, and therefore what Ask/analysis resolves to).
+
+```bash
+uv run --project backend --frozen python scripts/smoke_core.py
+# smoke-core: all checks passed (health/live, health/ready, login, me, roles,
+# datasources, queries)
+# each datasource tested through the platform API: source-postgres 8.86 ms,
+# source-mysql 47.52 ms, source-doris 94.19 ms -> all HEALTHY
+# GET /api/v1/datasets/facets (admin session): 3 datasources, 3 schemas,
+# 7 declared domains, 4 undeclared; GET /api/v1/datasets -> 13 rows, SYNCED
+cd frontend
+E2E_BASE_URL=http://127.0.0.1:3000 npx playwright test tests/e2e/catalog.spec.ts tests/e2e/workspace.spec.ts -g "SQL workspace|Administration|Catalog filters"
+# 7 passed (10.9s): the catalog filters, a real query with results and history,
+# datasource health + catalog refresh + grants + the request queue, capability gate
+E2E_BASE_URL=http://127.0.0.1:3000 npx playwright test tests/e2e/workspace.spec.ts -g "Analysis and charts"
+# 1 passed (13.8s): /ask -> real model -> chart -> drilldown child analysis
+docker compose -f compose.yaml run --rm --no-deps backend python -m app.cli llm-check
+# ok: model_id=deepseek-flash latency=1.48s tokens_in=170 tokens_out=14 finish=stop
+```
+
+One transient failure was diagnosed rather than papered over: the analysis
+journey first failed because it resolves to a `demo.*` table owned by the Doris
+datasource, and the core profile alone does not start Doris (`doris-fe`
+unresolvable, `socket.gaierror` in the agent worker). It is a startup-scope
+effect, not a merge defect - starting MySQL/Doris and re-testing the datasource
+connections made the journey pass unchanged.
+
+Not executed for this merge: the PostgreSQL/MySQL/Doris service integration
+matrix and the real-model A09 harness. The live journeys above are the merge's
+own live evidence; the branches' earlier records cover the rest.
