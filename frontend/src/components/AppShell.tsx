@@ -1,5 +1,5 @@
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { applyAccountPreferences, t, useLocale } from "../i18n";
+import { applyAccountPreferences, PLATFORM_NAME, t, useLocale } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
@@ -55,7 +55,7 @@ export function AppShell() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          <span>{t("AI-Native Data Platform")}</span>
+          <span>{PLATFORM_NAME}</span>
         </div>
         <nav className="nav">
           <NavLink

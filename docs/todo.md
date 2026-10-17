@@ -1,10 +1,11 @@
 # TODO and stage acceptance record
 
-Project: AI-Native Data Platform (spec v1.0)
+Project: Oceanus (spec v1.0)
 Scope currently delivered: **M0-M6**, with closed model action selection and
 team/private memory added on 2026-10-16. The current backlog below is authoritative;
 dated milestone sections retain historical execution records and are superseded
-by later evidence. The `/datasets/:id` route is implemented.
+by later evidence. The `/datasets/:id` route is implemented and serves the
+catalog detail panel.
 Rule followed: a stage counts as done only when its gate ran on real services; tests
 that were not executed are marked "not executed" and never counted as passed.
 
@@ -126,6 +127,305 @@ below describe earlier rounds. Enterprise/HA,
 Kyuubi/Flink/MCP, content translation and other explicitly future/out-of-V1 items
 remain roadmap choices, not high-priority implementation claims.
 
+Items requested on 2026-10-16 and still open (detail in the dated sections
+below); the catalog branch merged on 2026-10-18 closed the rest of that round:
+
+- [x] Catalog filters: datasource / namespace / declared business domain, with
+      `GET /datasets/facets` and the optional `domain:` key in
+      `metadata/semantic/*.yaml` (delivered in the catalog branch merged into
+      main on 2026-10-18; record below).
+- [x] Product rename to Oceanus (both locales, docs, tooling, live stack) and
+      the single-line top-bar language selector (same branch; records below).
+- [x] Self-service `/settings` page: display name, read-only identity (username,
+      roles, capabilities), persisted language/timezone, analysis defaults and
+      password change; `/profile` redirects to it. Still open: the
+      effective-access view (see the profile section below).
+- [ ] SQL result table: row numbers and 20 / 50 / 100 page-sized pagination.
+- [ ] Take datasource/permission management out of the primary navigation
+      (admin-only visibility is already in place; the move is not).
+- [ ] Move the query history into the SQL workspace page.
+- [ ] Effective-access view `GET /auth/me/access`: the caller's own grants
+      grouped by datasource and by declared business domain. Related: no test
+      yet pins the query-list owner isolation (see the history section below).
+
+## 2026-10-16 SQL result table: row numbers and page-sized pagination (planned)
+
+Requested 2026-10-16: displayed query results should carry row numbers, and the
+table should paginate with a selectable page size of 20 / 50 / 100 rows.
+
+- [ ] Row numbers: a leading `#` column with the absolute row index (page 2 at
+      50 rows per page starts at 51), not a per-page counter. The cursor is
+      offset-based and every page but the last is full, so the offsets are
+      exact.
+- [ ] Pagination: replace the append-style "load more" button
+      (`frontend/src/pages/SqlWorkspacePage.tsx`, the `sql.loadMore` key) with
+      sequential page navigation - previous / next, "第 X 页 / 共 Y 页", total
+      rows from `ResultPayload.row_count` - and a page-size selector
+      20 / 50 / 100, default 50. Today the first page loads a hardcoded 100
+      (`frontend/src/api/endpoints.ts:121-128`). Changing the page size resets
+      to page 1; switching queries resets everything.
+- [ ] No backend change: `GET /queries/{id}/results` already accepts `limit`
+      1..500 and a signed offset cursor
+      (`backend/app/api/routes/queries.py:38-39,178`). Backward navigation keeps
+      a remembered cursor stack; jumping straight to an arbitrary page number
+      would need an offset -> cursor affordance on the server and is out of
+      scope unless asked.
+- [ ] Keep the truncation warning and the `RESULT_EXPIRED` handling untouched.
+- [ ] i18n: new strings (page-size label, previous/next, page X of Y) need
+      `en` + `zh-CN` entries in `messages.json` (parity is enforced by
+      `frontend/tests/unit/i18n.test.cjs`).
+- [ ] Tests: the deployed journey reads the `.result-table` head text and rows
+      (`frontend/tests/e2e/workspace.spec.ts:45-56`) - check it against the new
+      leading column; add a mocked regression covering number continuation
+      across pages, the page-size reset and the page counter.
+- [ ] Out of scope: numbering the chart-panel table view or the analysis
+      evidence tables (separate components; extend later if wanted).
+
+## 2026-10-16 take datasource/access management out of the primary navigation (planned)
+
+Requested 2026-10-16: datasource management (数据源) should not sit in the top
+navigation row as a peer of the everyday work surfaces, or at minimum should
+only be shown there to administrators.
+
+- [x] The fallback named in the request is already in place: the 数据源 and
+      权限管理 entries render only when the profile carries `admin.manage`
+      (`frontend/src/components/AppShell.tsx:77-98`), and the deployed journey
+      asserts that a signed-in viewer sees neither entry
+      (`frontend/tests/e2e/workspace.spec.ts:268-269`). A non-admin session
+      never receives the links in the first place.
+- [ ] Remaining: stop presenting the two admin surfaces as first-class items
+      beside 智能问数 / SQL 工作台 / 数据目录 / 技能. Default plan - covering
+      both admin entries, because moving only 数据源 would leave 权限管理 alone
+      in the row: move the two links out of the `.nav` row into the topbar user
+      area (`AppShell.tsx:100-124`), same `admin.manage` gating, small ghost
+      links, so the primary navigation carries work surfaces only. When the
+      planned `/profile` page lands (section below), its admin block becomes
+      the natural home and the topbar links can fold into it.
+- [ ] Update the surfaces that pin the placement: the journeys click
+      `nav-admin-datasources` / `nav-admin-permissions`
+      (`frontend/tests/e2e/workspace.spec.ts:159,170,250`) and assert their
+      absence for the viewer (`:268-269`) - keep stable test ids across the
+      move. The i18n route table
+      (`frontend/tests/regression/i18n.spec.ts:110-119`) addresses the pages,
+      not the nav placement, and stays as is.
+- [ ] Check the narrow-screen header after the move: the topbar wraps at
+      1200px and 720px (`frontend/src/styles.css`) and the new links must not
+      reintroduce the 390px overflow closed on 2026-10-15.
+
+## 2026-10-16 move the query history into the SQL workspace page (planned)
+
+Requested 2026-10-16: the query history (查询历史) should live on the same page
+as the search/query workbench (SQL 工作台, `/sql`), so a past query can be
+reopened without leaving the page. Today it is a separate route: page
+`frontend/src/pages/HistoryPage.tsx`, nav entry `AppShell.tsx:61`, route
+`App.tsx:40`.
+
+- [ ] Frontend-only; no new endpoint. `QueryDetail` already carries what a
+      history row needs to restore the workspace - `sql`, `datasource_id`,
+      `status`, `result` summary and timestamps
+      (`backend/app/api/dto.py:650-668`) - and the list endpoint stays
+      owner-scoped (see the section below).
+- [ ] Host the history list inside `/sql` - a panel beside the editor on wide
+      screens, stacked below it on narrow ones - keeping the existing status
+      filter, columns and loading/empty states.
+- [ ] Selecting a history entry loads its `sql` into the editor and its
+      `datasource_id` into the data-source select, then shows the recorded
+      run's detail and results. Today the `/sql?query=<id>` deep link shows the
+      old run but never fills the editor (`SqlWorkspacePage.tsx` initializes
+      `sql`/`datasourceId` empty and no effect restores them), so re-running a
+      historical query means retyping it - this item is what makes the merged
+      page actually convenient.
+- [ ] Old route decision - default: `/history` redirects to `/sql` (bookmarks
+      and the History "Open" links keep working) and the nav entry disappears.
+- [ ] Update the surfaces that reference it: the i18n route table
+      (`frontend/tests/regression/i18n.spec.ts:114`) and its cross-tab test
+      (`:215`), the deployed journey's history step
+      (`frontend/tests/e2e/workspace.spec.ts:29`), and the interface list in
+      `README.zh-CN.md:23` (and its EN counterpart).
+- [ ] Context: the Ask page already works this way (session rail and composer
+      on one page); this item brings the same pattern to the SQL workspace.
+
+## 2026-10-16 the history screen shows only the caller's own queries (already the case)
+
+- [x] Enforced server-side, never by the UI: `GET /api/v1/queries` takes the
+      owner from the session - the route passes `auth.user.id` into
+      `list_queries_for_user`, whose scope filter is `QueryJob.user_id ==
+      user_id` and which accepts no owner parameter
+      (`backend/app/api/routes/queries.py:99-124`,
+      `backend/app/repositories/queries.py:69-94`).
+- [x] Every single-query surface re-checks ownership independently: detail,
+      cancel, results download and the SSE stream all go through
+      `load_own_query`, which answers 404 for someone else's query
+      (`queries.py:46-51`); the stream also re-verifies owner and dataset
+      grants while it is open (`queries.py:294-329`). Invisibility is pinned by
+      `test_cross_user_query_is_invisible`
+      (`backend/tests/integration/test_query_flow.py:211`).
+- [x] Frontend: the History page calls `GET /queries` with only the status
+      filter (`frontend/src/pages/HistoryPage.tsx:23-26`).
+- [ ] Remaining gap: no test pins the *list* endpoint's owner isolation. Its
+      only test callers are a single-user count before/after an explanation
+      (`backend/tests/integration/test_conversation_intent_flow.py:185,202`)
+      and a malformed-limit validation case that never reaches the database
+      (`backend/tests/unit/test_platform_basics.py:182`). Add one integration
+      regression: two users each submit a query, both list, each response
+      contains exactly their own row and total, and a status filter never
+      widens it.
+- [ ] Deliberately separate, admin-only surfaces outside this rule: the audit
+      table on `/admin/permissions` (`GET /admin/audits`) shows query events
+      across users, and the admin datasource/permission pages operate on every
+      user's roles and grants.
+
+## 2026-10-16 user management and the self-service profile page
+
+Requested 2026-10-16. Part A was already delivered before this request; the
+boxes below record the evidence. Part B was delivered on 2026-10-16 for its
+identity half - the `/settings` page (display name, read-only roles and
+capabilities, persisted language/timezone, self-service password change), with
+`/profile` redirecting to it. The effective-access view inside Part B is still
+planned work - nothing there counts as delivered until its box is checked.
+
+### A. An admin can create users (already delivered)
+
+- [x] API: `POST /api/v1/admin/users` (201) creates a user with an Argon2id
+      password and initial roles; it requires the `admin.manage` capability plus
+      the CSRF header, validates role ids, answers `409 CONFLICT` for a
+      duplicate username, creates the per-user capacity rows and audits
+      `user.create` (`backend/app/api/routes/admin.py:94-125`). Role changes go
+      through `PUT /admin/users/{user_id}/roles`, which also cancels running
+      queries the new role set no longer authorizes (`admin.py:128-178`).
+- [x] UI: the create-user form (username, password >= 12 chars, role
+      checkboxes) is the users card of `/admin/permissions`
+      (`frontend/src/pages/AdminPermissionsPage.tsx:507-575`), and the deployed
+      browser journey creates a viewer through it
+      (`frontend/tests/e2e/workspace.spec.ts:249-259`). CLI fallback:
+      `python -m app.cli create-user` (`backend/app/cli.py:94-109`).
+- [ ] Remaining gaps - independent, optional, and none of them is needed for
+      "an admin can create users":
+      - [ ] Discoverability is the likely reason the feature reads as missing:
+            user management is a card inside the Permissions page, with no
+            entry of its own, no search and no pagination. Candidate: a
+            `/admin/users` page, or a search box over the existing table.
+      - [ ] Admin-side password reset (`POST /admin/users/{id}/password`);
+            today only the CLI `set-password` exists (`cli.py:143-151`). A
+            reset must revoke that user's sessions and be audited.
+      - [ ] Deactivate / reactivate a user (`PATCH /admin/users/{id}/active`);
+            `set_user_active` already exists (`app/repositories/users.py:40-42`)
+            but nothing calls it. Deactivation should revoke sessions and cancel
+            running queries, mirroring the role-revocation sweep.
+
+### B. Self-service profile page (identity half delivered 2026-10-16; the access view is planned)
+
+Goal: any signed-in user opens one page and sees which roles they hold and
+exactly which tables they can reach - grouped by database (datasource) and by
+business domain. The page must only ever show *effective* access at read time:
+the union of grants across the user's roles, `expires_at` honored, revoked
+grants gone. No schema change is needed.
+
+- [ ] Backend `GET /api/v1/auth/me/access` - self only (no `user_id` parameter,
+      ever), any authenticated user, no new capability. Next to the
+      `ProfileResponse` fields it returns:
+      - roles with their capability list (`ROLE_CAPABILITIES`,
+        `app/constants.py:234-257`);
+      - the effective dataset list: dataset id, datasource (id, name, kind),
+        qualifier (`schema.object`), business domain, actions
+        (`discover`/`query`), granting role names, `expires_at`. Computed from
+        `dataset_ids_with_action` (`app/repositories/datasets.py:191-203`)
+        joined to `datasets`/`datasources`, active datasets only. This is the
+        first endpoint a non-admin can use for their own grants - today the
+        only grant listing is the admin-only `GET /admin/grants`.
+- [ ] Business domain: resolve the dataset qualifier
+      (`app/metadata/semantic.py:79-81`) through `declared_domains`
+      (`app/metadata/service.py:440-448`), which reads the `domain:` key of
+      `metadata/semantic/*.yaml` (9 declarations today: 广告变现, 用户增长,
+      内购收入, 收入总览, 投放增长, 版本发布, 平台验收). Today no DTO carries
+      `domain` and `dataset_facets` (`service.py:384-437`) has no caller; a
+      dataset without a declaration displays as 未声明业务域
+      (`DOMAIN_UNDECLARED = "none"`, `constants.py:9-11`).
+- [x] Frontend `/profile` route (self-service, no `PermissionGate`): it now
+      redirects to `/settings`, which the topbar entry (`nav-settings`) opens.
+      Delivered content:
+      - [x] 角色: role names, plus the capability list (read-only identity block).
+      - [x] Password self-service (the item that read "no such endpoint exists
+            today"): `POST /api/v1/auth/password` verifies the current password,
+            bounds failures, audits, deletes the cookie and revokes prior
+            sessions.
+      - [~] 账号信息: username is shown; still open are the user id,
+            `created_at`, active and the last successful login (the user's own
+            `auth.login` success row in `audit_logs`).
+- [ ] 数据权限 (the access view): a table grouped by datasource (name + engine
+      kind), each row showing 表 (qualifier), 业务域, 可用操作, 授权角色,
+      有效期 - plus a per-domain summary, because "which business-domain tables"
+      must be answerable at a glance. A deep link to the catalog access-request
+      form covers tables not yet granted.
+- [ ] 我的申请 on the same page: reuse `GET /permission-requests` (own requests
+      only, already exists - `app/api/routes/saved_queries.py:120-160`).
+- [ ] i18n for the access view: every new string needs `en` + `zh-CN` in
+      `messages.json` (the unit test `frontend/tests/unit/i18n.test.cjs` fails
+      on missing keys) and the page joins the route table in
+      `frontend/tests/regression/i18n.spec.ts:110-119`. `/settings` and the
+      `/profile` redirect already ship both locales.
+- [ ] Evidence required when the access view is built: an integration test (union of two roles; an
+      expiring grant excluded after `expires_at`; revocation reflected;
+      non-admin allowed; unauthenticated 401); a mocked browser regression for
+      the access view in both locales; `make api-spec` + `make types`; the executed
+      commands recorded in `docs/acceptance.md`, with README /
+      `docs/architecture.md` updated where they describe the API surface.
+- [ ] Explicitly out of scope until asked: email / display-name fields on users
+      (schema change); viewing another user's access (that is the admin
+      surface); recently-expired grants; theme preferences.
+
+## 2026-10-16 product rename to Oceanus
+
+- [x] The user-visible product name is **Oceanus** in both locales. The browser
+      title and the top-bar brand read the same string in English and Chinese, so
+      the name is a frontend constant (`PLATFORM_NAME` in `src/i18n/index.ts`)
+      rather than a translated catalog entry; the old catalog key was removed.
+- [x] Backend and tooling surfaces renamed: the FastAPI title is `Oceanus API`
+      (`/api/v1/docs` shows it), `app.cli` and `scripts/doctor.py` print
+      `Oceanus ...`, and the pyproject descriptions, repository header comments
+      and READMEs (EN + ZH) use the new name.
+- [x] `frontend/openapi.json` regenerated with the new API title; the only diff
+      against the committed file is the title line.
+- [x] Verified on this host: static **469 passed** (`--basetemp=runtime/pytest-tmp`;
+      without it one test errors on the tmpdir permission quirk), frontend unit
+      **11 passed**, typecheck and production build exit 0, mocked browser suite
+      **43 passed** (on a throwaway port-3028 config while a parallel session
+      owned 3018), and the rebuilt deployed stack serves `<title>Oceanus</title>`,
+      `"title": "Oceanus API"` in the live OpenAPI document and
+      `Oceanus API - Swagger UI` at `/api/v1/docs`; a headless load of the
+      deployed bundle renders brand + title `Oceanus` under both locales. See the
+      2026-10-16 section in `docs/acceptance.md`.
+- [ ] Not executed for this rename: the service integration matrix, A09 and the
+      deployed Playwright journeys (string-only change).
+- [ ] Internal identifiers deliberately unchanged: image/package names
+      (`ainative-backend`, `ainative-frontend`), the `AIND_` env prefix, container
+      and volume names, the `ainative.locale` storage key, and the repository
+      directory name. Renaming them would invalidate documented commands and
+      recreate local volumes for no user-visible gain; revisit only if asked.
+- [ ] GitHub repository name and description still say `ai-native-data-platform`;
+      renaming the published repo is a separate outward-facing decision.
+
+## 2026-10-16 top bar language selector layout
+
+- [x] The selector renders on one line. The component rule only declared
+      `display: inline-flex`, so the shared form default
+      (`label { flex-direction: column }`) still stacked "语言" above the
+      `<select>`; the rule now states `flex-direction: row`. A mocked regression
+      case fails without the fix (`column`), and the deployed stack was rebuilt
+      and re-checked at 1920/1440/1024/390 px in both locales.
+- [x] The localization change had left the Administration live journey asserting
+      pre-localization copy (`HEALTHY`, `注册`, `已批准`, `撤回`, …), so that
+      journey failed; the assertions now match the English UI the suite runs in,
+      and the request-status assertion targets the badge instead of the whole
+      row. Live journeys re-run: **7 passed**.
+- [x] English copy fix found while repairing that journey: the catalog-refresh
+      summary key `注册` translated to `Register` ("Register 12 · updated 3") and
+      now reads `Registered`; the key is used only in that summary line.
+- [ ] Moving the selector off the top bar (into personal settings, the reported
+      alternative) is not done and not needed now. When the planned self-service
+      profile page above is built, that page is its natural home if the top bar
+      ever needs the space.
+
 ## 2026-10-15 medium defects
 
 - [x] Regressions verify the existing NULL eCPM fix and optional driver skipping;
@@ -222,10 +522,17 @@ See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0
 - [ ] Not verified: engine matrix, A09 and the deployed Playwright journeys were
       not run for this frontend-only change; the deployed image was built from
       built from the working copy before this change was committed.
-- [x] Top navigation now wraps at narrow widths (delivered with localization);
-      the 390px browser layout regression passes, including the settings page.
+- [x] The top navigation no longer overflows at 390px: closed by the
+      localization commit `334ace9` (`@media (max-width: 1200px) { .nav
+      { flex-wrap: wrap } }`). Measured with the full 7-link navigation on the
+      pulled tree: `scrollWidth - innerWidth = 0` at both 1440px and 390px
+      (`.nav` right edge 370 of 390). The 390px browser layout regression
+      passes, including the settings page.
 - [x] Superseded on 2026-10-16: datasource IDs use mono-id; result-wrap and
-      col-name have styles; unused assistant class tokens are removed.
+      col-name have styles; unused assistant class tokens are removed. The
+      language selector no longer stacks its caption above the control -
+      `.language-switcher` states `flex-direction: row` and a mocked regression
+      case pins it (see "2026-10-16 top bar language selector layout").
 
 See `docs/acceptance.md`, "2026-10-15 Shared control styles: native file input
 and leaking label default" and "2026-10-15 Chart panel: values, precision and
@@ -1082,6 +1389,40 @@ however complete an earlier phase looks.
       evidence quotations is outside this interface change; they retain source text.
 - [ ] Live-stack database/model journeys: not executed for this frontend change.
       Mocked-browser checks do not count as live backend or real-model acceptance.
+
+## 2026-10-16 — Catalog filters (datasource / namespace / business domain)
+
+- [x] Declared business domain: optional `domain:` in `metadata/semantic/*.yaml`,
+      validated by the existing strict model, merged into `DatasetContext` and
+      published to DataHub as `ainative.domain`; all nine shipped entries declare
+      one (guarded by a unit test).
+- [x] `GET /datasets` filters: `datasource_id` (existing), `schema` (the
+      namespace, so MySQL/Spark tables without a schema are reachable) and
+      `domain`, with the reserved value `none` for tables that declare none; the
+      response reports the filtered `total`.
+- [x] `GET /datasets/facets`: filter options with counts over the caller's whole
+      authorized catalog, ignoring the active filters so a selected option never
+      disappears from its own dropdown.
+- [x] Catalog UI: datasource / 库 / 业务域 selects with counts, a result count
+      line, a clear-filters action, the domain chip on each row and in the detail
+      panel, localized (zh-CN/en) copy.
+- [x] Tests: 8 backend unit tests (`tests/unit/test_catalog_filters.py`), 6 mocked
+      browser cases (`tests/regression/catalog.spec.ts`), 3 live journeys
+      (`tests/e2e/catalog.spec.ts`). Observed: static **487 passed**, mocked suite
+      **52 passed**, live catalog journeys **3 passed**, no console errors and no
+      horizontal overflow at 1440/1024/768/390 px on the deployed stack. Details
+      and commands in `docs/acceptance.md`.
+- [x] Two rendered-page defects fixed: the row glued the datasource name to the
+      object type ("source-mysqltable"), and at 390 px the domain chip collapsed
+      to one character per line with a 35 px row overflow.
+- [ ] Not verified: `ainative.domain` inside a running DataHub instance (the
+      DataHub stack is not up on this host); the service integration matrix, A09
+      and the real-model conversation run were not re-run (no execution,
+      permission, validation or evidence contract changed).
+- [ ] Open follow-ups, deliberately not included: a domain/namespace filter for
+      the Ask scope picker and the SQL workspace; multi-select filters; a
+      governance view listing tables whose semantic entry is missing a domain
+      beyond the existing `未声明业务域` filter value.
 
 ## 2026-10-16 Ask 自然语言可用性（executed）
 

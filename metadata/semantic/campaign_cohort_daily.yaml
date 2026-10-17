@@ -1,4 +1,5 @@
 dataset: demo.campaign_cohort_daily
+domain: 投放增长
 description: 广告获客 cohort 的归因收入与独立成本（按观测日展开）
 grain: [cohort_date, observation_day, campaign_id]
 business_timezone: UTC

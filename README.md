@@ -1,8 +1,8 @@
-# AI-Native Data Platform
+# Oceanus
 
 [简体中文](README.zh-CN.md) · English
 
-A data platform for governed querying and analysis. Analysts want fast answers from
+Oceanus is a data platform for governed querying and analysis. Analysts want fast answers from
 operational databases, but handing people - or models - direct SQL access is unsafe
 and unauditable; this platform sits in between: ask questions in SQL (and in
 natural language) against governed sources, with strict read-only safety,
@@ -61,7 +61,9 @@ TLS browser journey is now verified.
   was called.
 - **Catalog and lineage**: DataHub (off by default) provides search, context and
   lineage; real `extracted` edges and declared demo-pipeline edges are labelled
-  apart.
+  apart. The catalog filters by datasource, namespace and the business domain a
+  table declares in `metadata/semantic/*.yaml`; the filter options carry counts,
+  and tables without a declaration have their own filter value.
 - **Conversations and skills**: Ask is a persistent conversation workspace. A
   session keeps its confirmed scope (metric, windows, dimensions, completeness),
   so a follow-up inherits it; the model may ask for exactly the fields that are

@@ -1,4 +1,5 @@
 ﻿dataset: ainative_source.app_release_config
+domain: 版本发布
 description: 各平台应用版本的发布配置（生效时间与发布说明）
 grain: [platform, app_version]
 business_timezone: UTC

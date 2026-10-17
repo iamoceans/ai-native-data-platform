@@ -181,7 +181,7 @@ def check_secrets() -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="AI-Native Data Platform doctor")
+    parser = argparse.ArgumentParser(description="Oceanus doctor")
     parser.add_argument("--json", action="store_true", help="print machine-readable report only")
     parser.add_argument("--strict", action="store_true", help="exit 1 when a required check fails")
     parser.add_argument("--profile", choices=tuple(RESOURCE_BUDGET), default="core", help="resource budget to check")
@@ -240,7 +240,7 @@ def main() -> int:
     if args.json:
         print(json.dumps({"report": report, "problems": problems}, indent=2))
     else:
-        print("== AI-Native Data Platform doctor ==")
+        print("== Oceanus doctor ==")
         print(f"host        : {report['platform']['system']} {report['platform']['release']} ({report['platform']['machine']})")
         print(f"cpu         : {report['cpu_count']} logical cores")
         print(f"ram         : {report['ram'].get('total_gib')} GiB physical, {report['ram'].get('effective_gib')} GiB process capacity")

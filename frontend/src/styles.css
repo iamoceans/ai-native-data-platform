@@ -1,4 +1,4 @@
-/* AI-Native Data Platform - light, restrained workspace styling.
+/* Oceanus - light, restrained workspace styling.
    Neutral grays, one low-saturation accent, hairline dividers, soft radii. */
 
 :root {
@@ -426,6 +426,8 @@ button.ghost:hover:not(:disabled) {
 .dataset-name {
   font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .dataset-meta {
@@ -433,7 +435,61 @@ button.ghost:hover:not(:disabled) {
   font-size: 12px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+/* Row metadata is a run of short labels: wrap the group, never squeeze an item
+   (a shrinking chip renders one character per line at 390px). */
+.dataset-meta > * {
+  flex: 0 0 auto;
+}
+
+.dataset-meta .chip {
+  white-space: nowrap;
+}
+
+/* Catalog filters: a row of labelled selects; the button sits on the selects'
+   baseline (never labelled itself), which is why the row aligns to flex-end. */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.filter-bar label {
+  min-width: 168px;
+  flex: 0 1 auto;
+}
+
+.filter-bar select {
+  width: 100%;
+}
+
+.filter-bar > button {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  /* The name gets its own line instead of competing with the domain chip, the
+     datasource and the sync badge. */
+  .dataset {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dataset-meta {
+    justify-content: flex-start;
+  }
+
+  .filter-bar label {
+    min-width: 100%;
+  }
+
+  .filter-bar > button {
+    margin-left: 0;
+  }
 }
 
 /* ------------------------------- login ------------------------------- */
@@ -635,8 +691,6 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
 .message-text { margin: 0; line-height: 1.7; }
 .message-body { display: grid; gap: 8px; }
 .claims { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
-.metric-catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.metric-catalog li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .quotes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .quotes li { display: flex; gap: 8px; align-items: baseline; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
@@ -675,7 +729,9 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
   .conversation-rail { position: static; }
 }
 
-.language-switcher { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; white-space: nowrap; }
+/* The global `label` rule stacks its control onto a second line; this one is a
+   single-line toolbar item, so it must state the row direction itself. */
+.language-switcher { display: inline-flex; flex-direction: row; align-items: center; gap: .4rem; font-size: .8rem; white-space: nowrap; }
 .language-switcher select { width: auto; min-width: 6.5rem; padding: .35rem .5rem; }
 .auth-card > .language-switcher { align-self: flex-end; }
 .topbar-right { flex-wrap: wrap; }
@@ -695,3 +751,7 @@ html[lang="zh-CN"] body { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei
 /* Evidence tables keep wide schemas within their own scroll container. */
 .result-wrap { max-width: 100%; overflow-x: auto; }
 .col-name { font-weight: 600; overflow-wrap: anywhere; }
+
+/* Ask: the registry list a help/unsupported reply carries. */
+.metric-catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.metric-catalog li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }

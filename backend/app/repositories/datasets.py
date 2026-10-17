@@ -12,6 +12,11 @@ from sqlalchemy.orm import Session
 from app.ids import utcnow
 from app.models.orm import Dataset, MetadataSnapshot, Permission, PermissionRequest
 
+# The namespace the Catalog filters and displays: the schema, or the catalog for
+# engines without one (MySQL stores an empty schema_name). Mirrors
+# metadata.semantic.dataset_namespace.
+DATASET_NAMESPACE = func.coalesce(func.nullif(Dataset.schema_name, ""), Dataset.catalog_name)
+
 
 def get_dataset(session: Session, dataset_id: uuid.UUID) -> Dataset | None:
     return session.get(Dataset, dataset_id)
@@ -55,10 +60,13 @@ def list_datasets(
     query: str | None,
     limit: int,
     offset: int,
+    namespace: str | None = None,
 ) -> tuple[list[Dataset], int]:
     filters = [Dataset.active.is_(True)]
     if datasource_id is not None:
         filters.append(Dataset.datasource_id == datasource_id)
+    if namespace is not None:
+        filters.append(DATASET_NAMESPACE == namespace)
     if query:
         pattern = f"%{query}%"
         filters.append(

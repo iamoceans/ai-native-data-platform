@@ -27,16 +27,28 @@ from sqlalchemy.orm import Session
 
 from app.auth.rbac import ensure_dataset_action
 from app.config import Settings
-from app.constants import DatasetAction, DatasetSyncStatus, ErrorCode, SCHEMA_VERSION
+from app.constants import (
+    DOMAIN_UNDECLARED,
+    SCHEMA_VERSION,
+    DatasetAction,
+    DatasetSyncStatus,
+    ErrorCode,
+)
 from app.datasource.secrets import SecretResolver
 from app.datasource.service import build_provider
 from app.errors import ApiError
 from app.ids import utcnow
 from app.metadata.datahub import DataHubAdapter, DataHubEntity, DataHubUnavailable
-from app.metadata.semantic import SemanticRegistry, dataset_qualifier, load_semantic_registry
+from app.metadata.semantic import (
+    SemanticRegistry,
+    dataset_namespace,
+    dataset_qualifier,
+    load_semantic_registry,
+)
 from app.models.orm import Dataset, Datasource
 from app.providers.base import ProviderCredentials, TableRef, TableSchema
 from app.repositories import datasets as datasets_repo
+from app.repositories import datasources as datasources_repo
 from app.repositories import policy as policy_repo
 
 logger = logging.getLogger(__name__)
@@ -326,6 +338,8 @@ def search_datasets(
     datasource_id: uuid.UUID | None,
     limit: int,
     offset: int,
+    namespace: str | None = None,
+    domain: str | None = None,
     settings: Settings | None = None,
 ) -> tuple[list[Dataset], int, bool]:
     """Permission-filtered catalog search.
@@ -333,9 +347,19 @@ def search_datasets(
     When DataHub is enabled its search is merged with the platform registry
     (mapped datasets only), capped at the configured candidate budget; the
     reported total counts authorized datasets only.
+
+    `namespace` is the schema, or the catalog for engines that have no schema
+    level. `domain` matches the business domain declared in metadata/semantic;
+    the reserved value DOMAIN_UNDECLARED selects the datasets without a
+    declaration.
     """
     registry_rows, _ = datasets_repo.list_datasets(
-        session, datasource_id=datasource_id, query=query, limit=10_000, offset=0
+        session,
+        datasource_id=datasource_id,
+        namespace=namespace,
+        query=query,
+        limit=10_000,
+        offset=0,
     )
     candidates: dict[uuid.UUID, Dataset] = {row.id: row for row in registry_rows}
 
@@ -343,14 +367,96 @@ def search_datasets(
         for row in _datahub_mapped_datasets(session, settings, query):
             if datasource_id is not None and row.datasource_id != datasource_id:
                 continue
+            if namespace is not None and (
+                dataset_namespace(row.catalog_name, row.schema_name) != namespace
+            ):
+                continue
             candidates.setdefault(row.id, row)
 
     allowed = datasets_repo.dataset_ids_with_action(session, role_ids, DatasetAction.DISCOVER)
     filtered = [row for row in candidates.values() if row.id in allowed and row.active]
+    if domain is not None:
+        if settings is None:
+            raise ApiError(
+                ErrorCode.VALIDATION_ERROR, "domain filtering requires metadata settings"
+            )
+        declared = declared_domains(settings, filtered)
+        if domain == DOMAIN_UNDECLARED:
+            filtered = [row for row in filtered if declared[row.id] is None]
+        else:
+            filtered = [row for row in filtered if declared[row.id] == domain]
     filtered.sort(key=lambda row: (row.object_name, str(row.id)))
     total = len(filtered)
     page = filtered[offset : offset + limit]
     return page, total, total > offset + limit
+
+
+def dataset_facets(
+    session: Session,
+    *,
+    role_ids: list[uuid.UUID],
+    settings: Settings | None = None,
+) -> dict:
+    """Catalog filter options over every dataset the caller may discover.
+
+    Facets ignore the caller's active filters on purpose: a selected option must
+    not disappear from its own dropdown. Counts therefore describe the whole
+    authorized catalog, not the current page.
+    """
+    registry_rows, _ = datasets_repo.list_datasets(
+        session, datasource_id=None, query=None, limit=10_000, offset=0
+    )
+    allowed = datasets_repo.dataset_ids_with_action(session, role_ids, DatasetAction.DISCOVER)
+    visible = [row for row in registry_rows if row.id in allowed and row.active]
+    domains = declared_domains(settings, visible) if settings is not None else {}
+
+    datasource_counts: dict[uuid.UUID, int] = {}
+    schema_counts: dict[str, int] = {}
+    domain_counts: dict[str, int] = {}
+    undeclared = 0
+    for row in visible:
+        datasource_counts[row.datasource_id] = datasource_counts.get(row.datasource_id, 0) + 1
+        name = dataset_namespace(row.catalog_name, row.schema_name)
+        schema_counts[name] = schema_counts.get(name, 0) + 1
+        declared = domains.get(row.id)
+        if declared:
+            domain_counts[declared] = domain_counts.get(declared, 0) + 1
+        else:
+            undeclared += 1
+
+    datasource_rows = datasources_repo.list_by_ids(session, list(datasource_counts))
+    return {
+        "datasources": [
+            {
+                "id": row.id,
+                "name": row.name,
+                "kind": row.kind,
+                "count": datasource_counts[row.id],
+            }
+            for row in datasource_rows
+        ],
+        "schemas": sorted(
+            ({"value": name, "count": count} for name, count in schema_counts.items()),
+            key=lambda item: item["value"],
+        ),
+        "domains": sorted(
+            ({"value": name, "count": count} for name, count in domain_counts.items()),
+            key=lambda item: item["value"],
+        ),
+        "undeclared_domain": undeclared,
+    }
+
+
+def declared_domains(settings: Settings, rows: list[Dataset]) -> dict[uuid.UUID, str | None]:
+    """Business domain per dataset, from metadata/semantic (None = no declaration)."""
+    registry = semantic_registry(settings)
+    domains: dict[uuid.UUID, str | None] = {}
+    for row in rows:
+        qualifier = dataset_qualifier(row.catalog_name, row.schema_name, row.object_name)
+        entry = registry.for_dataset(qualifier)
+        domains[row.id] = entry.domain if entry else None
+    return domains
+
 
 
 def _datahub_mapped_datasets(
@@ -376,7 +482,7 @@ def _datahub_mapped_datasets(
 # --------------------------------------------------------------------------
 # context (registry + semantic yaml + DataHub)
 # --------------------------------------------------------------------------
-def dataset_summary(row: Dataset) -> dict:
+def dataset_summary(row: Dataset, *, domain: str | None = None) -> dict:
     return {
         "id": row.id,
         "datasource_id": row.datasource_id,
@@ -389,6 +495,7 @@ def dataset_summary(row: Dataset) -> dict:
         "schema_hash": row.schema_hash,
         "active": row.active,
         "last_synced_at": row.last_synced_at,
+        "domain": domain,
     }
 
 
@@ -453,7 +560,7 @@ def _build_context(
 ) -> dict:
     qualifier = dataset_qualifier(dataset.catalog_name, dataset.schema_name, dataset.object_name)
     semantic = semantic_registry(settings).for_dataset(qualifier)
-    context = dataset_summary(dataset)
+    context = dataset_summary(dataset, domain=semantic.domain if semantic else None)
     context.update(
         {
             "schema_version": SCHEMA_VERSION,

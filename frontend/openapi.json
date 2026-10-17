@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "AI-Native Data Platform API",
+    "title": "Oceanus API",
     "description": "Governed local data platform: authentication and RBAC, multi-engine query gateway, DataHub-backed catalog and lineage, versioned metrics, and checkpointed evidence-bound analyses.",
     "version": "0.1.0"
   },
@@ -496,6 +496,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DatasetListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/facets": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Get Dataset Facets",
+        "description": "Filter options (datasource, schema, business domain) with counts.",
+        "operationId": "get_dataset_facets_api_v1_datasets_facets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetFacets"
                 }
               }
             }
@@ -4573,6 +4595,17 @@
             ],
             "title": "Last Synced At"
           },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
           "schema_version": {
             "type": "integer",
             "title": "Schema Version",
@@ -4703,6 +4736,39 @@
         ],
         "title": "DatasetContext"
       },
+      "DatasetFacets": {
+        "properties": {
+          "datasources": {
+            "items": {
+              "$ref": "#/components/schemas/DatasourceFacet"
+            },
+            "type": "array",
+            "title": "Datasources"
+          },
+          "schemas": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValue"
+            },
+            "type": "array",
+            "title": "Schemas"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValue"
+            },
+            "type": "array",
+            "title": "Domains"
+          },
+          "undeclared_domain": {
+            "type": "integer",
+            "title": "Undeclared Domain",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DatasetFacets",
+        "description": "Catalog filter options over the whole authorized catalog, not the page."
+      },
       "DatasetListResponse": {
         "properties": {
           "items": {
@@ -4722,6 +4788,11 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
           }
         },
         "type": "object",
@@ -4847,6 +4918,17 @@
               }
             ],
             "title": "Last Synced At"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           }
         },
         "type": "object",
@@ -4920,6 +5002,35 @@
           "secret_ref"
         ],
         "title": "DatasourceCreate"
+      },
+      "DatasourceFacet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "count"
+        ],
+        "title": "DatasourceFacet"
       },
       "DatasourceListResponse": {
         "properties": {
@@ -5230,6 +5341,24 @@
           "message"
         ],
         "title": "ErrorBody"
+      },
+      "FacetValue": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValue"
       },
       "GrantCreate": {
         "properties": {

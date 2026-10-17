@@ -129,7 +129,9 @@ for (const [path, en, zh] of routes) {
     ).toBeVisible();
     await page.getByTestId("language-switcher").selectOption("zh-CN");
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    await expect(page).toHaveTitle("AI 原生数据平台");
+    // The product name is not translated: the same string in both locales.
+    await expect(page).toHaveTitle("Oceanus");
+    await expect(page.locator(".topbar .brand")).toHaveText("Oceanus");
     await expect(
       page.getByRole("heading", { name: zh, exact: true, level: 1 }),
     ).toBeVisible();
@@ -140,6 +142,8 @@ for (const [path, en, zh] of routes) {
       await expect(page.locator(".claim p")).toHaveText("原始证据结论 123.45");
     await page.getByTestId("language-switcher").selectOption("en");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page).toHaveTitle("Oceanus");
+    await expect(page.locator(".topbar .brand")).toHaveText("Oceanus");
     await expect(
       page.getByRole("heading", { name: en, exact: true, level: 1 }),
     ).toBeVisible();
@@ -250,4 +254,26 @@ test("keeps the language control and navigation usable at 390px", async ({ page 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
   await page.screenshot({ path: "/tmp/platform-i18n-mobile.png", fullPage: true });
+});
+
+test("keeps the language label and its select on one line in the top bar", async ({
+  page,
+}) => {
+  await mockPlatform(page);
+  await page.goto("/sql");
+  const switcher = page.locator(".topbar .language-switcher");
+  await expect(switcher).toBeVisible();
+  // The global `label` rule stacks the control under its label; this toolbar
+  // item overrides that direction and must stay a single line.
+  expect(
+    await switcher.evaluate((el) => getComputedStyle(el).flexDirection),
+  ).toBe("row");
+  const label = await switcher.locator("span").boundingBox();
+  const select = await page.getByTestId("language-switcher").boundingBox();
+  expect(
+    Math.abs(label!.y + label!.height / 2 - (select!.y + select!.height / 2)),
+  ).toBeLessThan(3);
+  const box = await switcher.boundingBox();
+  expect(box!.height).toBeLessThan(40);
+  expect(Math.abs(select!.x - label!.x - label!.width)).toBeLessThan(20);
 });

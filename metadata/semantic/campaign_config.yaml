@@ -1,4 +1,5 @@
 dataset: public.campaign_config
+domain: 投放增长
 description: 广告投放配置（渠道、目标与生效区间）
 grain: [campaign_id, valid_from]
 business_timezone: UTC

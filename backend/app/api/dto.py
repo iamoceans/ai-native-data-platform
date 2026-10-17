@@ -244,6 +244,9 @@ class DatasetSummary(BaseModel):
     schema_hash: str | None = None
     active: bool
     last_synced_at: datetime | None = None
+    # Business domain declared in metadata/semantic; null when the dataset has
+    # no semantic entry (the Catalog offers that state as its own filter value).
+    domain: str | None = None
 
 
 class DatasetContext(DatasetSummary):
@@ -267,6 +270,30 @@ class DatasetContext(DatasetSummary):
 class DatasetListResponse(BaseModel):
     items: list[DatasetSummary]
     next_cursor: str | None = None
+    # Rows matching the current filters (not just this page); the Catalog shows
+    # it next to the page so a truncated list is never mistaken for the whole set.
+    total: int = 0
+
+
+class FacetValue(BaseModel):
+    value: str
+    count: int
+
+
+class DatasourceFacet(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: str
+    count: int
+
+
+class DatasetFacets(BaseModel):
+    """Catalog filter options over the whole authorized catalog, not the page."""
+
+    datasources: list[DatasourceFacet] = Field(default_factory=list)
+    schemas: list[FacetValue] = Field(default_factory=list)
+    domains: list[FacetValue] = Field(default_factory=list)
+    undeclared_domain: int = 0
 
 
 class DatasetSchemaResponse(BaseModel):

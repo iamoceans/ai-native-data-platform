@@ -1443,6 +1443,198 @@ result does not establish backend service availability or a model's output
 language. No backend execution, permission, SQL validation or persisted evidence
 contract was changed.
 
+## 2026-10-16 top bar language selector: one line, and the stale journey copy
+
+Reported from the running UI: the top-bar language selector rendered as two rows,
+"语言" above the `<select>`. The cause was not the component's own rule but the
+shared form default in `frontend/src/styles.css`
+(`label { display: flex; flex-direction: column }`): `.language-switcher`
+declared `display: inline-flex`, `align-items` and `gap` but never
+`flex-direction`, so the column direction still applied and the control stacked
+itself. Fix: state `flex-direction: row` in the `.language-switcher` rule, with a
+comment naming the inherited default.
+
+Delivered:
+
+- `frontend/src/styles.css`: the one-line toolbar control. The same rule also
+  covers the unauthenticated gate card, which renders the same component.
+- `frontend/tests/regression/i18n.spec.ts`: a new case asserts the computed
+  direction is `row`, that the label and the select share a vertical centre
+  (within 3 px), that the wrapper is under 40 px tall, and that the two boxes sit
+  adjacent. Run with the fix reverted it fails on the direction
+  (`Received: "column"`), so it covers the reported defect rather than passing
+  vacuously.
+- `frontend/src/i18n/messages.json`: the English label of the catalog-refresh
+  summary key `注册` was `Register`, which read as "Register 12 · updated 3";
+  changed to `Registered`. The key is used only in that summary
+  (`AdminDatasourcesPage.tsx:258`).
+- `frontend/tests/e2e/workspace.spec.ts`: the interface-localization change left
+  the Administration live journey asserting the pre-localization copy, so it
+  failed on the first stale string. The assertions now match the copy the UI
+  renders in the suite's en-US browser locale, the request-status assertion
+  targets the row's status badge (`request-status-*`) instead of the whole row
+  (whose action buttons made a bare `Approved` ambiguous), and the spec header
+  records the locale assumption. Replaced: `HEALTHY` → `Healthy`, `注册` →
+  `Registered`, `已批准` → `Approved request`, row `APPROVED` → badge `Approved`,
+  `已创建真实授权` → `Grant created`, `撤回` → `Revoke`, `已撤回` →
+  `Revoked the grant`, `真实授权` → `Created a grant`.
+
+Observed on this host (2026-10-16):
+
+- `npm run typecheck` and `npm run build` → exit 0 (94 modules; JS 427.65 kB /
+  129.61 kB gzip, CSS 14.95 kB / 3.60 kB gzip).
+- `npm run test:regression` → **43 passed**, i.e. the 42 of the localization
+  record plus the new layout case.
+- Deployed stack: the frontend image was rebuilt with `docker compose build
+  frontend` and the container recreated, so the running UI carries this working
+  tree. A live browser probe at 1920/1440/1024/390 px reported
+  `flexDirection: row`, a 136x34 px control in Chinese and 170x32 px in English,
+  the label and select sharing a vertical centre, and
+  `document.documentElement.scrollWidth === window.innerWidth` at every width;
+  the 1920 px top-bar screenshot was inspected in both locales. These facts are
+  the probe's printed measurements, not a reading of the CSS.
+- Live journeys (`E2E_BASE_URL=http://127.0.0.1:3000 npx playwright test`) →
+  **7 passed**, including the repaired Administration journey.
+
+Not executed, and not implied by the above: the backend static suite, the
+service integration matrix, A09 and the real-model conversation run. Only the
+four frontend files above changed; the backend and workers were merely restarted
+by the compose recreate of the frontend service.
+
+## 2026-10-16 — product rename to Oceanus (executed)
+
+The user-visible product name is now **Oceanus**, in both interface languages
+(requested by the user from a screenshot of the running UI). Frontend: the
+top-bar brand and the document title read one constant,
+`PLATFORM_NAME = "Oceanus"` in `frontend/src/i18n/index.ts`, instead of a
+catalog entry; the `AI-Native Data Platform` key was removed from
+`messages.json`, and the browser title no longer changes with the locale.
+Backend and tooling: the FastAPI title is `Oceanus API`, `app.cli` and
+`scripts/doctor.py` print `Oceanus ...`, and the backend/ingestion
+`pyproject.toml` descriptions, the repository header comments (`Makefile`,
+`infra/versions.env`, `.gitignore`, `frontend/src/styles.css`) and both READMEs
+use the new name. `frontend/openapi.json` was regenerated with
+`uv run --frozen python -m app.openapi_export`; its only diff against the
+committed file is the title line. Internal identifiers are deliberately
+unchanged (image and package names `ainative-*`, the `AIND_` env prefix,
+container and volume names, the `ainative.locale` storage key, the repository
+directory), and the GitHub repository name is untouched.
+
+Observed on this host (2026-10-16), working tree on top of `334ace9` together
+with the uncommitted localization follow-ups held by a parallel session:
+
+- `pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+  --basetemp=runtime/pytest-tmp` -> **469 passed**, 2 warnings. Without
+  `--basetemp` one test errors with a tmpdir `PermissionError` under
+  `%TEMP%\pytest-of-Oceanus`, the documented host quirk; nothing in the rename
+  caused it.
+- `npm run test:unit` -> **11 passed** (translation completeness, literal keys,
+  error-code coverage, interpolation).
+- `npm run typecheck` -> exit 0; `npm run build` -> exit 0 (94 modules,
+  JS 427.65 kB / 129.61 kB gzip, CSS 14.95 kB / 3.60 kB gzip).
+- Mocked browser suite -> **43 passed**. The localization cases now assert
+  `toHaveTitle("Oceanus")` and the top-bar brand text `Oceanus` after switching
+  to each locale. The run used a throwaway config on port 3028 because a
+  parallel session owned the default 3018; the throwaway config was deleted
+  afterwards.
+- Deployed stack: `docker compose build frontend`, `docker compose build
+  backend`, then `docker compose up -d frontend backend query-worker
+  agent-worker`. The frontend serves `<title>Oceanus</title>`; the live API
+  document reports `"title": "Oceanus API"` and `/api/v1/docs` is
+  `<title>Oceanus API - Swagger UI</title>`. A headless Edge load of the
+  deployed bundle with a mocked session printed, for zh-CN and en respectively:
+  `{"locale":"zh-CN","htmlLang":"zh-CN","title":"Oceanus","brand":"Oceanus"}` and
+  `{"locale":"en","htmlLang":"en","title":"Oceanus","brand":"Oceanus"}`.
+
+Not executed for this rename, and not implied by the above: the service
+integration matrix, A09, the real-model conversation run and the deployed
+Playwright journeys (the change is strings only; the live journeys do not assert
+the brand or the title). No execution, permission, validation or evidence
+contract was touched.
+
+## 2026-10-16 Catalog filters: datasource, namespace and business domain
+
+Requested from the running UI: the catalog was one flat list that could only be
+narrowed by typing a table name. It now filters by datasource, by 库/namespace
+and by the business domain a table declares.
+
+Design decisions worth recording:
+
+- The business domain is *declared*, never inferred: an optional `domain:` field
+  in `metadata/semantic/*.yaml` (the versioned contract the platform already
+  owns), validated by `SemanticEntryModel` (`extra="forbid"` still holds), merged
+  into `DatasetContext`, and published to DataHub as `ainative.domain` alongside
+  the existing `ainative.*` properties. All nine shipped entries declare one, and
+  a unit test keeps it that way.
+- `GET /datasets` gains `schema` (the namespace: `schema_name`, or `catalog_name`
+  for engines without one - the same value `dataset_qualifier` already used) and
+  `domain`; the reserved value `none` selects the tables with no declaration. The
+  response gained `total` (rows matching the filters, not the page), so a
+  truncated list can no longer be mistaken for the whole set.
+- `GET /datasets/facets` (declared before `/datasets/{dataset_id}`, otherwise
+  "facets" is parsed as a UUID) returns the filter options with counts over
+  everything the caller may discover. Facets ignore the active filters so a
+  selected option cannot vanish from its own dropdown, and they are
+  permission-filtered, so an ungranted table is never counted.
+- The Catalog now labels rows with the namespace (`schema_name || catalog`):
+  MySQL registers an empty `schema_name`, so those tables used to render as
+  `.app_release_config` and were unreachable from a 库 filter.
+
+Two defects were found by checking the rendered page, not by reading the code:
+
+1. The row's datasource name and object type were adjacent text nodes, which flex
+   merges into one run ("source-mysqltable"); they are separate elements now.
+2. At 390 px the added metadata squeezed the domain chip to one character per
+   line and the row overflowed its own box. Measured with the same probe before
+   and after the CSS fix: chip 30x78 px -> 66x24 px, row
+   `scrollWidth - clientWidth` 35 px -> 0. The page-level overflow check
+   (`documentElement.scrollWidth`) had reported 0 px in both states, which is why
+   the regression test asserts the chip's aspect ratio and the row's own
+   overflow, not the document's.
+
+Observed on this host (2026-10-16), working tree on top of `334ace9` together
+with the uncommitted Oceanus-rename and localization work held by a parallel
+session:
+
+- `pytest backend/tests/unit backend/tests/security backend/tests/contract -q
+  --basetemp=runtime/pytest-tmp` -> **487 passed**, 2 warnings (8 of them new in
+  `backend/tests/unit/test_catalog_filters.py`).
+- `npm run typecheck` -> exit 0; `npm run build` -> exit 0 (94 modules,
+  JS 433.11 kB / 130.87 kB gzip, CSS 15.59 kB / 3.70 kB gzip); `npm run
+  test:unit` -> **11 passed**.
+- Mocked browser suite -> **52 passed** (46 before this change, 6 new in
+  `frontend/tests/regression/catalog.spec.ts`). With the narrow-screen CSS fix
+  reverted, the viewport case fails on both new assertions, so it covers the
+  defect rather than passing vacuously.
+- Live API against the deployed core stack (backend image rebuilt, admin
+  session): `GET /api/v1/datasets/facets` -> 13 datasets, datasources
+  `source-doris 7 / source-mysql 2 / source-postgres 4`, namespaces
+  `ainative_source 2 / demo 7 / public 4`, domains `内购收入 1 / 平台验收 1 /
+  广告变现 1 / 投放增长 2 / 收入总览 1 / 版本发布 1 / 用户增长 2`,
+  `undeclared_domain 4`. `?domain=投放增长` -> total 2 (one Doris row, one
+  PostgreSQL row); `?domain=none` -> total 4; `?schema=ainative_source` ->
+  total 2 (`ainative_source.app_release_config`, `ainative_source.m2_heavy`).
+- Live journeys against the deployed stack
+  (`E2E_BASE_URL=http://127.0.0.1:3000 npx playwright test catalog.spec.ts`) ->
+  **3 passed** (`frontend/tests/e2e/catalog.spec.ts`; the assertions are
+  data-independent: counts are read from the page's own facet options, and every
+  visible row must match the selected filter).
+- Deployed UI, zh-CN, 13 rows, one filter applied and cleared: no console errors,
+  no horizontal overflow at 1440 / 1024 / 768 / 390 px. Screenshots under
+  `runtime/acceptance/`: `catalog-filters-zh.png`, `catalog-filters-source.png`,
+  `catalog-filters-domain.png`, `catalog-390-before.png`, `catalog-390-after.png`.
+  An earlier run on the Vite dev server logged one console 404; it is the dev
+  server's missing `/favicon.ico` (nginx serves 200 for it in the container), not
+  an application error.
+
+Not executed for this change, and not implied by the above: the service
+integration matrix, A09 and the real-model conversation run (no execution,
+permission, validation or evidence contract was touched); and `ainative.domain`
+was not observed inside a running DataHub instance - the DataHub stack is not up
+on this host, so the property is covered by the unit test on
+`as_custom_properties` plus the existing DataHub read-path contract test, not by
+a live round trip.
+
 ## 2026-10-16 Ask 自然语言可用性：三个缺陷与修复（executed）
 
 Requested from the running UI: "智能问数这里目前没有办法使用自然语言查询". Three

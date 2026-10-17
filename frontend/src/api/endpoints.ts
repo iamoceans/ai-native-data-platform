@@ -9,6 +9,7 @@ export type LoginResponse = components["schemas"]["LoginResponse"];
 export type Datasource = components["schemas"]["DatasourceResponse"];
 export type DatasetSummary = components["schemas"]["DatasetSummary"];
 export type DatasetContext = components["schemas"]["DatasetContext"];
+export type DatasetFacets = components["schemas"]["DatasetFacets"];
 export type QueryDetail = components["schemas"]["QueryDetail"];
 export type QueryListResponse = components["schemas"]["QueryListResponse"];
 export type QueryResultResponse = components["schemas"]["QueryResultResponse"];
@@ -79,12 +80,35 @@ export async function listDatasources(): Promise<Datasource[]> {
   return response.items;
 }
 
-export async function listDatasets(query?: string): Promise<DatasetSummary[]> {
+export interface DatasetQuery {
+  q?: string;
+  datasourceId?: string;
+  schema?: string;
+  /** Declared business domain; "none" selects datasets without a declaration. */
+  domain?: string;
+}
+
+export const UNDECLARED_DOMAIN = "none";
+
+export interface DatasetPage {
+  items: DatasetSummary[];
+  /** Rows matching the current filters, not just this page. */
+  total: number;
+  next_cursor: string | null;
+}
+
+export async function listDatasets(query: DatasetQuery = {}): Promise<DatasetPage> {
   const params = new URLSearchParams();
-  if (query) params.set("q", query);
-  const suffix = params.size ? `?${params.toString()}` : "";
-  const response = await apiFetch<{ items: DatasetSummary[] }>(`/api/v1/datasets${suffix}`);
-  return response.items;
+  if (query.q) params.set("q", query.q);
+  if (query.datasourceId) params.set("datasource_id", query.datasourceId);
+  if (query.schema) params.set("schema", query.schema);
+  if (query.domain) params.set("domain", query.domain);
+  params.set("limit", "100");
+  return apiFetch<DatasetPage>(`/api/v1/datasets?${params.toString()}`);
+}
+
+export async function getDatasetFacets(): Promise<DatasetFacets> {
+  return apiFetch<DatasetFacets>("/api/v1/datasets/facets");
 }
 
 export async function getDatasetContext(datasetId: string): Promise<DatasetContext> {

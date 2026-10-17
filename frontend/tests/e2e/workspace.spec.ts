@@ -175,7 +175,9 @@ test.describe("Administration", () => {
     if (await approveButton.isEnabled()) {
       await approveButton.click();
       await expect(page.getByTestId("admin-notice")).toContainText("已批准");
-      await expect(requestRow).toContainText("已批准");
+      // Scoped to the status badge: the row also carries the action buttons,
+      // so a row-level assertion would also match their labels.
+      await expect(requestRow.getByTestId(/^request-status-/)).toContainText("已批准");
       await expect(requestRow).toContainText("已创建真实授权");
     }
 

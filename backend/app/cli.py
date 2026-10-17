@@ -225,7 +225,7 @@ def cmd_llm_check(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="app.cli", description="AI-Native Data Platform CLI")
+    parser = argparse.ArgumentParser(prog="app.cli", description="Oceanus CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     bootstrap = sub.add_parser("bootstrap", help="create roles, capacities and the initial admin")
