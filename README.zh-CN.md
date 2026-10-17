@@ -153,6 +153,10 @@ compose.yaml  core 与 full profile；compose.dev.yaml 负责发布 DB 端口
 
 Apache License 2.0，见 [LICENSE](LICENSE)。第三方组件（PostgreSQL、MySQL、Doris、DataHub，以及 `backend/uv.lock` 与 `frontend/package-lock.json` 中 pin 的依赖）各自保留其许可证。
 
+SQL 结果表支持连续行号及上一页／下一页，页大小可选 20／50／100 条，默认
+50 条，显示当前页、总页数和已存储行数。切换页大小或查询后从第一页开始；
+返回上一页会重新校验权限与有效期。结果被截断时继续显示警告，不应用于精确汇总。
+
 ## 个人设置与会话历史
 
 个人页现已提供“我的数据权限”：按数据源分组列出实际数据库、表、业务域、

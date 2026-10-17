@@ -13,6 +13,7 @@ async function fixture(page: Page, options: { conflict?: boolean; savedCount?: n
       if (!authenticated) { await route.fulfill({ status: 401, json: { error: { code: 'UNAUTHENTICATED', message: 'signed out' } } }); return; }
       body = { id: 'owner', username: 'reader', roles: ['analyst'], capabilities: ['analysis.create'], settings_version: 1, locale: 'en', timezone: 'UTC' };
     }
+    if (path.endsWith('/auth/me/access')) body = { profile: { id: 'owner' }, active: true, created_at: '2026-10-18T00:00:00Z', last_login_at: null, checked_at: '2026-10-18T00:00:00Z', roles: [], items: [], domains: [], datasource_count: 0, total: 0 };
     if (path.endsWith('/sessions')) body = { items: !session.archived_at || url.searchParams.get('include_archived') ? [session] : [] };
     if (path.endsWith('/sessions/first')) {
       if (req.method() === 'PATCH') {

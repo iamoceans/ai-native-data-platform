@@ -41,6 +41,8 @@ test.describe("SQL workspace", () => {
     // The result table appears once the worker publishes the result.
     await expect(page.locator(".result-table tbody tr").first()).toBeVisible({ timeout: 30_000 });
     const headerText = await page.locator(".result-table thead").innerText();
+    expect(headerText).toContain("#");
+    await expect(page.getByTestId("result-row-number").first()).toHaveText("1");
     expect(headerText).toContain("country");
     expect(headerText).toContain("revenue");
 

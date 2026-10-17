@@ -157,8 +157,9 @@ export async function cancelQuery(queryId: string): Promise<QueryDetail> {
 export async function getQueryResults(
   queryId: string,
   cursor?: string | null,
+  limit = 50,
 ): Promise<QueryResultResponse> {
-  const params = new URLSearchParams({ limit: "100" });
+  const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
   return apiFetch<QueryResultResponse>(`/api/v1/queries/${queryId}/results?${params.toString()}`);
 }

@@ -2994,3 +2994,41 @@ All disposable databases were removed; original databases and deployed processes
 were untouched. Local logs are under ignored `runtime/review-account-access/`.
 This feature was not deployed, and the full-engine matrix, A09 and real-model
 acceptance were not rerun. No schema migration or permission-policy change.
+
+
+## 2026-10-18 SQL result row numbers and page-sized navigation
+
+Delivered the SQL result pagination TODO: a leading absolute `#` row index,
+20/50/100 row pages (default 50), previous/next controls and current/total page
+and stored-row counts. Empty results show page 1 of 1 and no next page. The
+cursor stack remembers only server-issued cursors. Returning to a page reads
+again with no retained result-page cache; loading/error states hide prior rows,
+including after expiry or permission revocation. Changing size resets page 1;
+changing the URL-selected query remounts page state and resets size. Distinct
+query/size/cursor request keys keep late responses out of the current table.
+Truncation warnings and RESULT_EXPIRED guidance remain. Chart and analysis
+artifact tables are unaffected; there is no arbitrary page-number jump.
+
+Executed:
+
+| Check | Command / scope | Result |
+|---|---|---|
+| Full mocked browser suite | In frontend: `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression` | **91 passed**, 1.7 min |
+| Frontend units | `npm run test:unit` | **3 Node test files passed** |
+| Typecheck/API type generation/production bundle | `npm run build` | **exit 0** |
+| Whitespace | `git diff --check` | **exit 0** |
+
+Seven new SQL-pagination browser cases cover first/middle/short-last/empty pages,
+continuous numbering, remembered previous cursors being fetched again, all sizes,
+query selection and browser back/forward, truncation, expiry/revocation with retry,
+late old-size responses, and Chinese controls within 390px. The full suite also
+covers saved SQL loading and account/settings routes. Updated the deployed SQL
+journey to assert the leading header and first row 1; that journey was not run.
+
+The initial affected batch was **25 passed / 1 failed**: an existing password-page
+mock did not implement the newly delivered account-access endpoint and returned a
+malformed generic payload. The fixture now supplies the endpoint's empty-access
+response; the final full browser run above has no such failure. Evidence is in
+ignored `runtime/review-sql-pagination/`. No backend code/API schema, migration,
+service deployment or source SQL policy changed; backend/database/real-model A09
+acceptance was not rerun for this frontend feature.

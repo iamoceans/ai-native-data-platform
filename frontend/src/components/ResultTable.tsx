@@ -5,6 +5,7 @@ interface Props {
   columns: ColumnInfo[];
   rows: unknown[][];
   truncated: boolean;
+  rowOffset?: number;
 }
 
 function renderCell(value: unknown): string {
@@ -13,7 +14,7 @@ function renderCell(value: unknown): string {
   return String(value);
 }
 
-export function ResultTable({ columns, rows, truncated }: Props) {
+export function ResultTable({ columns, rows, truncated, rowOffset = 0 }: Props) {
   useLocale();
   if (columns.length === 0) {
     return <p className="muted">{t("No result columns.")}</p>;
@@ -31,6 +32,7 @@ export function ResultTable({ columns, rows, truncated }: Props) {
         <table className="result-table">
           <thead>
             <tr>
+              <th scope="col">#</th>
               {columns.map((column) => (
                 <th key={column.id ?? column.name}>
                   <span className="col-name">{column.name}</span>
@@ -42,6 +44,7 @@ export function ResultTable({ columns, rows, truncated }: Props) {
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
+                <th scope="row" data-testid="result-row-number">{rowOffset + rowIndex + 1}</th>
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} title={renderCell(cell)}>
                     {renderCell(cell)}

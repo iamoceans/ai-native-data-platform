@@ -140,7 +140,8 @@ below); the catalog branch merged on 2026-10-18 closed the rest of that round:
       roles, capabilities), persisted language/timezone, analysis defaults and
       password change; `/profile` redirects to it. Effective data access, business
       domains, database grants and own requests were completed on 2026-10-18.
-- [ ] SQL result table: row numbers and 20 / 50 / 100 page-sized pagination.
+- [x] SQL result table: continuous row numbers and 20 / 50 / 100 row pages
+      (2026-10-18; verification record below).
 - [ ] Take datasource/permission management out of the primary navigation
       (admin-only visibility is already in place; the move is not).
 - [ ] Move the query history into the SQL workspace page.
@@ -148,38 +149,34 @@ below); the catalog branch merged on 2026-10-18 closed the rest of that round:
       datasource/database and declared business domain (2026-10-18; evidence below).
       Query-list owner-isolation acceptance remains a separate history TODO.
 
-## 2026-10-16 SQL result table: row numbers and page-sized pagination (planned)
+## SQL result table: row numbers and page-sized pagination (delivered 2026-10-18)
 
-Requested 2026-10-16: displayed query results should carry row numbers, and the
-table should paginate with a selectable page size of 20 / 50 / 100 rows.
+- [x] Leading `#` column uses the absolute stored-result row index. With a
+      50-row page, page 2 begins at 51; short last pages keep the same sequence.
+- [x] Previous/next navigation replaces append-style Load more. Page sizes are
+      20 / 50 / 100, default 50; the counter shows current page, page count and
+      total stored rows from `ResultPayload.row_count` (zero rows = page 1 of 1).
+- [x] Only issued server cursors are used; previous cursors are remembered.
+      Backward reads revalidate current permission and expiry rather than showing
+      cached rows. Errors hide old rows and offer retry. Controls prevent repeated
+      navigation while loading; page size can still change safely.
+- [x] Page-size changes reset page/cursors; selected query changes reset the whole
+      result component, including page size. The selected query follows the URL,
+      so same-page deep links and browser back/forward also reset correctly.
+      Late responses for old page sizes/queries cannot replace the current data.
+- [x] Truncation warning and explicit RESULT_EXPIRED guidance remain visible in
+      their respective cases. No backend contract or schema changes.
+- [x] English/Chinese strings, semantic pagination navigation and continuous
+      row-header cells. The 390px Chinese case checks page overflow.
+- [x] Seven new mocked browser cases cover first/middle/last/empty pages,
+      all page sizes, prior cursors, URL navigation, late responses, expired and
+      revoked reads, truncation and mobile localization. Updated deployed journey
+      assertions for `#` and first row 1; that deployed journey was not rerun.
+      Full mocked browser suite **91 passed**, frontend unit files **3 passed**,
+      production build **exit 0**. Commands are in `docs/acceptance.md`.
+- [ ] Out of scope: arbitrary page-number jumps, chart-panel table numbering and
+      numbering analysis evidence tables.
 
-- [ ] Row numbers: a leading `#` column with the absolute row index (page 2 at
-      50 rows per page starts at 51), not a per-page counter. The cursor is
-      offset-based and every page but the last is full, so the offsets are
-      exact.
-- [ ] Pagination: replace the append-style "load more" button
-      (`frontend/src/pages/SqlWorkspacePage.tsx`, the `sql.loadMore` key) with
-      sequential page navigation - previous / next, "第 X 页 / 共 Y 页", total
-      rows from `ResultPayload.row_count` - and a page-size selector
-      20 / 50 / 100, default 50. Today the first page loads a hardcoded 100
-      (`frontend/src/api/endpoints.ts:121-128`). Changing the page size resets
-      to page 1; switching queries resets everything.
-- [ ] No backend change: `GET /queries/{id}/results` already accepts `limit`
-      1..500 and a signed offset cursor
-      (`backend/app/api/routes/queries.py:38-39,178`). Backward navigation keeps
-      a remembered cursor stack; jumping straight to an arbitrary page number
-      would need an offset -> cursor affordance on the server and is out of
-      scope unless asked.
-- [ ] Keep the truncation warning and the `RESULT_EXPIRED` handling untouched.
-- [ ] i18n: new strings (page-size label, previous/next, page X of Y) need
-      `en` + `zh-CN` entries in `messages.json` (parity is enforced by
-      `frontend/tests/unit/i18n.test.cjs`).
-- [ ] Tests: the deployed journey reads the `.result-table` head text and rows
-      (`frontend/tests/e2e/workspace.spec.ts:45-56`) - check it against the new
-      leading column; add a mocked regression covering number continuation
-      across pages, the page-size reset and the page counter.
-- [ ] Out of scope: numbering the chart-panel table view or the analysis
-      evidence tables (separate components; extend later if wanted).
 
 ## 2026-10-16 take datasource/access management out of the primary navigation (planned)
 

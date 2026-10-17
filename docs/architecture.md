@@ -614,6 +614,17 @@ archived transcript stays visible with its composer disabled and its unsent draf
 retained. Restoring refetches the session and re-enables its composer; the server
 continues to enforce owner, busy and version checks.
 
+SQL result presentation is isolated in `QueryResults`, keyed by selected query.
+The selected id comes from URL search parameters, including browser navigation.
+It keeps a page-size/index/issued-cursor stack; sizes are 20/50/100 (default 50).
+Each `GET /queries/{id}/results` supplies limit and the server cursor. Previous
+pages refetch with zero stale/retention cache time; loading and failed reads never
+render stale rows. Query/page-size/cursor query keys isolate late responses.
+Changing size resets the cursor stack; changing query remounts all pagination.
+`ResultTable` adds a row-header index based on page index × size. Counts use total
+stored rows; zero rows render page 1 of 1, and truncation warnings stay intact.
+There is no arbitrary page jump, backend change or chart/evidence-table change.
+
 SQL workspace Saved queries is a lazy panel over the existing private CRUD API.
 It names/saves the current SQL and datasource snapshot, pages/deduplicates saved
 rows, loads them into the editor or deletes them. Loading clears previous result

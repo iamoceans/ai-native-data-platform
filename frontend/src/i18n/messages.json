@@ -2390,5 +2390,29 @@
   "申请状态不等同于当前授权，请以上方有效权限为准。": {
     "en": "Request status does not establish current access. Refer to your effective grants above.",
     "zh-CN": "申请状态不等同于当前授权，请以上方有效权限为准。"
+  },
+  "结果分页": {
+    "en": "Result pagination",
+    "zh-CN": "结果分页"
+  },
+  "每页行数": {
+    "en": "Rows per page",
+    "zh-CN": "每页行数"
+  },
+  "上一页": {
+    "en": "Previous page",
+    "zh-CN": "上一页"
+  },
+  "下一页": {
+    "en": "Next page",
+    "zh-CN": "下一页"
+  },
+  "第 {0} 页 / 共 {1} 页 · 共 {2} 行": {
+    "en": "Page {0} of {1} · {2} rows",
+    "zh-CN": "第 {0} 页 / 共 {1} 页 · 共 {2} 行"
+  },
+  "加载结果中…": {
+    "en": "Loading results…",
+    "zh-CN": "加载结果中…"
   }
 }

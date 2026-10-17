@@ -108,6 +108,12 @@ localization; it does not translate or regenerate analysis evidence. Original AP
 diagnostics remain available through the error's **Original error** control.
 See [the observed checks](docs/acceptance.md#2026-10-15--chineseenglish-interface-localization).
 
+SQL result tables use continuous row numbers and previous/next pages. Choose
+20, 50 or 100 rows per page (default 50); the counter reports stored result rows.
+Changing the page size or selected query starts from page 1. Previous pages are
+read again so revoked access and expired results cannot be restored from a cached
+page. Truncated results retain their warning and are not suitable for exact totals.
+
 ## Personal settings and conversation history
 
 Open **Personal settings** in the account link (`/settings`; `/profile` redirects
