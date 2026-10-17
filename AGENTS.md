@@ -215,6 +215,21 @@ and the final affected browser cases **4 passed**. Final serial service matrix:
 **120 passed / 14 skipped / 28 deselected** (Doris/DataHub absent); see acceptance. No new migration is
 needed beyond d2e6a9f18c40. Remaining infrastructure/model limitations still apply.
 
+Merged 2026-10-18: the catalog branch (`wip/oceanus-catalog-20261016` - the
+Oceanus rename plus catalog filters, verified on 2026-10-16 but left uncommitted
+in this checkout) was reconciled with main's 13 commits. The conflicts were the
+catalog page (main's route-driven detail now carries the branch's filters),
+the two same-named catalog regression specs (split into `catalog.spec.ts` for
+the filters and `dataset-detail.spec.ts` for the deep links), the Administration
+journey's language (kept main's zh-CN pin and translated assertions, with the
+request-status assertion scoped to the badge) and `docs/todo.md` (main's backlog
+plus the branch's open requests). Verified on the merged tree: static **689
+passed**, frontend unit **17 passed**, typecheck and production build exit 0,
+mocked browser suite **81 passed**, and `frontend/openapi.json` regenerated from
+the merged backend is identical to the merge result. Live deployed journeys, the
+service integration matrix and A09 were **not** run for the merge. See
+`docs/acceptance.md`, the 2026-10-18 merge record.
+
 ## Invariants - do not break these
 
 1. **The API never executes user SQL against a source database.** It validates,

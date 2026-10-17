@@ -2858,3 +2858,65 @@ passed** (6.19 s, two existing warnings); existing permission-cache browser suit
 **exit 0**. Commands match the preceding record. Evidence is in ignored
 `runtime/review-cleanup/`. PostgreSQL integration, full browser/engine matrix and
 real-model A09 were not rerun for this refactor.
+
+## 2026-10-18 Merge of the catalog branch into main (`d36f0d7`)
+
+Two lines of work had to be reconciled: `main` at `31afd2e` (the 13 commits of
+operational, conversation, memory, settings and Spark work, pushed as the `work`
+branch) and the catalog branch - the Oceanus rename plus catalog filters that
+was verified on 2026-10-16 (records above) but never committed in this checkout.
+The uncommitted state was snapshotted first (`3c2a9df`, on
+`wip/oceanus-catalog-20261016`), `main` fast-forwarded to `31afd2e`, and the
+snapshot merged back. `git merge-tree` listed six conflicted files; the
+resolutions were:
+
+- `frontend/src/pages/CatalogPage.tsx`: main's route-driven detail panel
+  (`/datasets/:id`, error/loading gates, no schema/lineage reads when the
+  context failed) now carries the branch's filter bar and its state, the
+  `GET /datasets/facets` query, `datasetName()`, the row domain chip and
+  datasource metadata, and the filter-aware empty state. The list query keeps
+  the branch's `DatasetPage` envelope (`items`/`total`), which is what the
+  merged backend returns.
+- `frontend/tests/regression/catalog.spec.ts` (add/add): the branch's filter
+  cases stay in `catalog.spec.ts`; main's deep-link/detail cases moved to
+  `dataset-detail.spec.ts`. The filter spec's detail-panel case now clicks the
+  row's link (the row is a durable URL) and its mock serves
+  `/datasets/<id>/schema` and `/lineage`.
+- `frontend/tests/e2e/workspace.spec.ts`: main's fix is kept - the
+  Administration journey pins `locale: "zh-CN"` and asserts the translated
+  labels; the branch's English conversion predates it. The branch's badge-scoped
+  request-status assertion is kept.
+- `frontend/src/components/AppShell.tsx`: import union (main's
+  `applyAccountPreferences`/`useMutation` plus the branch's `PLATFORM_NAME`).
+- `frontend/src/styles.css`: both added blocks kept (main's settings,
+  saved-query and evidence-table rules; the branch's Ask registry list); the
+  branch's `.filter-bar` and its `.language-switcher { flex-direction: row }`
+  rules are in.
+- `docs/todo.md`: main's authoritative backlog, plus the branch's four dated
+  request sections (result row numbers/pagination, admin entries out of the
+  primary nav, query history into the SQL workspace, own-query isolation) and
+  its delivered records (rename, language selector, catalog filters). The
+  profile section now states what shipped (`/settings`) and what is still open
+  (the effective-access view).
+
+Commands and observed output on the merged tree (pass `--basetemp=runtime/pytest-tmp`
+for the tmpdir quirk):
+
+```bash
+uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q --basetemp=runtime/pytest-tmp
+# 689 passed, 2 warnings in 13.69s
+cd backend && uv run --frozen python -m app.openapi_export --output ../frontend/openapi.json
+# wrote ../frontend/openapi.json (208291 bytes); byte-identical to the merged file
+cd ../frontend
+npm run typecheck    # gen:api + tsc -b --noEmit, exit 0, no diagnostics
+npm run test:unit    # 17 passed
+npm run build        # exit 0 (index-CDRjKZv9.js 470.61 kB)
+npm run test:regression
+# 81 passed (1.4m), including both catalog specs, the split deep-link cases and
+# the i18n route table
+```
+
+Not executed for this merge: the deployed-stack Playwright journeys (the stack
+was not rebuilt), the PostgreSQL/MySQL/Doris service integration matrix and the
+real-model A09. The two branches' own live records remain the evidence for those
+surfaces; nothing here claims they were re-run.
