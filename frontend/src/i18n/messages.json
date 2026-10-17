@@ -2258,5 +2258,137 @@
   "自动选择技能": {
     "zh-CN": "自动选择技能",
     "en": "Select skills automatically"
+  },
+  "发现表": {
+    "en": "Discover tables",
+    "zh-CN": "发现表"
+  },
+  "查询数据": {
+    "en": "Query data",
+    "zh-CN": "查询数据"
+  },
+  "我的数据权限": {
+    "en": "My data access",
+    "zh-CN": "我的数据权限"
+  },
+  "刷新权限": {
+    "en": "Refresh access",
+    "zh-CN": "刷新权限"
+  },
+  "权限来自当前角色，过期或撤销后不再显示；查询需要同时具备发现和查询授权，且数据源已启用。": {
+    "en": "Access comes from current roles. Expired or revoked grants are excluded. Queries require both discover and query grants on an enabled datasource.",
+    "zh-CN": "权限来自当前角色，过期或撤销后不再显示；查询需要同时具备发现和查询授权，且数据源已启用。"
+  },
+  "用户 ID": {
+    "en": "User ID",
+    "zh-CN": "用户 ID"
+  },
+  "账户状态": {
+    "en": "Account status",
+    "zh-CN": "账户状态"
+  },
+  "创建时间": {
+    "en": "Created at",
+    "zh-CN": "创建时间"
+  },
+  "最近成功登录（审计保留期内）": {
+    "en": "Latest successful login (within audit retention)",
+    "zh-CN": "最近成功登录（审计保留期内）"
+  },
+  "暂无记录": {
+    "en": "No record",
+    "zh-CN": "暂无记录"
+  },
+  "权限检查时间": {
+    "en": "Access checked at",
+    "zh-CN": "权限检查时间"
+  },
+  "各角色的平台权限": {
+    "en": "Platform capabilities by role",
+    "zh-CN": "各角色的平台权限"
+  },
+  "无平台权限": {
+    "en": "No platform capabilities",
+    "zh-CN": "无平台权限"
+  },
+  "可访问 {0} 个数据源、{1} 张表": {
+    "en": "Access to {0} datasources and {1} tables",
+    "zh-CN": "可访问 {0} 个数据源、{1} 张表"
+  },
+  "授权表数": {
+    "en": "Granted tables",
+    "zh-CN": "授权表数"
+  },
+  "可查询表数": {
+    "en": "Queryable tables",
+    "zh-CN": "可查询表数"
+  },
+  "当前账号暂无有效数据授权。": {
+    "en": "This account has no effective data grants.",
+    "zh-CN": "当前账号暂无有效数据授权。"
+  },
+  "数据源已停用": {
+    "en": "Datasource disabled",
+    "zh-CN": "数据源已停用"
+  },
+  "可用操作": {
+    "en": "Available actions",
+    "zh-CN": "可用操作"
+  },
+  "授权角色与有效期": {
+    "en": "Granting roles and expiry",
+    "zh-CN": "授权角色与有效期"
+  },
+  "可查询": {
+    "en": "Queryable",
+    "zh-CN": "可查询"
+  },
+  "当前不可查询": {
+    "en": "Not currently queryable",
+    "zh-CN": "当前不可查询"
+  },
+  "长期有效": {
+    "en": "No expiry",
+    "zh-CN": "长期有效"
+  },
+  "加载更多权限": {
+    "en": "Load more access",
+    "zh-CN": "加载更多权限"
+  },
+  "浏览目录并申请数据权限": {
+    "en": "Browse the catalog and request access",
+    "zh-CN": "浏览目录并申请数据权限"
+  },
+  "数据集 ID": {
+    "en": "Dataset ID",
+    "zh-CN": "数据集 ID"
+  },
+  "申请原因": {
+    "en": "Request reason",
+    "zh-CN": "申请原因"
+  },
+  "暂无权限申请。": {
+    "en": "No access requests yet.",
+    "zh-CN": "暂无权限申请。"
+  },
+  "加载更多申请": {
+    "en": "Load more requests",
+    "zh-CN": "加载更多申请"
+  },
+  "表": {
+    "en": "Table",
+    "zh-CN": "表"
+  },
+  "刷新": {
+    "en": "Refresh",
+    "zh-CN": "刷新"
+  },
+  "数据库": {
+    "en": "Database",
+    "zh-CN": "数据库"
+  },
+  "申请状态不等同于当前授权，请以上方有效权限为准。": {
+    "en": "Request status does not establish current access. Refer to your effective grants above.",
+    "zh-CN": "申请状态不等同于当前授权，请以上方有效权限为准。"
   }
 }

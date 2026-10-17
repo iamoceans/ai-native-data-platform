@@ -44,6 +44,7 @@ test('saves account analysis defaults and restores them after reload', async ({ 
       if(request.method()==='PATCH') { const patch=request.postDataJSON();writes.push(patch);profile={...profile,...patch,settings_version:2}; }
       body=profile;
     }
+    if(path.endsWith('/auth/me/access')) body={profile,active:true,created_at:'2026-10-18T00:00:00Z',last_login_at:null,checked_at:'2026-10-18T00:00:00Z',roles:[],items:[],domains:[],datasource_count:0,total:0};
     if(path.endsWith('/metrics')) body={items:[{metric_key:'revenue',name:'Revenue',allowed_dimensions:['country','platform']}]};
     await route.fulfill({json:body});
   });

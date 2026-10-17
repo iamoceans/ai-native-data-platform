@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { capabilityNames } from "../api/capabilities";
 import { changePassword, listMetrics, me, updateProfile, type Profile } from "../api/endpoints";
+import { AccountAccessPanel, MyPermissionRequests } from "../components/AccountAccess";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale } from "../i18n";
-
-const capabilityNames: Record<string, string> = {
-  "query.submit": "运行查询", "metadata.read": "浏览数据目录",
-  "saved_queries.manage": "管理已保存查询", "permission.request": "申请数据权限",
-  "analysis.create": "创建分析", "admin.manage": "平台管理",
-};
 
 export function SettingsPage() {
   useLocale();
@@ -45,6 +41,8 @@ function SettingsForm({ profile, reload }: { profile: Profile; reload: () => Pro
           <dt>{t("角色")}</dt><dd>{profile.roles.join(", ")}</dd>
           <dt>{t("权限")}</dt><dd>{profile.capabilities.map(capability => t(capabilityNames[capability] ?? capability)).join(" · ") || "—"}</dd></dl>
       </section>
+      <AccountAccessPanel accountId={profile.id} />
+      <MyPermissionRequests accountId={profile.id} />
       <form className="card stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <h2>{t("显示与偏好")}</h2>
         <label>{t("显示名称")}<input data-testid="settings-display-name" maxLength={80} autoComplete="nickname" value={draft.displayName} disabled={save.isPending} onChange={event => edit({ displayName: event.target.value })} /></label>

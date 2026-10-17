@@ -562,6 +562,35 @@ GET `/sessions` cursors with an infinite query, deduplicates by session ID and
 exposes loading, error/retry and load-more states. Existing backend offset cursor
 semantics and updated-at ordering remain unchanged.
 
+### Self-service effective account access (2026-10-18)
+
+GET `/auth/me/access` uses current authentication only, with no target-user
+selector and no additional capability requirement. The repository joins current user-role memberships,
+permissions, active datasets and datasource identity, filtering expiry against one
+UTC read time. There is no administrator data-access bypass. SQL returns only the
+datasource name/kind/enabled fields, not its connection config or secret reference.
+Each dataset returns catalog/database, namespace, qualified name, semantic business
+domain, unioned actions and per-role/action expiry. Query availability additionally
+requires both data actions, a query-submit capability and an enabled source.
+
+Role details use ROLE_CAPABILITIES; creation/active metadata belongs to the caller.
+Last login is MAX(created_at) over that caller's successful auth.login audits and
+may be null after audit retention. Dataset pages use a signed, account-scoped
+cursor (50 default, 100 maximum). Domain/datasource totals summarize the full own
+set before slicing. The endpoint currently loads that full own grant set to compute
+summaries; it is not a streaming or constant-memory large-grant implementation.
+Responses are no-store and no server-side grant snapshot survives requests.
+
+`/settings` and the `/profile` redirect expose the identity/preferences form,
+account access grouped by datasource/database, domain summary and own permission
+requests. Grant and request pages use separate account-scoped infinite queries;
+request statuses use existing localized badges. The access table distinguishes
+granted actions from actual query availability, preserves every grant's expiry,
+and offers catalog links for discovery/requesting access. Foreground 15-second
+refresh plus manual refresh observes expiry/revocation; failed refreshes hide
+stale grant rows. This is read-time verification, not instantaneous push delivery.
+No migration or new kind of business/database-wide ACL is introduced.
+
 ### Spark cancellation transport isolation (2026-10-16)
 
 A real Spark 3.5.3/Impyla 0.24.0 overlap reproduced a shared-client response swap:

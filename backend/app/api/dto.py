@@ -95,6 +95,52 @@ class ProfileResponse(BaseModel):
     settings_version: int = 1
 
 
+class AccessRole(BaseModel):
+    name: str
+    capabilities: list[str]
+
+
+class AccessGrant(BaseModel):
+    role: str
+    action: Literal["discover", "query"]
+    expires_at: datetime | None
+
+
+class AccountDatasetAccess(BaseModel):
+    dataset_id: uuid.UUID
+    datasource_id: uuid.UUID
+    datasource_name: str
+    datasource_kind: str
+    datasource_enabled: bool
+    catalog: str
+    namespace: str
+    qualifier: str
+    domain: str | None
+    actions: list[str]
+    query_available: bool
+    grants: list[AccessGrant]
+
+
+class AccessDomainSummary(BaseModel):
+    domain: str | None
+    dataset_count: int
+    queryable_count: int
+
+
+class AccountAccessResponse(BaseModel):
+    profile: ProfileResponse
+    active: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    checked_at: datetime
+    roles: list[AccessRole]
+    items: list[AccountDatasetAccess]
+    domains: list[AccessDomainSummary]
+    datasource_count: int
+    total: int
+    next_cursor: str | None = None
+
+
 class ProfileUpdate(StrictModel):
     analysis_defaults: AnalysisDefaults = Field(default_factory=AnalysisDefaults)
     expected_settings_version: int = Field(ge=1)

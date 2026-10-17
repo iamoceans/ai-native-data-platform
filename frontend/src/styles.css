@@ -755,3 +755,10 @@ html[lang="zh-CN"] body { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei
 /* Ask: the registry list a help/unsupported reply carries. */
 .metric-catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .metric-catalog li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+
+/* Account access stays readable while evidence tables scroll within the card. */
+.account-access, .account-access > section { min-width: 0; }
+@media (max-width: 600px) {
+  .account-access .kv { grid-template-columns: minmax(0, 1fr); }
+  .account-access .kv dd { margin-bottom: 8px; }
+}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -13,16 +13,22 @@ from app.api.deps import (
     get_trace_id,
     require_csrf,
 )
-from app.api.dto import LoginRequest, LoginResponse, PasswordChange, ProfileResponse, ProfileUpdate
+from app.api.dto import AccountAccessResponse, LoginRequest, LoginResponse, PasswordChange, ProfileResponse, ProfileUpdate
 from app.auth import sessions as sessions_service
 from app.auth.ratelimit import LoginRateLimiter, DatabaseLoginRateLimiter
 from app.auth.sessions import AuthContext
 from app.auth.passwords import hash_password, verify_password
 from app.config import Settings
-from app.constants import ErrorCode
+from app.constants import ErrorCode, ROLE_CAPABILITIES
 from app.errors import ApiError
 from app.repositories import audit as audit_repo
 from app.repositories import users as users_repo
+
+from app.ids import utcnow
+from app.metadata.service import declared_domains
+from app.metadata.semantic import dataset_namespace, dataset_qualifier
+from app.repositories import profile as profile_repo
+from app.results.cursor import decode_list_cursor, encode_list_cursor
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -58,6 +64,61 @@ def _profile(auth: AuthContext) -> ProfileResponse:
         locale=getattr(auth.user, "locale", None),
         timezone=getattr(auth.user, "timezone", None),
         settings_version=getattr(auth.user, "settings_version", 1),
+    )
+
+
+@router.get("/me/access", response_model=AccountAccessResponse)
+def account_access(
+    response: Response,
+    auth: AuthContext = Depends(current_auth),
+    session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    cursor: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> AccountAccessResponse:
+    """Current account only. Grants remain separate so expiry is never ambiguous."""
+    response.headers["Cache-Control"] = "no-store"
+    route = f"account-access:{auth.user.id}"
+    offset = decode_list_cursor(settings.resolved_cursor_secret(), cursor, route=route) if cursor else 0
+    now = utcnow()
+    rows = profile_repo.effective_grants(
+        session, user_id=auth.user.id, role_ids=auth.role_ids, now=now,
+    )
+    datasets = {row[0].id: row[0] for row in rows}
+    domains = declared_domains(settings, list(datasets.values()))
+    items = {}
+    for dataset, source_name, kind, enabled, role, action, expires in rows:
+        item = items.setdefault(dataset.id, {
+            "dataset_id": dataset.id, "datasource_id": dataset.datasource_id,
+            "datasource_name": source_name, "datasource_kind": kind,
+            "datasource_enabled": enabled,
+            "catalog": dataset.catalog_name,
+            "namespace": dataset_namespace(dataset.catalog_name, dataset.schema_name),
+            "qualifier": dataset_qualifier(dataset.catalog_name, dataset.schema_name, dataset.object_name),
+            "domain": domains.get(dataset.id), "actions": [], "grants": [], "query_available": False,
+        })
+        if action not in item["actions"]:
+            item["actions"].append(action)
+        item["grants"].append({"role": role, "action": action, "expires_at": expires})
+    summary = {}
+    for item in items.values():
+        item["actions"].sort()
+        item["query_available"] = (item["datasource_enabled"] and "query.submit" in auth.capabilities
+                                   and {"discover", "query"}.issubset(item["actions"]))
+        domain = item["domain"]
+        count = summary.setdefault(domain, {"domain": domain, "dataset_count": 0, "queryable_count": 0})
+        count["dataset_count"] += 1
+        count["queryable_count"] += int(item["query_available"])
+    values = list(items.values())
+    next_cursor = (encode_list_cursor(settings.resolved_cursor_secret(), route=route, offset=offset + limit)
+                   if offset + limit < len(values) else None)
+    return AccountAccessResponse(
+        profile=_profile(auth), active=auth.user.active, created_at=auth.user.created_at,
+        last_login_at=profile_repo.last_successful_login(session, user_id=auth.user.id), checked_at=now,
+        roles=[{"name": role.name, "capabilities": sorted(ROLE_CAPABILITIES.get(role.name, ())) }
+               for role in sorted(auth.roles, key=lambda role: role.name)],
+        items=values[offset:offset + limit], domains=sorted(summary.values(), key=lambda item: item["domain"] or ""),
+        datasource_count=len({item["datasource_id"] for item in values}), total=len(values), next_cursor=next_cursor,
     )
 
 

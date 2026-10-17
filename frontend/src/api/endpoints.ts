@@ -787,3 +787,17 @@ export async function updateUserTeam(userId: string, teamId: string | null): Pro
 export async function rerunAnalysis(analysisId: string, key: string): Promise<components["schemas"]["AnalysisSubmitResponse"]> {
   return apiFetch(`/api/v1/analyses/${encodeURIComponent(analysisId)}/rerun`, { method: "POST", headers: { "Idempotency-Key": key } });
 }
+
+
+export type AccountAccess = components["schemas"]["AccountAccessResponse"];
+export function getMyAccess(cursor?: string): Promise<AccountAccess> {
+  const query = new URLSearchParams();
+  if (cursor) query.set("cursor", cursor);
+  return apiFetch(`/api/v1/auth/me/access?${query}`);
+}
+
+export function listMyPermissionRequestPage(cursor?: string): Promise<{ items: PermissionRequest[]; next_cursor?: string | null }> {
+  const query = new URLSearchParams();
+  if (cursor) query.set("cursor", cursor);
+  return apiFetch(`/api/v1/permission-requests?${query}`);
+}

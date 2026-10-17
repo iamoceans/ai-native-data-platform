@@ -114,6 +114,14 @@ Open **Personal settings** in the account link (`/settings`; `/profile` redirect
 there) to edit your display name, interface language and IANA timezone. Preferences
 are stored per account and restored on other devices; concurrent stale saves
 return a conflict and preserve the unsaved form. Roles and capabilities are read-only.
+The page also shows your effective business domains and database/table grants,
+including each granting role/action and its expiry, plus your own access requests.
+Datasets are grouped by datasource and list their actual database; domain totals
+cover all pages. Query availability requires both discover/query grants on an
+active dataset and enabled datasource. Expired/revoked grants disappear on refresh
+(manually or every 15 seconds while visible). No other account's grants or source
+credentials are exposed. Account metadata includes user id, creation time and the
+latest retained successful login. Request approval history is not current access.
 The timezone changes displayed timestamps, not metric periods or query semantics.
 Login/logout clears account caches; other workspace tabs reload on authentication
 changes. Personal settings also offers current-password-verified password rotation; it

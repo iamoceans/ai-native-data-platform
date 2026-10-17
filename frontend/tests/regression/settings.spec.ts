@@ -24,6 +24,7 @@ async function platform(page: Page) {
       }
       body = profiles[account];
     }
+    if (path.endsWith('/auth/me/access')) body = { profile: profiles[account!], active: true, created_at: '2026-10-18T00:00:00Z', last_login_at: null, checked_at: '2026-10-18T00:00:00Z', roles: [], items: [], domains: [], datasource_count: 0, total: 0 };
     if (path.endsWith('/auth/login')) { account = request.postDataJSON().username; body = { profile: profiles[account!], csrf_token: 'test' }; }
     if (path.endsWith('/auth/logout')) { account = null; await route.fulfill({ status: 204 }); return; }
     if (path.endsWith('/sessions')) {
@@ -54,7 +55,13 @@ test('saves profile and restores account preferences across reload and a fresh d
   // A new browser storage context receives the persisted server preference.
   const fresh = await browser.newContext({ locale: 'en-US' });
   const device = await fresh.newPage();
-  await fresh.route('**/api/v1/**', route => route.fulfill({ json: profiles.alice }));
+  await fresh.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path.endsWith('/auth/me') ? profiles.alice : path.endsWith('/auth/me/access')
+      ? { profile: profiles.alice, active: true, created_at: '2026-10-18T00:00:00Z', last_login_at: null, checked_at: '2026-10-18T00:00:00Z', roles: [], items: [], domains: [], datasource_count: 0, total: 0 }
+      : { items: [] };
+    return route.fulfill({ json: body });
+  });
   await device.goto('/settings');
   await expect(device.getByTestId('language-switcher')).toHaveValue('zh-CN');
   await expect(device.getByTestId('settings-timezone')).toHaveValue('Asia/Singapore');

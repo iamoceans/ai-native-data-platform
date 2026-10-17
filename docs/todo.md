@@ -138,15 +138,15 @@ below); the catalog branch merged on 2026-10-18 closed the rest of that round:
       the single-line top-bar language selector (same branch; records below).
 - [x] Self-service `/settings` page: display name, read-only identity (username,
       roles, capabilities), persisted language/timezone, analysis defaults and
-      password change; `/profile` redirects to it. Still open: the
-      effective-access view (see the profile section below).
+      password change; `/profile` redirects to it. Effective data access, business
+      domains, database grants and own requests were completed on 2026-10-18.
 - [ ] SQL result table: row numbers and 20 / 50 / 100 page-sized pagination.
 - [ ] Take datasource/permission management out of the primary navigation
       (admin-only visibility is already in place; the move is not).
 - [ ] Move the query history into the SQL workspace page.
-- [ ] Effective-access view `GET /auth/me/access`: the caller's own grants
-      grouped by datasource and by declared business domain. Related: no test
-      yet pins the query-list owner isolation (see the history section below).
+- [x] Effective-access view `GET /auth/me/access`: own grants grouped by
+      datasource/database and declared business domain (2026-10-18; evidence below).
+      Query-list owner-isolation acceptance remains a separate history TODO.
 
 ## 2026-10-16 SQL result table: row numbers and page-sized pagination (planned)
 
@@ -281,8 +281,8 @@ Requested 2026-10-16. Part A was already delivered before this request; the
 boxes below record the evidence. Part B was delivered on 2026-10-16 for its
 identity half - the `/settings` page (display name, read-only roles and
 capabilities, persisted language/timezone, self-service password change), with
-`/profile` redirecting to it. The effective-access view inside Part B is still
-planned work - nothing there counts as delivered until its box is checked.
+`/profile` redirecting to it. The effective-access view inside Part B was
+completed on 2026-10-18, with the evidence recorded below.
 
 ### A. An admin can create users (already delivered)
 
@@ -313,66 +313,55 @@ planned work - nothing there counts as delivered until its box is checked.
             but nothing calls it. Deactivation should revoke sessions and cancel
             running queries, mirroring the role-revocation sweep.
 
-### B. Self-service profile page (identity half delivered 2026-10-16; the access view is planned)
+### B. Self-service profile page (effective-access view delivered 2026-10-18)
 
-Goal: any signed-in user opens one page and sees which roles they hold and
-exactly which tables they can reach - grouped by database (datasource) and by
-business domain. The page must only ever show *effective* access at read time:
-the union of grants across the user's roles, `expires_at` honored, revoked
-grants gone. No schema change is needed.
+Any signed-in user opens Personal settings (`/settings`; `/profile` redirects)
+and sees their account identity, business domains and database/table grants.
+Business domains describe the granted tables; this adds no separate business-level
+ACL or source/database-wide grant.
 
-- [ ] Backend `GET /api/v1/auth/me/access` - self only (no `user_id` parameter,
-      ever), any authenticated user, no new capability. Next to the
-      `ProfileResponse` fields it returns:
-      - roles with their capability list (`ROLE_CAPABILITIES`,
-        `app/constants.py:234-257`);
-      - the effective dataset list: dataset id, datasource (id, name, kind),
-        qualifier (`schema.object`), business domain, actions
-        (`discover`/`query`), granting role names, `expires_at`. Computed from
-        `dataset_ids_with_action` (`app/repositories/datasets.py:191-203`)
-        joined to `datasets`/`datasources`, active datasets only. This is the
-        first endpoint a non-admin can use for their own grants - today the
-        only grant listing is the admin-only `GET /admin/grants`.
-- [ ] Business domain: resolve the dataset qualifier
-      (`app/metadata/semantic.py:79-81`) through `declared_domains`
-      (`app/metadata/service.py:440-448`), which reads the `domain:` key of
-      `metadata/semantic/*.yaml` (9 declarations today: 广告变现, 用户增长,
-      内购收入, 收入总览, 投放增长, 版本发布, 平台验收). Today no DTO carries
-      `domain` and `dataset_facets` (`service.py:384-437`) has no caller; a
-      dataset without a declaration displays as 未声明业务域
-      (`DOMAIN_UNDECLARED = "none"`, `constants.py:9-11`).
-- [x] Frontend `/profile` route (self-service, no `PermissionGate`): it now
-      redirects to `/settings`, which the topbar entry (`nav-settings`) opens.
-      Delivered content:
-      - [x] 角色: role names, plus the capability list (read-only identity block).
-      - [x] Password self-service (the item that read "no such endpoint exists
-            today"): `POST /api/v1/auth/password` verifies the current password,
-            bounds failures, audits, deletes the cookie and revokes prior
-            sessions.
-      - [~] 账号信息: username is shown; still open are the user id,
-            `created_at`, active and the last successful login (the user's own
-            `auth.login` success row in `audit_logs`).
-- [ ] 数据权限 (the access view): a table grouped by datasource (name + engine
-      kind), each row showing 表 (qualifier), 业务域, 可用操作, 授权角色,
-      有效期 - plus a per-domain summary, because "which business-domain tables"
-      must be answerable at a glance. A deep link to the catalog access-request
-      form covers tables not yet granted.
-- [ ] 我的申请 on the same page: reuse `GET /permission-requests` (own requests
-      only, already exists - `app/api/routes/saved_queries.py:120-160`).
-- [ ] i18n for the access view: every new string needs `en` + `zh-CN` in
-      `messages.json` (the unit test `frontend/tests/unit/i18n.test.cjs` fails
-      on missing keys) and the page joins the route table in
-      `frontend/tests/regression/i18n.spec.ts:110-119`. `/settings` and the
-      `/profile` redirect already ship both locales.
-- [ ] Evidence required when the access view is built: an integration test (union of two roles; an
-      expiring grant excluded after `expires_at`; revocation reflected;
-      non-admin allowed; unauthenticated 401); a mocked browser regression for
-      the access view in both locales; `make api-spec` + `make types`; the executed
-      commands recorded in `docs/acceptance.md`, with README /
-      `docs/architecture.md` updated where they describe the API surface.
-- [ ] Explicitly out of scope until asked: email / display-name fields on users
-      (schema change); viewing another user's access (that is the admin
-      surface); recently-expired grants; theme preferences.
+- [x] `GET /api/v1/auth/me/access`, authenticated self only, with no target-user
+      selector or additional capability. Returns the existing profile, active
+      state, creation time, latest own successful login within audit retention,
+      and per-role platform capabilities. Missing retained login history is null.
+- [x] Effective grant query joins the current user's role memberships,
+      permissions, active datasets and datasource identity in one SQL statement.
+      Excludes expired grants and revoked memberships; administrators have no
+      implicit data grants. Datasource connection configuration and credentials
+      never appear in the response.
+- [x] Each dataset carries source id/name/engine/enabled state, actual catalog
+      (database), namespace, qualifier, declared business domain, unioned actions
+      and each granting role/action's own expiry. `query_available` requires
+      discover + query, an enabled source and the query-submit capability.
+- [x] Business domains reuse `declared_domains` and the semantic registry. Missing
+      declarations stay null and render as 未声明业务域 / No declared domain.
+      Domain counts and datasource totals cover the full effective set, even
+      when only the first dataset page is loaded.
+- [x] Account-scoped signed pagination (default 50, maximum 100). No cached server
+      snapshot: every read recalculates current grants; responses use no-store.
+- [x] The existing self-service page retains role/capability identity, display
+      name, language/timezone, analysis defaults and password change. The access
+      card adds user id/status, creation and successful-login times, role
+      capabilities, domain summary and paginated tables grouped by datasource.
+      Each row includes its database, actions, granting roles and full expiry
+      dates; the catalog link opens the existing access-request flow.
+- [x] My requests reuses the authenticated own-only `GET /permission-requests`,
+      follows its cursor and localizes statuses. Request status is explicitly
+      distinguished from current effective grants.
+- [x] Both languages, loading/error/retry/empty states, manual refresh and
+      15-second foreground rechecks. Failed refreshes hide stale grant rows;
+      account-specific cache keys and existing auth-cache clearing isolate users.
+      This does not promise instantaneous server-push revocation.
+- [x] Verification: backend static **689 passed**; real disposable-PostgreSQL
+      account-access/settings **16 passed**; affected mocked browsers **25 passed**,
+      final access recheck **2 passed**; frontend unit files **3 passed**, build
+      **exit 0**, OpenAPI/types regenerated. Both language cases cover grant and
+      request pagination, refresh failures, revocation/recovery, account switching;
+      Chinese also checks 390px page overflow. See `docs/acceptance.md`.
+- [ ] Deferred: email fields, viewing another user's access (admin surface),
+      recently expired grant history and theme preferences. Display name already
+      ships as part of existing settings and is not deferred.
+
 
 ## 2026-10-16 product rename to Oceanus
 

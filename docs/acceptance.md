@@ -2950,3 +2950,47 @@ connections made the journey pass unchanged.
 Not executed for this merge: the PostgreSQL/MySQL/Doris service integration
 matrix and the real-model A09 harness. The live journeys above are the merge's
 own live evidence; the branches' earlier records cover the rest.
+
+
+## 2026-10-18 self-service business/database access profile
+
+Implemented `GET /api/v1/auth/me/access` and the effective-access half of the
+existing self-service `/settings` page (`/profile` redirects). Current account
+only; each table includes source/database identity, domain, current actions and
+per-role/action expiry. Summary counts include all pages; signed cursors are
+account-scoped. Query availability requires discover/query plus query capability
+and enabled source. No implicit administrator grants, connection config or secrets.
+Account metadata and retained successful login are self-scoped. Own permission
+requests have pagination and localized status badges; approval does not imply
+current access. Foreground 15-second/manual refresh observes revocations; refresh
+failures hide cached grant rows. Both locales include loading/error/empty states.
+
+Executed on this tree:
+
+| Check | Command / scope | Result |
+|---|---|---|
+| Static backend | `UV_CACHE_DIR=/tmp/uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q` | **689 passed**, 2 existing dependency warnings |
+| PostgreSQL | Frozen pytest: `backend/tests/integration/test_account_access.py backend/tests/integration/test_user_preferences.py -q`, separate disposable control/source URLs | **16 passed**, 8.46 s, 2 existing warnings |
+| Affected browsers | In frontend: `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression -- tests/regression/account-access.spec.ts tests/regression/settings.spec.ts tests/regression/i18n.spec.ts tests/regression/operational.spec.ts` | **25 passed**, 25.8 s |
+| Final access browser cases | Same command, only `tests/regression/account-access.spec.ts` | **2 passed**, 3.8 s |
+| Frontend units | `npm run test:unit` | **3 Node test files passed** |
+| Production build | `npm run build` | **exit 0** |
+| API contract | `PYTHONPATH=backend UV_CACHE_DIR=/tmp/uv-cache uv run --project backend --frozen python -m app.openapi_export --output frontend/openapi.json`; build regenerates types | **exit 0** |
+
+The three new PostgreSQL cases cover two-role union, missing discover preventing
+query, expiry, revoked grants/memberships, inactive tables, disabled source,
+non-admin access, own identity, no credential/other-role leaks, page totals,
+tampered/cross-account cursors and unauthenticated 401. Browser cases cover both
+languages, domain/database grouping, grant/request pagination, failed-refresh
+hiding, revoke/recover and account switching; Chinese runs at 390px with no page
+overflow. The existing preferences cases cover CSRF, version conflicts and
+cross-account settings behavior.
+
+Initial checks exposed a test fixture assumption (bootstrap's admin holds all
+three roles, not just admin), a missing table-header translation and an overly
+broad existing browser mock returning profile data for every endpoint. Fixtures
+and translations were corrected; final results above include those corrections.
+All disposable databases were removed; original databases and deployed processes
+were untouched. Local logs are under ignored `runtime/review-account-access/`.
+This feature was not deployed, and the full-engine matrix, A09 and real-model
+acceptance were not rerun. No schema migration or permission-policy change.

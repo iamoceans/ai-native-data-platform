@@ -21,6 +21,7 @@ async function mockPlatform(page: Page) {
         roles: ["admin"],
         capabilities: ["admin.manage", "analysis.create"],
       };
+    if (path.endsWith("/auth/me/access")) body = { profile: { id: "owner" }, active: true, created_at: "2026-10-18T00:00:00Z", last_login_at: null, checked_at: "2026-10-18T00:00:00Z", roles: [], items: [], domains: [], datasource_count: 0, total: 0 };
     if (path.endsWith("/datasources"))
       body = {
         items: [
@@ -111,6 +112,7 @@ const routes = [
   ["/ask", "New conversation", "新对话"],
   ["/sql", "SQL workspace", "SQL 工作台"],
   ["/catalog", "Catalog", "数据目录"],
+  ["/profile", "Personal settings", "个人设置"],
   ["/history", "Query history", "查询历史"],
   ["/skills", "Skills", "技能"],
   ["/admin/datasources", "Datasources", "数据源"],

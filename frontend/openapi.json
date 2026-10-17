@@ -90,6 +90,68 @@
         }
       }
     },
+    "/api/v1/auth/me/access": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Account Access",
+        "description": "Current account only. Grants remain separate so expiry is never ambiguous.",
+        "operationId": "account_access_api_v1_auth_me_access_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountAccessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -3456,6 +3518,262 @@
   },
   "components": {
     "schemas": {
+      "AccessDomainSummary": {
+        "properties": {
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "dataset_count": {
+            "type": "integer",
+            "title": "Dataset Count"
+          },
+          "queryable_count": {
+            "type": "integer",
+            "title": "Queryable Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domain",
+          "dataset_count",
+          "queryable_count"
+        ],
+        "title": "AccessDomainSummary"
+      },
+      "AccessGrant": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "discover",
+              "query"
+            ],
+            "title": "Action"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "action",
+          "expires_at"
+        ],
+        "title": "AccessGrant"
+      },
+      "AccessRole": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "capabilities"
+        ],
+        "title": "AccessRole"
+      },
+      "AccountAccessResponse": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/ProfileResponse"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/AccessRole"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountDatasetAccess"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/AccessDomainSummary"
+            },
+            "type": "array",
+            "title": "Domains"
+          },
+          "datasource_count": {
+            "type": "integer",
+            "title": "Datasource Count"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile",
+          "active",
+          "created_at",
+          "last_login_at",
+          "checked_at",
+          "roles",
+          "items",
+          "domains",
+          "datasource_count",
+          "total"
+        ],
+        "title": "AccountAccessResponse"
+      },
+      "AccountDatasetAccess": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dataset Id"
+          },
+          "datasource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Datasource Id"
+          },
+          "datasource_name": {
+            "type": "string",
+            "title": "Datasource Name"
+          },
+          "datasource_kind": {
+            "type": "string",
+            "title": "Datasource Kind"
+          },
+          "datasource_enabled": {
+            "type": "boolean",
+            "title": "Datasource Enabled"
+          },
+          "catalog": {
+            "type": "string",
+            "title": "Catalog"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "qualifier": {
+            "type": "string",
+            "title": "Qualifier"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "query_available": {
+            "type": "boolean",
+            "title": "Query Available"
+          },
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/AccessGrant"
+            },
+            "type": "array",
+            "title": "Grants"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "datasource_id",
+          "datasource_name",
+          "datasource_kind",
+          "datasource_enabled",
+          "catalog",
+          "namespace",
+          "qualifier",
+          "domain",
+          "actions",
+          "query_available",
+          "grants"
+        ],
+        "title": "AccountDatasetAccess"
+      },
       "AgentMessageListResponse": {
         "properties": {
           "items": {
