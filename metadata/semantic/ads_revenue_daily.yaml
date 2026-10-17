@@ -1,4 +1,5 @@
 ﻿dataset: demo.ads_revenue_daily
+domain: 广告变现
 description: 按日与广告维度汇总的展示、点击与净广告收入
 grain: [dt, country, platform, app_version, ad_network]
 business_timezone: UTC

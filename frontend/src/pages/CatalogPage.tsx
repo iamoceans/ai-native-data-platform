@@ -5,7 +5,9 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
+  UNDECLARED_DOMAIN,
   getDatasetContext,
+  getDatasetFacets,
   getDatasetLineage,
   getDatasetSchema,
   listDatasets,
@@ -13,6 +15,7 @@ import {
   requestDatasetAccess,
 } from "../api/endpoints";
 import { StatusBadge, statusLabel } from "../components/StatusBadge";
+import { datasetName } from "../components/datasetName";
 
 /** Marks the grain entries that address time, which Ask data reads from the period picker. */
 function isTemporal(columnType: string): boolean {
@@ -24,11 +27,28 @@ export function CatalogPage() {
   useLocale();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [datasourceId, setDatasourceId] = useState("");
+  const [schemaFilter, setSchemaFilter] = useState("");
+  const [domain, setDomain] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const datasets = useQuery({
-    queryKey: ["datasets", search],
-    queryFn: () => listDatasets(search || undefined),
+  const filters = {
+    q: search || undefined,
+    datasourceId: datasourceId || undefined,
+    schema: schemaFilter || undefined,
+    domain: domain || undefined,
+  };
+  const hasFilters = Boolean(search || datasourceId || schemaFilter || domain);
+  const facets = useQuery({
+    queryKey: ["dataset-facets"],
+    queryFn: getDatasetFacets,
   });
+  const datasets = useQuery({
+    queryKey: ["datasets", filters],
+    queryFn: () => listDatasets(filters),
+  });
+  const datasourceNames = new Map(
+    (facets.data?.datasources ?? []).map((item) => [item.id, item.name]),
+  );
   const context = useQuery({
     queryKey: ["dataset", selected],
     queryFn: () => getDatasetContext(selected as string),
@@ -79,8 +99,83 @@ export function CatalogPage() {
           onChange={(event) => setSearch(event.target.value)}
           data-testid="catalog-search"
         />
+        <div className="filter-bar" data-testid="catalog-filters">
+          <label>
+            {t("Datasources")}
+            <select
+              data-testid="filter-datasource"
+              value={datasourceId}
+              onChange={(event) => setDatasourceId(event.target.value)}
+            >
+              <option value="">{t("全部数据源")}</option>
+              {(facets.data?.datasources ?? []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} · {item.kind} ({item.count})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("库（schema）")}
+            <select
+              data-testid="filter-schema"
+              value={schemaFilter}
+              onChange={(event) => setSchemaFilter(event.target.value)}
+            >
+              <option value="">{t("全部库")}</option>
+              {(facets.data?.schemas ?? []).map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.value} ({item.count})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("业务域")}
+            <select
+              data-testid="filter-domain"
+              value={domain}
+              onChange={(event) => setDomain(event.target.value)}
+            >
+              <option value="">{t("全部业务域")}</option>
+              {(facets.data?.domains ?? []).map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.value} ({item.count})
+                </option>
+              ))}
+              {facets.data?.undeclared_domain ? (
+                <option value={UNDECLARED_DOMAIN}>
+                  {t("未声明业务域")} ({facets.data.undeclared_domain})
+                </option>
+              ) : null}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="ghost"
+            data-testid="clear-filters"
+            disabled={!hasFilters}
+            onClick={() => {
+              setSearch("");
+              setDatasourceId("");
+              setSchemaFilter("");
+              setDomain("");
+            }}
+          >
+            {t("清空筛选")}
+          </button>
+        </div>
+        <p className="muted small" data-testid="catalog-count">
+          {t("显示 {0} / 共 {1} 个可发现数据集", {
+            0: datasets.data?.items.length ?? 0,
+            1: datasets.data?.total ?? 0,
+          })}
+          {facets.data
+            ? t(" · 业务域来自 metadata/semantic 声明")
+            : t(" · 正在加载筛选条件…")}
+        </p>
         <ul className="dataset-list">
-          {(datasets.data ?? []).map((dataset) => (
+          {(datasets.data?.items ?? []).map((dataset) => (
             <li key={dataset.id}>
               <button
                 className={
@@ -88,22 +183,32 @@ export function CatalogPage() {
                 }
                 onClick={() => setSelected(dataset.id)}
               >
-                <span className="dataset-name">
-                  {dataset.schema_name}.{dataset.object_name}
-                </span>
+                <span className="dataset-name">{datasetName(dataset)}</span>
                 <span className="dataset-meta">
-                  {dataset.object_type} ·{" "}
+                  {dataset.domain ? (
+                    <span className="chip" data-testid="row-domain">
+                      {dataset.domain}
+                    </span>
+                  ) : null}
+                  {datasourceNames.get(dataset.datasource_id) ? (
+                    <span data-testid="row-datasource">
+                      {datasourceNames.get(dataset.datasource_id)} ·
+                    </span>
+                  ) : null}
+                  <span>{dataset.object_type}</span> ·{" "}
                   <StatusBadge status={dataset.sync_status} />
                 </span>
               </button>
             </li>
           ))}
         </ul>
-        {datasets.data && datasets.data.length === 0 ? (
+        {datasets.data && datasets.data.items.length === 0 ? (
           <p className="muted">
-            {t(
-              "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.",
-            )}
+            {hasFilters
+              ? t("当前筛选条件下没有可见的数据集，清空筛选或换一个条件。")
+              : t(
+                  "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.",
+                )}
           </p>
         ) : null}
       </section>
@@ -112,9 +217,7 @@ export function CatalogPage() {
         <section className="card">
           <div className="card-head">
             <h2>
-              {context.data
-                ? `${context.data.schema_name}.${context.data.object_name}`
-                : t("Dataset")}
+              {context.data ? datasetName(context.data) : t("Dataset")}
             </h2>
           </div>
           {context.data?.schema_hash ? (
@@ -131,6 +234,7 @@ export function CatalogPage() {
           ) : null}
           {context.data &&
           (context.data.description ||
+            context.data.domain ||
             (context.data.grain?.length ?? 0) > 0 ||
             (context.data.metric_keys ?? []).length > 0) ? (
             <div className="semantic-block" data-testid="dataset-semantics">
@@ -156,6 +260,11 @@ export function CatalogPage() {
                 {context.data.business_timezone ? (
                   <span className="chip">
                     {t("业务时区")} {context.data.business_timezone}
+                  </span>
+                ) : null}
+                {context.data.domain ? (
+                  <span className="chip" data-testid="context-domain">
+                    {t("业务域")} {context.data.domain}
                   </span>
                 ) : null}
                 {context.data.currency ? (

@@ -56,7 +56,7 @@
     "zh-CN": "同步元数据"
   },
   "注册": {
-    "en": "Register",
+    "en": "Registered",
     "zh-CN": "注册"
   },
   "· 更新": {
@@ -627,6 +627,50 @@
     "en": "Search tables…",
     "zh-CN": "搜索数据表…"
   },
+  "全部数据源": {
+    "en": "All datasources",
+    "zh-CN": "全部数据源"
+  },
+  "库（schema）": {
+    "en": "Database (schema)",
+    "zh-CN": "库（schema）"
+  },
+  "全部库": {
+    "en": "All databases",
+    "zh-CN": "全部库"
+  },
+  "业务域": {
+    "en": "Business domain",
+    "zh-CN": "业务域"
+  },
+  "全部业务域": {
+    "en": "All business domains",
+    "zh-CN": "全部业务域"
+  },
+  "未声明业务域": {
+    "en": "No declared domain",
+    "zh-CN": "未声明业务域"
+  },
+  "清空筛选": {
+    "en": "Clear filters",
+    "zh-CN": "清空筛选"
+  },
+  "显示 {0} / 共 {1} 个可发现数据集": {
+    "en": "Showing {0} of {1} discoverable datasets",
+    "zh-CN": "显示 {0} / 共 {1} 个可发现数据集"
+  },
+  " · 业务域来自 metadata/semantic 声明": {
+    "en": " · Business domains are declared in metadata/semantic",
+    "zh-CN": " · 业务域来自 metadata/semantic 声明"
+  },
+  " · 正在加载筛选条件…": {
+    "en": " · Loading filter options…",
+    "zh-CN": " · 正在加载筛选条件…"
+  },
+  "当前筛选条件下没有可见的数据集，清空筛选或换一个条件。": {
+    "en": "No datasets match the current filters. Clear them or try another value.",
+    "zh-CN": "当前筛选条件下没有可见的数据集，清空筛选或换一个条件。"
+  },
   "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.": {
     "en": "No datasets visible. An administrator must register the data source, refresh its catalog and grant your role the discover permission.",
     "zh-CN": "没有可见的数据集。请管理员注册数据源、刷新目录，并向您的角色授予发现权限。"
@@ -1046,10 +1090,6 @@
   "Go to sign in": {
     "en": "Go to sign in",
     "zh-CN": "前往登录"
-  },
-  "AI-Native Data Platform": {
-    "en": "AI-Native Data Platform",
-    "zh-CN": "AI 原生数据平台"
   },
   "Ask data": {
     "en": "Ask data",

@@ -6,6 +6,10 @@ from enum import StrEnum
 
 SCHEMA_VERSION = 1
 
+# Catalog domain filter: reserved value selecting the datasets that declare no
+# business domain in metadata/semantic (they are otherwise filtered out).
+DOMAIN_UNDECLARED = "none"
+
 
 class SourceKind(StrEnum):
     POSTGRES = "postgres"

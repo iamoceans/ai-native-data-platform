@@ -39,6 +39,20 @@ def list_datasources(session: Session, limit: int, offset: int) -> tuple[list[Da
     return list(rows), int(total)
 
 
+def list_by_ids(session: Session, ids: list[uuid.UUID]) -> list[Datasource]:
+    """Datasources by id, ordered by name; empty input returns an empty list."""
+    if not ids:
+        return []
+    rows = (
+        session.execute(
+            select(Datasource).where(Datasource.id.in_(ids)).order_by(Datasource.name)
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
 def create_datasource(
     session: Session,
     *,

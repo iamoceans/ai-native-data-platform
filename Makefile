@@ -1,4 +1,4 @@
-# AI-Native Data Platform - developer entry points.
+# Oceanus - developer entry points.
 #
 # Windows: run from WSL2 (make is standard there) or use scripts/dev.ps1,
 # which mirrors these targets for PowerShell.

@@ -1,7 +1,7 @@
 [project]
 name = "ainative-backend"
 version = "0.1.0"
-description = "AI-Native Data Platform - API and workers (M0/M1)"
+description = "Oceanus - API and workers (M0/M1)"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "fastapi==0.141.1",

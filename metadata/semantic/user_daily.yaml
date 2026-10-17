@@ -1,4 +1,5 @@
 ﻿dataset: demo.user_daily
+domain: 用户增长
 description: 按日、国家与平台的活跃与新增用户数
 grain: [dt, country, platform]
 business_timezone: UTC

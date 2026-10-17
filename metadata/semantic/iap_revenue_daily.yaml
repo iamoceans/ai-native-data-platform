@@ -1,4 +1,5 @@
 ﻿dataset: demo.iap_revenue_daily
+domain: 内购收入
 description: 按日与应用维度汇总的内购净收入
 grain: [dt, country, platform, app_version]
 business_timezone: UTC

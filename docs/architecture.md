@@ -181,15 +181,25 @@ DataHub is the authoritative catalog for search, context and lineage:
    direct lookup verifies the entity exists and the name matches; the observed
    URNs are written back to `datasets` (failed syncs keep the previous mapping).
 3. Semantic entries from `metadata/semantic/*.yaml` are published as
-   `ainative.*` custom properties; the context service reads them back, so the
-   searchable catalog and the executable contract stay aligned.
-4. `GET /datasets/{id}` builds the context from the live schema snapshot plus
+   `ainative.*` custom properties, including `ainative.domain`, the declared
+   business domain the Catalog filters on; the context service reads them back,
+   so the searchable catalog and the executable contract stay aligned.
+4. `GET /datasets` is the permission-filtered catalog search. Besides `q` and
+   `datasource_id` it accepts `schema` (the namespace: the schema, or the catalog
+   for engines without one, matching `dataset_qualifier`) and `domain` (the
+   declared business domain; the reserved value `none` selects the datasets with
+   no declaration). `total` counts the rows matching the filters, not the page.
+   `GET /datasets/facets` returns the filter options with counts (datasources,
+   namespaces, domains, undeclared) over everything the caller may discover; the
+   facets deliberately ignore the active filters so a selected option never
+   disappears from its own dropdown.
+5. `GET /datasets/{id}` builds the context from the live schema snapshot plus
    DataHub (description, owners, custom properties) and falls back to the
    platform registry when DataHub is unavailable (serving only within-TTL
    snapshots, marked `metadata_stale`). The cache key includes the DataHub URN so
    a completed sync invalidates the pre-sync context. The DataHub UI deep link is
    returned to administrators only.
-5. `GET /datasets/{id}/lineage` walks the DataHub graph (BFS with exact edges),
+6. `GET /datasets/{id}/lineage` walks the DataHub graph (BFS with exact edges),
    filters every node by platform authorization, distinguishes
    `not_ingested` / `no_upstream` / `permission_filtered` / `unavailable`, and
    labels edges with the publisher's declared type (`declared_by_demo_pipeline`)

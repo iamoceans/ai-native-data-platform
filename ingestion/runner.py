@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI-Native Data Platform ingestion runner (spec section 10.1).
+"""Oceanus ingestion runner (spec section 10.1).
 
 Runs inside the pinned DataHub ingestion image
 (``acryldata/datahub-ingestion:v1.7.0.1``). The API writes a *payload* per

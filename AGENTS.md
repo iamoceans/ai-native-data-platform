@@ -1,13 +1,14 @@
-# AGENTS.md - AI-Native Data Platform
+# AGENTS.md - Oceanus
 
 Orientation for agent sessions working in this repository. Read this first, then
 `README.md` (usage) and `docs/architecture.md` (what is actually implemented).
 
 ## What this is
 
-A local, single-machine data platform: people run SQL (later natural language)
-against governed data sources with strict read-only safety, default-deny dataset
-grants, cancellable asynchronous execution, audit evidence and replayable results.
+Oceanus is a local, single-machine data platform: people run SQL (later natural
+language) against governed data sources with strict read-only safety, default-deny
+dataset grants, cancellable asynchronous execution, audit evidence and replayable
+results.
 PostgreSQL, MySQL and Doris are first-class engines behind one Query Gateway;
 DataHub is the authoritative catalog for search, context and lineage.
 
@@ -139,6 +140,24 @@ against the deployed stack (Skills, the Ask 技能 panel, `/admin/permissions`,
 the 576-point chart). The backend static suite, the service matrix, A09 and the
 deployed journeys were **not** rerun for this frontend-only change. See
 `docs/acceptance.md`, the three "2026-10-15" records.
+Re-observed 2026-10-16 after the product rename to **Oceanus** (the name is now
+one constant in `frontend/src/i18n/index.ts` and reads the same in both
+locales; the FastAPI title is `Oceanus API`): static **469 passed** (pass
+`--basetemp=runtime/pytest-tmp`), frontend unit **11 passed**, typecheck and
+production build exit 0, the mocked browser suite **43 passed**, and the rebuilt
+deployed stack was verified live (page title, top-bar brand in zh and en, live
+OpenAPI title). The service matrix, A09 and the deployed journeys were **not**
+rerun - strings only. See `docs/acceptance.md`, the 2026-10-16 rename record.
+Re-observed 2026-10-16 after the **catalog filters** work (datasource / namespace
+/ declared business domain, `GET /datasets/facets`, the optional `domain:` field
+in `metadata/semantic/*.yaml`): static **487 passed**, mocked browser suite
+**52 passed**, the live catalog journeys **3 passed** against the deployed stack,
+and the filtered catalog was checked in the browser (zh-CN, 13 rows, no console
+errors, no horizontal overflow at 1440/1024/768/390 px). The service matrix, A09
+and the real-model conversation run were **not** rerun (no execution, permission,
+validation or evidence contract changed), and `ainative.domain` was not observed
+inside a running DataHub instance. See `docs/acceptance.md`, the 2026-10-16
+catalog filters record.
 
 ## Invariants - do not break these
 

@@ -10,6 +10,9 @@ import { expect, test } from "@playwright/test";
  *   E2E_ADMIN_USER / E2E_ADMIN_PASSWORD (default admin / dev-admin-password-123)
  *   E2E_DATASOURCE_NAME (default source-postgres)
  *   E2E_TABLE (default fixture_metrics)
+ *
+ * The browser runs in Playwright's default en-US locale, so UI assertions match
+ * the English copy (the platform follows the browser language).
  */
 const enabled = Boolean(process.env.E2E_BASE_URL);
 
@@ -156,10 +159,10 @@ test.describe("Administration", () => {
     await page.getByTestId("nav-admin-datasources").click();
     await expect(page.getByTestId("admin-datasources")).toBeVisible();
     await page.getByTestId(`test-${datasourceName}`).click();
-    await expect(page.getByTestId("datasource-test-result")).toContainText("HEALTHY");
+    await expect(page.getByTestId("datasource-test-result")).toContainText("Healthy");
     await page.getByTestId("refresh-secure-views").fill("");
     await page.getByTestId(`refresh-${datasourceName}`).click();
-    await expect(page.getByTestId("catalog-refresh-result")).toContainText("注册");
+    await expect(page.getByTestId("catalog-refresh-result")).toContainText("Registered");
 
     // Permissions: the request filed above is in the queue and can be approved
     // into a real grant (the mock state, which grants nothing, is covered by the
@@ -173,9 +176,11 @@ test.describe("Administration", () => {
     const approveButton = requestRow.getByTestId(/^approve-/);
     if (await approveButton.isEnabled()) {
       await approveButton.click();
-      await expect(page.getByTestId("admin-notice")).toContainText("已批准");
-      await expect(requestRow).toContainText("APPROVED");
-      await expect(requestRow).toContainText("已创建真实授权");
+      await expect(page.getByTestId("admin-notice")).toContainText("Approved request");
+      // The status badge, not the whole row: the row also carries the action
+      // buttons whose labels would make a bare "Approved" assertion ambiguous.
+      await expect(requestRow.getByTestId(/^request-status-/)).toContainText("Approved");
+      await expect(requestRow).toContainText("Grant created");
     }
 
     // A real grant is created and revoked through the form. Assertions are made
@@ -194,8 +199,8 @@ test.describe("Administration", () => {
     for (let guard = 0; guard < 10; guard += 1) {
       const found = await matching().count();
       if (found === 0) break;
-      await matching().first().getByRole("button", { name: "撤回" }).click();
-      await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
+      await matching().first().getByRole("button", { name: "Revoke" }).click();
+      await expect(page.getByTestId("admin-notice")).toContainText("Revoked the grant");
       // Wait for the list to settle before touching the next row: the refetch
       // replaces the rows, and a click aimed at a replaced row never lands.
       await expect(matching()).toHaveCount(found - 1, { timeout: 15_000 });
@@ -205,11 +210,11 @@ test.describe("Administration", () => {
     await page.getByTestId("grant-role").selectOption({ label: "viewer" });
     await page.getByTestId("grant-action").selectOption("query");
     await page.getByTestId("create-grant").click();
-    await expect(page.getByTestId("admin-notice")).toContainText("真实授权");
+    await expect(page.getByTestId("admin-notice")).toContainText("Created a grant");
     await expect(matching()).toHaveCount(1, { timeout: 15_000 });
 
-    await matching().first().getByRole("button", { name: "撤回" }).click();
-    await expect(page.getByTestId("admin-notice")).toContainText("已撤回");
+    await matching().first().getByRole("button", { name: "Revoke" }).click();
+    await expect(page.getByTestId("admin-notice")).toContainText("Revoked the grant");
     await expect(matching()).toHaveCount(0, { timeout: 15_000 });
   });
 });

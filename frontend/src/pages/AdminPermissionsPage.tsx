@@ -1,4 +1,5 @@
 import { ErrorMessage } from "../components/ErrorMessage";
+import { datasetName } from "../components/datasetName";
 import { statusLabel } from "../components/StatusBadge";
 import { t, useLocale, message, translateMessage, type Message } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -73,16 +74,14 @@ export function AdminPermissionsPage() {
       ),
   });
   const datasets = useQuery({
-    queryKey: ["datasets", ""],
+    queryKey: ["datasets", {}],
     queryFn: () => listDatasets(),
   });
   const audits = useQuery({ queryKey: ["admin-audits"], queryFn: listAudits });
 
   const datasetLabel = (datasetId: string) => {
-    const dataset = (datasets.data ?? []).find((item) => item.id === datasetId);
-    return dataset
-      ? `${dataset.schema_name}.${dataset.object_name}`
-      : datasetId.slice(0, 8);
+    const dataset = (datasets.data?.items ?? []).find((item) => item.id === datasetId);
+    return dataset ? datasetName(dataset) : datasetId.slice(0, 8);
   };
   const roleLabel = (roleId: string) =>
     (roles.data ?? []).find((role) => role.id === roleId)?.name ??
@@ -437,9 +436,9 @@ export function AdminPermissionsPage() {
                 }
               >
                 <option value="">{t("选择数据集…")}</option>
-                {(datasets.data ?? []).map((dataset) => (
+                {(datasets.data?.items ?? []).map((dataset) => (
                   <option key={dataset.id} value={dataset.id}>
-                    {dataset.schema_name}.{dataset.object_name}
+                    {datasetName(dataset)}
                   </option>
                 ))}
               </select>

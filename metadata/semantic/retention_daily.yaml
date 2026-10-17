@@ -1,4 +1,5 @@
 dataset: demo.retention_daily
+domain: 用户增长
 description: 注册 cohort 的次日/七日留存人数（cohort 未成熟时对应列为 NULL）
 grain: [cohort_date, country, platform]
 business_timezone: UTC

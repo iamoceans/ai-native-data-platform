@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging("api", settings.log_level)
     app = FastAPI(
-        title="AI-Native Data Platform API",
+        title="Oceanus API",
         version="0.1.0",
         description=(
             "Governed local data platform: authentication and RBAC, multi-engine "

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_auth, get_db, get_settings_dep
 from app.api.dto import (
     DatasetContext,
+    DatasetFacets,
     DatasetListResponse,
     DatasetSchemaResponse,
     DatasetSummary,
@@ -52,11 +53,13 @@ def search_datasets(
     query = request.query_params.get("q")
     datasource_id = request.query_params.get("datasource_id")
     datasource_uuid = uuid.UUID(datasource_id) if datasource_id else None
-    rows, _total, has_more = metadata_service.search_datasets(
+    rows, total, has_more = metadata_service.search_datasets(
         session,
         role_ids=auth.role_ids,
         query=query,
         datasource_id=datasource_uuid,
+        namespace=request.query_params.get("schema"),
+        domain=request.query_params.get("domain"),
         limit=limit,
         offset=offset,
         settings=settings,
@@ -66,9 +69,28 @@ def search_datasets(
         next_cursor = encode_list_cursor(
             settings.resolved_cursor_secret(), route=ROUTE_KEY, offset=offset + len(rows)
         )
+    domains = metadata_service.declared_domains(settings, rows)
     return DatasetListResponse(
-        items=[DatasetSummary(**metadata_service.dataset_summary(row)) for row in rows],
+        items=[
+            DatasetSummary(**metadata_service.dataset_summary(row, domain=domains[row.id]))
+            for row in rows
+        ],
         next_cursor=next_cursor,
+        total=total,
+    )
+
+
+@router.get("/datasets/facets", response_model=DatasetFacets)
+def get_dataset_facets(
+    auth: AuthContext = Depends(current_auth),
+    session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+) -> DatasetFacets:
+    """Filter options (datasource, schema, business domain) with counts."""
+    return DatasetFacets(
+        **metadata_service.dataset_facets(
+            session, role_ids=auth.role_ids, settings=settings
+        )
     )
 
 

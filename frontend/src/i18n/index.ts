@@ -3,6 +3,8 @@ import messages from "./messages.json";
 
 export type Locale = "zh-CN" | "en";
 export const LOCALE_STORAGE_KEY = "ainative.locale";
+/** Product name; identical in every locale, so it is a constant, not a catalog entry. */
+export const PLATFORM_NAME = "Oceanus";
 const listeners = new Set<() => void>();
 const catalog: Record<string, Record<Locale, string>> = messages;
 
@@ -26,7 +28,7 @@ export function getLocale(): Locale {
 
 function updateDocument() {
   document.documentElement.lang = locale;
-  document.title = t("AI-Native Data Platform");
+  document.title = PLATFORM_NAME;
 }
 export function setLocale(next: Locale) {
   locale = next;

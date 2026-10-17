@@ -397,12 +397,18 @@ def catalog_refresh(
             "skipped": result.skipped,
         },
     )
+    domains = metadata_service.declared_domains(settings, result.datasets)
     return CatalogRefreshResponse(
         datasource_id=datasource.id,
         registered=result.registered,
         updated=result.updated,
         deactivated=result.deactivated,
-        items=[DatasetSummary(**metadata_service.dataset_summary(row)) for row in result.datasets],
+        items=[
+            DatasetSummary(
+                **metadata_service.dataset_summary(row, domain=domains[row.id])
+            )
+            for row in result.datasets
+        ],
         skipped=result.skipped,
     )
 
