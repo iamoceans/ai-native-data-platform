@@ -2650,3 +2650,19 @@ databases were dropped afterward. Original databases and deployed processes were
 untouched. Local evidence is under ignored `runtime/review-analysis-limits/`.
 The static suite needed local HTTP fixture access outside the restricted sandbox.
 No schema migration, deployment, full engine matrix or real-model A09 was run.
+
+
+## 2026-10-17 code cleanup after the analysis-limit fixes
+
+Consolidated AnalysisBudget's duplicate reservation/settlement checks into one
+private validator, and combined repeated cancel/remove operations in the revoked
+analysis hook. Expanded the hook's chart identifiers, sanitized data and the
+report evidence-reset effect for readability. Limits, error precedence and cache
+cleanup ordering are preserved; no dependency or schema changes.
+
+Validation on this cleanup: frozen backend unit/security/contract suite **680
+passed** (6.19 s, two existing warnings); existing permission-cache browser suite
+**2 passed** (3.2 s); frontend `npm run build` **exit 0**; `git diff --check`
+**exit 0**. Commands match the preceding record. Evidence is in ignored
+`runtime/review-cleanup/`. PostgreSQL integration, full browser/engine matrix and
+real-model A09 were not rerun for this refactor.

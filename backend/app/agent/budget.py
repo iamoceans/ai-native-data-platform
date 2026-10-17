@@ -37,28 +37,36 @@ class AnalysisBudget:
     def start(cls, *, deadline_at: str | None = None, **limits: int) -> "AnalysisBudget":
         return cls(started_monotonic=time.monotonic(), deadline_at=deadline_at, **limits)
 
-    def reserve_model_call(self, *, estimated_input: int, max_output: int, model_calls: int = 1) -> None:
+    def reserve_model_call(
+        self, *, estimated_input: int, max_output: int, model_calls: int = 1
+    ) -> None:
         self.ensure_time()
-        if self.model_calls + model_calls > self.max_model_calls:
-            raise BudgetExceeded("model_calls")
-        if self.input_tokens + estimated_input > self.max_input_tokens:
-            raise BudgetExceeded("input_tokens")
-        if self.output_tokens + max_output > self.max_output_tokens:
-            raise BudgetExceeded("output_tokens")
+        self._check_model_usage(
+            input_tokens=estimated_input, output_tokens=max_output, model_calls=model_calls
+        )
 
-    def record_model_usage(self, *, input_tokens: int, output_tokens: int, model_calls: int = 1) -> "AnalysisBudget":
-        if self.model_calls + model_calls > self.max_model_calls:
-            raise BudgetExceeded("model_calls")
-        if self.input_tokens + input_tokens > self.max_input_tokens:
-            raise BudgetExceeded("input_tokens")
-        if self.output_tokens + output_tokens > self.max_output_tokens:
-            raise BudgetExceeded("output_tokens")
+    def record_model_usage(
+        self, *, input_tokens: int, output_tokens: int, model_calls: int = 1
+    ) -> "AnalysisBudget":
+        self._check_model_usage(
+            input_tokens=input_tokens, output_tokens=output_tokens, model_calls=model_calls
+        )
         return replace(
             self,
             model_calls=self.model_calls + model_calls,
             input_tokens=self.input_tokens + input_tokens,
             output_tokens=self.output_tokens + output_tokens,
         )
+
+    def _check_model_usage(
+        self, *, input_tokens: int, output_tokens: int, model_calls: int
+    ) -> None:
+        if self.model_calls + model_calls > self.max_model_calls:
+            raise BudgetExceeded("model_calls")
+        if self.input_tokens + input_tokens > self.max_input_tokens:
+            raise BudgetExceeded("input_tokens")
+        if self.output_tokens + output_tokens > self.max_output_tokens:
+            raise BudgetExceeded("output_tokens")
 
     def consume_tool(self, *, queries: int = 0, sql_repairs: int = 0) -> "AnalysisBudget":
         self.ensure_time()
@@ -86,7 +94,8 @@ class AnalysisBudget:
         elapsed = time.monotonic() - self.started_monotonic if self.started_monotonic else 0.0
         remaining = self.max_wall_seconds - elapsed
         if self.deadline_at:
-            remaining = min(remaining, (datetime.fromisoformat(self.deadline_at) - utcnow()).total_seconds())
+            absolute_remaining = (datetime.fromisoformat(self.deadline_at) - utcnow()).total_seconds()
+            remaining = min(remaining, absolute_remaining)
         return max(0.0, remaining)
 
     def as_dict(self) -> dict[str, int | str | None]:

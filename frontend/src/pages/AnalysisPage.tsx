@@ -60,7 +60,10 @@ export function AnalysisPage() {
       queryClient.invalidateQueries({ queryKey: ["analysis", id] }),
   });
   const revoked = useRevokedAnalysis(id, detail.data, false);
-  useEffect(() => { evidenceRequest.current++; setEvidence(null); }, [id, revoked]);
+  useEffect(() => {
+    evidenceRequest.current++;
+    setEvidence(null);
+  }, [id, revoked]);
   const report = (revoked ? null : detail.data?.final_report) as
     | Record<string, unknown>
     | null

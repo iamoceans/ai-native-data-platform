@@ -52,6 +52,8 @@ Product and verification items (current status):
       model attempts have an independent durable cap, including format repair.
       Static **680 passed**; real disposable-PostgreSQL conversations **25 passed**;
       affected mocked browser batch **36 passed**, final permission recheck **2 passed**.
+      Subsequent code cleanup reuses budget validation and cache removal helpers;
+      static **680 passed**, permission browser **2 passed**, build **exit 0**.
       Full-engine and real-model A09 acceptance remain pending.
 - [x] Shared PostgreSQL login/password failure limits, bounded allocation and
       cross-process persistence; same-host dual API deployment acceptance.
