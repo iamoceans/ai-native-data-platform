@@ -39,6 +39,7 @@ import {
 } from "../components/ConversationPanels";
 import { MemoryPanel } from "../components/MemoryPanel";
 import { StatusBadge } from "../components/StatusBadge";
+import { useRevokedAnalysis } from "../hooks/useRevokedAnalysis";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 
 const ACTIVE_TURN_STATES = ["QUEUED", "RESOLVING", "ANALYZING", "RESPONDING"];
@@ -686,10 +687,11 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
   const analysis = useQuery({
     queryKey: ["analysis", analysisId],
     queryFn: () => getAnalysis(analysisId as string),
-    enabled: Boolean(analysisId) && (isResult || kind === "failure"),
+    enabled: Boolean(analysisId) && !content.permission_revoked && (isResult || kind === "failure"),
     refetchInterval: (query) => analysisPollInterval(query.state.data?.status),
   });
-  const chartId =
+  const revoked = useRevokedAnalysis(analysisId, analysis.data, Boolean(content.permission_revoked));
+  const chartId = revoked ? null :
     (analysis.data?.final_report as { chart_ids?: string[] } | undefined)
       ?.chart_ids?.[0] ?? null;
   const chart = useQuery({
@@ -712,6 +714,7 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
         </span>
       </header>
 
+      {revoked ? <p className="notice error" data-testid="permission-revoked"><ErrorMessage error={{ code: "PERMISSION_DENIED", message: "" }} /></p> : null}
       {kind === "user" ? <p className="message-text">{text}</p> : null}
       {kind === "clarify" ? (
         <div className="message-body">
@@ -727,7 +730,7 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
           ) : null}
         </div>
       ) : null}
-      {kind === "explanation" ? <ExplanationBody content={content} /> : null}
+      {!revoked && kind === "explanation" ? <ExplanationBody content={content} /> : null}
       {kind === "help" || kind === "unsupported" ? (
         <div className="message-body">
           <p className="message-text">{text}</p>
@@ -759,14 +762,14 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
               </a>
             ) : null}
           </div>
-          {claims.length ? (
+          {!revoked && claims.length ? (
             <ul className="claims" data-testid="result-claims">
               {claims.map((claim) => (
                 <li key={claim.id}>{claim.text}</li>
               ))}
             </ul>
           ) : null}
-          {!claims.length && limitations.length ? (
+          {!revoked && !claims.length && limitations.length ? (
             <div data-testid="result-no-claims">
               <p className="muted small">{t("本轮没有可发布的结论，原因：")}</p>
               <ul className="claims">
@@ -776,7 +779,7 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
               </ul>
             </div>
           ) : null}
-          {claims.length && limitations.length ? (
+          {!revoked && claims.length && limitations.length ? (
             <details>
               <summary>{t("限制与口径")}</summary>
               <ul>
@@ -786,13 +789,13 @@ function MessageRow({ message, busy, onRetry }: { message: ConversationMessage; 
               </ul>
             </details>
           ) : null}
-          {chart.data ? <ChartPanel key={chart.data.id} chart={chart.data} /> : null}
-          <SkillUsage
+          {!revoked && chart.data ? <ChartPanel key={chart.data.id} chart={chart.data} /> : null}
+          {!revoked ? <SkillUsage
             snapshot={content.skills as Record<string, unknown> | undefined}
-          />
+          /> : null}
         </div>
       ) : null}
-      {analysis.data ? <AnalysisDiagnostics analysis={analysis.data} /> : null}
+      {!revoked && analysis.data ? <AnalysisDiagnostics analysis={analysis.data} /> : null}
       {message.content_schema_version === 0 ? (
         <p className="muted small">{t("（历史消息，按兼容格式显示）")}</p>
       ) : null}

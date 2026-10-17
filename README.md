@@ -230,7 +230,13 @@ Child analyses receive the exact remaining turn allowance, without minimum-token
 top-ups; an exhausted allowance closes the turn before an analysis is queued.
 Worker restarts conservatively charge unknown in-flight requests; current queue
 ownership and preparation checkpoints prevent stale replies/errors from changing
-a replacement attempt. Offline intent resolution reserves no model quota.
+a replacement attempt. Child analyses inherit an absolute UTC deadline, including
+queue time; phase transitions, query submissions and report publication enforce
+it. Physical model requests have an independent cap, including format repairs.
+Offline intent resolution reserves no model quota.
+Revoked transcript/report permissions hide cached charts and diagnostics and clear
+chart-page/memory caches. Terminal report pages recheck permission every 15 seconds
+while visible; restored permissions fetch fresh chart data.
 Invalid model dates ask for clarification, and provider errors expose only their
 class/status rather than arbitrary upstream text.
 

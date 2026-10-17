@@ -1,7 +1,7 @@
 """One turn's budget: token accounting with a UTC deadline that survives restarts (design 10.2).
 
-`AnalysisBudget` measures wall clock with a process-local `monotonic` start, so it
-cannot be resumed after a worker restart. A turn can be interrupted at any point
+`AnalysisBudget` combines process-local elapsed time with the inherited UTC
+deadline. A turn can be interrupted at any point
 (the lease is released while an analysis runs), so its budget is persisted as
 counters plus an absolute `deadline_at`, and the remaining wall clock is computed
 from the database clock on every pass.
@@ -148,7 +148,10 @@ class TurnBudget:
         return {
             "max_input_tokens": input_left,
             "max_output_tokens": output_left,
-            "max_tool_calls": calls_left,
+            "max_model_calls": calls_left,
+            "model_calls": 0,
+            "deadline_at": min(self.deadline_at, utcnow() + timedelta(seconds=seconds_left)).isoformat(),
+            "max_tool_calls": settings.agent_max_tool_calls,
             "max_queries": settings.agent_max_queries,
             "max_sql_repairs": settings.agent_max_sql_repairs,
             "max_wall_seconds": seconds_left,

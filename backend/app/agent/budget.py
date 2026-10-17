@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, replace
+from datetime import datetime
+
+from app.ids import utcnow
 
 
 class BudgetExceeded(RuntimeError):
@@ -16,35 +19,43 @@ class BudgetExceeded(RuntimeError):
 class AnalysisBudget:
     max_input_tokens: int = 60_000
     max_output_tokens: int = 12_000
+    max_model_calls: int = 20
     max_tool_calls: int = 20
     max_queries: int = 12
     max_sql_repairs: int = 2
     max_wall_seconds: int = 180
     input_tokens: int = 0
     output_tokens: int = 0
+    model_calls: int = 0
     tool_calls: int = 0
     queries: int = 0
     sql_repairs: int = 0
     started_monotonic: float = 0.0
+    deadline_at: str | None = None
 
     @classmethod
-    def start(cls, **limits: int) -> "AnalysisBudget":
-        return cls(started_monotonic=time.monotonic(), **limits)
+    def start(cls, *, deadline_at: str | None = None, **limits: int) -> "AnalysisBudget":
+        return cls(started_monotonic=time.monotonic(), deadline_at=deadline_at, **limits)
 
-    def reserve_model_call(self, *, estimated_input: int, max_output: int) -> None:
+    def reserve_model_call(self, *, estimated_input: int, max_output: int, model_calls: int = 1) -> None:
         self.ensure_time()
+        if self.model_calls + model_calls > self.max_model_calls:
+            raise BudgetExceeded("model_calls")
         if self.input_tokens + estimated_input > self.max_input_tokens:
             raise BudgetExceeded("input_tokens")
         if self.output_tokens + max_output > self.max_output_tokens:
             raise BudgetExceeded("output_tokens")
 
-    def record_model_usage(self, *, input_tokens: int, output_tokens: int) -> "AnalysisBudget":
+    def record_model_usage(self, *, input_tokens: int, output_tokens: int, model_calls: int = 1) -> "AnalysisBudget":
+        if self.model_calls + model_calls > self.max_model_calls:
+            raise BudgetExceeded("model_calls")
         if self.input_tokens + input_tokens > self.max_input_tokens:
             raise BudgetExceeded("input_tokens")
         if self.output_tokens + output_tokens > self.max_output_tokens:
             raise BudgetExceeded("output_tokens")
         return replace(
             self,
+            model_calls=self.model_calls + model_calls,
             input_tokens=self.input_tokens + input_tokens,
             output_tokens=self.output_tokens + output_tokens,
         )
@@ -65,16 +76,24 @@ class AnalysisBudget:
         )
 
     def ensure_time(self, *, now: float | None = None) -> None:
+        if self.deadline_at and utcnow() >= datetime.fromisoformat(self.deadline_at):
+            raise BudgetExceeded("wall_seconds")
         current = time.monotonic() if now is None else now
         if self.started_monotonic and current - self.started_monotonic > self.max_wall_seconds:
             raise BudgetExceeded("wall_seconds")
 
     def remaining_seconds(self) -> float:
         elapsed = time.monotonic() - self.started_monotonic if self.started_monotonic else 0.0
-        return max(0.0, self.max_wall_seconds - elapsed)
+        remaining = self.max_wall_seconds - elapsed
+        if self.deadline_at:
+            remaining = min(remaining, (datetime.fromisoformat(self.deadline_at) - utcnow()).total_seconds())
+        return max(0.0, remaining)
 
-    def as_dict(self) -> dict[str, int]:
+    def as_dict(self) -> dict[str, int | str | None]:
         return {
+            "deadline_at": self.deadline_at,
+            "max_model_calls": self.max_model_calls,
+            "model_calls": self.model_calls,
             "max_input_tokens": self.max_input_tokens,
             "max_output_tokens": self.max_output_tokens,
             "max_tool_calls": self.max_tool_calls,

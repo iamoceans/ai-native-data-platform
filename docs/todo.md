@@ -46,6 +46,13 @@ Product and verification items (current status):
       intent lease for bounded model calls. Invalid relative dates clarify safely;
       upstream model error messages are sanitized. Real PostgreSQL conversation
       acceptance: **14 passed**, scripted models; backend static **664 passed**.
+- [x] Follow-up review: revoked transcripts/reports hide and purge cached charts,
+      chart pages, diagnostics and memory; restored permissions fetch fresh pages.
+      Child deadlines include queue time and survive every phase/restart; physical
+      model attempts have an independent durable cap, including format repair.
+      Static **680 passed**; real disposable-PostgreSQL conversations **25 passed**;
+      affected mocked browser batch **36 passed**, final permission recheck **2 passed**.
+      Full-engine and real-model A09 acceptance remain pending.
 - [x] Shared PostgreSQL login/password failure limits, bounded allocation and
       cross-process persistence; same-host dual API deployment acceptance.
 - [x] Per-poll SSE auth-session/user/grant rechecks and revoked event suppression.

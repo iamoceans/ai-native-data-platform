@@ -344,6 +344,12 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   evidence and chart reads use the same grant check. Transcript explanations
   check every quoted analysis, including ownership and missing references;
   model history and recent-analysis context use the same current grants.
+  Ask immediately hides charts, skill details and diagnostics on a revoked
+  transcript/analysis. Shared analysis data is sanitized; in-flight chart and
+  paginated-chart requests are cancelled and their caches removed, together with
+  analysis memory. The full report rechecks terminal analyses every 15 seconds
+  while visible; revoked reports hide evidence and memory and discard manually
+  loaded SQL. Restored grants fetch fresh chart pages rather than reusing them.
   History is the latest twelve messages, presented in chronological order.
   The disabled-feature Ask fallback uses one submitted scope snapshot and one
   idempotency key; errors do not trigger a render-driven retry.
@@ -372,6 +378,15 @@ Ask is a persistent conversation, not a form: `app/agent/conversation/` and the
   replacing explicit scope. Archived or foreign versions cannot load.
 - **Budgets**: a turn has a UTC `deadline_at`, token and model-call allowances;
   the analysis it creates runs on the *remaining* sub-budget, never a fresh one.
+  Child analyses persist a UTC deadline no later than the parent's. Queue waits
+  and restarts cannot renew it; legacy standalone tasks derive it from creation
+  time. Every phase checks it, as do query submission and report publication;
+  model HTTP timeouts use the remaining absolute time. Physical model calls
+  have their own cap/counter, independent of SQL/tool calls. Analysis attempts
+  durably reserve up to two available physical calls and settle actual usage
+  once; a last available call can succeed but cannot perform format repair.
+  Legacy child budgets without that cap retain their old max_tool_calls ceiling
+  as the model ceiling when resumed.
   Each model format attempt checks cumulative actual usage plus the next request
   on an isolated budget copy. Temporary adapter checks cannot accumulate on a
   mutable turn budget; the orchestrator's durable reservations stay intact until

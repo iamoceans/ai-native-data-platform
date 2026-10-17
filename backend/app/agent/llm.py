@@ -229,7 +229,7 @@ class OpenAICompatibleProvider:
                     "max_tokens": max_output_tokens, "temperature": 0,
                     "response_format": self._response_format_body(schema),
                 },
-                timeout=min(self._timeout_seconds, max(0.1, budget.remaining_seconds()))
+                timeout=min(self._timeout_seconds, budget.remaining_seconds())
                 if hasattr(budget, "remaining_seconds") else self._timeout_seconds,
             )
             response.raise_for_status()
@@ -251,7 +251,7 @@ class OpenAICompatibleProvider:
                 estimated = sum(len(m.get("content", "")) for m in request_messages) // 4 + 1
                 continue
             if isinstance(budget, AnalysisBudget):
-                budget.record_model_usage(input_tokens=total_input, output_tokens=total_output)
+                budget.record_model_usage(input_tokens=total_input, output_tokens=total_output, model_calls=attempt + 1)
             elif budget.input_tokens + total_input > budget.max_input_tokens or budget.output_tokens + total_output > budget.max_output_tokens:
                 from app.agent.budget import BudgetExceeded
                 raise BudgetExceeded("model_tokens")

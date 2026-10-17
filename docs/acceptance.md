@@ -2606,3 +2606,47 @@ read a pending-clarification field not exposed by the session DTO. It was correc
 to inspect the actual clarification message; the final run above also includes
 the added queue-fence case. Frontend code, migrations and API schemas were not
 changed; no frontend/full-engine/A09 acceptance was rerun in this backend round.
+
+
+## 2026-10-17 follow-up review — revoked caches and child analysis limits
+
+Three reviewed defects are fixed:
+
+- A revoked transcript immediately hides cached charts, skill usage and analysis
+  diagnostics. Shared analysis data is sanitized; chart/chart-page requests are
+  cancelled and caches removed, alongside analysis memory. The full report polls
+  terminal details every 15 seconds while visible, hides evidence/memory when
+  revoked and discards manually loaded SQL, including late responses. Browser
+  cases cover both Ask and full reports, navigation between them, and fresh chart
+  pages after grants return. Existing data can remain visible until a permission
+  recheck observes revocation; this is not a server-push revocation guarantee.
+- Child analysis budgets carry an absolute deadline bounded by the parent. Queue
+  waits and worker restarts cannot renew it. Legacy standalone tasks derive the
+  deadline from creation time. All dispatch phases, each query submission and
+  final report publication check it; model timeout uses absolute time remaining.
+- Analysis budgets independently count physical model requests. Durable attempts
+  reserve at most the available one/two requests and settle aggregate usage once;
+  unknown crash spend remains charged. One remaining request can succeed but
+  cannot repair invalid output. SQL/tool allowance is separate. Legacy persisted
+  children retain their previous model ceiling when resumed.
+
+Observed validation:
+
+| Check | Command / scope | Result |
+|---|---|---|
+| Static backend | `UV_CACHE_DIR=/tmp/uv-cache uv run --project backend --frozen pytest backend/tests/unit backend/tests/security backend/tests/contract -q` | **680 passed**, 2 existing dependency warnings |
+| PostgreSQL conversation integration | Same frozen pytest invocation, `backend/tests/integration/test_conversation_flow.py backend/tests/integration/test_conversation_intent_flow.py backend/tests/integration/test_conversation_recovery.py -q`; separate disposable control/source DB URLs, fake/scripted providers | **25 passed**, 22.24 s, 2 existing warnings |
+| Affected browser regressions | `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression -- tests/regression/permission-cache.spec.ts tests/regression/conversation-operations.spec.ts tests/regression/ask.spec.ts tests/regression/operational.spec.ts` in frontend | **36 passed** |
+| Final permission recheck | Same browser command with only `tests/regression/permission-cache.spec.ts`; adds restored-chart-page and manual-SQL checks | **2 passed** |
+| Frontend units | `npm run test:unit` in frontend | **3 Node test files passed** |
+| Production build | `npm run build` in frontend | **exit 0** |
+
+The initial database batch reported **23 passed / 1 failed**: a pre-existing
+recovery assertion still expected one model call, although the preceding restart
+fix deliberately charges two unknown requests plus one successful request. The
+assertion now verifies all three and the child's remaining cap/deadline; the final
+batch also includes a queued, expired child that submits no queries. All disposable
+databases were dropped afterward. Original databases and deployed processes were
+untouched. Local evidence is under ignored `runtime/review-analysis-limits/`.
+The static suite needed local HTTP fixture access outside the restricted sandbox.
+No schema migration, deployment, full engine matrix or real-model A09 was run.

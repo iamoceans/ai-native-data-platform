@@ -1,6 +1,7 @@
+import { useRevokedAnalysis } from "../hooks/useRevokedAnalysis";
 import { t, useLocale } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   cancelAnalysis,
@@ -45,19 +46,22 @@ export function AnalysisPage() {
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(
     null,
   );
+  const evidenceRequest = useRef(0);
   const detail = useQuery({
     queryKey: ["analysis", id],
     queryFn: () => getAnalysis(id),
     enabled: Boolean(id),
     refetchInterval: (query) =>
-      TERMINAL.has(query.state.data?.status ?? "") ? false : 1000,
+      TERMINAL.has(query.state.data?.status ?? "") ? 15000 : 1000,
   });
   const cancel = useMutation({
     mutationFn: () => cancelAnalysis(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["analysis", id] }),
   });
-  const report = detail.data?.final_report as
+  const revoked = useRevokedAnalysis(id, detail.data, false);
+  useEffect(() => { evidenceRequest.current++; setEvidence(null); }, [id, revoked]);
+  const report = (revoked ? null : detail.data?.final_report) as
     | Record<string, unknown>
     | null
     | undefined;
@@ -83,7 +87,7 @@ export function AnalysisPage() {
   const memory = useQuery({
     queryKey: ["analysis-memory", id],
     queryFn: () => getAnalysisMemory(id),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && !revoked,
     refetchInterval: (query) => (query.state.data?.extraction ? false : 2500),
   });
   const extraction = (memory.data?.extraction ?? null) as Record<
@@ -124,7 +128,7 @@ export function AnalysisPage() {
           {t("· policy revision")} {detail.data.policy_revision}
         </p>
         {TERMINAL.has(detail.data.status) ? <>
-          <button className="ghost" data-testid="rerun-analysis" disabled={rerun.isPending || Boolean(detail.data.state?.permission_revoked)} onClick={() => rerun.mutate()}>{t("重新分析")}</button>
+          <button className="ghost" data-testid="rerun-analysis" disabled={rerun.isPending || revoked} onClick={() => rerun.mutate()}>{t("重新分析")}</button>
           <p className="muted small">{t("使用当前指标定义重新查询，创建新报告并保留原报告；完整性需重新确认。")}</p>
           {rerun.isError ? <p className="notice error" role="alert"><ErrorMessage error={rerun.error} /></p> : null}
         </> : null}
@@ -139,7 +143,8 @@ export function AnalysisPage() {
         ) : null}
       </section>
 
-      {chart.data ? (
+      {revoked ? <p className="notice error" data-testid="permission-revoked"><ErrorMessage error={{ code: "PERMISSION_DENIED", message: "" }} /></p> : null}
+      {!revoked && chart.data ? (
         <ChartPanel
           key={chart.data.id}
           chart={chart.data}
@@ -179,7 +184,11 @@ export function AnalysisPage() {
           ) : null}
           <button
             className="ghost"
-            onClick={async () => setEvidence(await getAnalysisEvidence(id))}
+            onClick={async () => {
+              const request = ++evidenceRequest.current;
+              const result = await getAnalysisEvidence(id);
+              if (request === evidenceRequest.current) setEvidence(result);
+            }}
           >
             {t("Load evidence")}
           </button>
@@ -212,7 +221,7 @@ export function AnalysisPage() {
           </pre>
         ) : null}
       </section>
-      <section className="card" data-testid="analysis-memory">
+      {!revoked ? <section className="card" data-testid="analysis-memory">
         <div className="card-head">
           <h2>{t("业务记忆")}</h2>
           <span className="muted small">
@@ -288,7 +297,7 @@ export function AnalysisPage() {
             })}
           </p>
         ) : null}
-      </section>
+      </section> : null}
     </div>
   );
 }

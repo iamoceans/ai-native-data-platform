@@ -179,6 +179,7 @@ def _submit_compiled(
 ) -> list[dict]:
     submitted: list[dict] = []
     for index, query in enumerate(compiled.queries):
+        _check_deadline(task)
         dataset = _resolve_dataset(session, logical_name=query.dataset, role_ids=auth.role_ids)
         request = QuerySubmitRequest(
             datasource_id=dataset.datasource_id,
@@ -271,6 +272,9 @@ def _planning_input(session, *, task, settings: Settings) -> dict:
         # Limits may be persisted: a conversation turn hands the analysis its
         # remainder instead of a fresh allowance (design 10.2).
         budget = AnalysisBudget.start(
+            deadline_at=consumed.get("deadline_at"),
+            max_model_calls=int(consumed.get("max_model_calls", consumed.get("max_tool_calls", settings.agent_max_tool_calls))),
+            model_calls=int(consumed.get("model_calls", 0)),
             max_input_tokens=int(consumed.get("max_input_tokens", settings.agent_max_input_tokens)),
             max_output_tokens=int(consumed.get("max_output_tokens", settings.agent_max_output_tokens)),
             max_tool_calls=int(consumed.get("max_tool_calls", settings.agent_max_tool_calls)),
@@ -942,6 +946,7 @@ def _descriptor_for(state: dict, query_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 def _observing(session, *, task, settings: Settings) -> bool:
     """Returns True when the analysis reached a terminal state."""
+    _check_deadline(task)
     if _extend_with_driver_step(session, task=task, settings=settings):
         return False
     if (task.state or {}).get("observation_action") == "driver_decomposition":
@@ -1125,6 +1130,7 @@ def _completeness(context: dict[str, Any]) -> str:
 
 
 def _synthesizing(session, *, task) -> bool:
+    _check_deadline(task)
     state = dict(task.state or {})
     observation = dict(state.get("observations") or {})
     descriptors = _active(list(state.get("queries") or []))
@@ -1243,6 +1249,7 @@ def _synthesizing(session, *, task) -> bool:
         + (["非可加指标按独立周期聚合比较，未做分组贡献分解"]
            if definition.aggregation_kind not in {"sum", "sum_of_aggregates"} else []),
     )
+    _check_deadline(task)
     task.final_report = report
     target = AnalysisStatus.COMPLETED if report["status"] == "COMPLETED" else AnalysisStatus.PARTIAL
     _set_status(session, task, target)
@@ -1280,9 +1287,11 @@ def _fail_claim(session, *, task, claim, exc) -> None:
 def _observation_input(task, settings: Settings) -> dict:
     state = dict(task.state or {})
     consumed = dict(task.budget or {})
-    budget = AnalysisBudget.start(**{
+    # Legacy child budgets stored their remaining model allowance in this field.
+    consumed.setdefault("max_model_calls", consumed.get("max_tool_calls", settings.agent_max_tool_calls))
+    budget = AnalysisBudget.start(deadline_at=consumed.get("deadline_at"), **{
         key: int(consumed[key]) for key in AnalysisBudget.__dataclass_fields__
-        if key in consumed and key != "started_monotonic"
+        if key in consumed and key not in {"started_monotonic", "deadline_at"}
     })
     observation = state.get("observations") or {}
     messages = [
@@ -1302,6 +1311,24 @@ def _observation_input(task, settings: Settings) -> dict:
             "phase": "observation", "checkpoint_version": int(task.checkpoint_version)}
 
 
+def _ensure_deadline(task, settings: Settings) -> None:
+    """Persist the original wall-clock boundary before dispatching any phase."""
+    consumed = dict(task.budget or {})
+    if not consumed.get("deadline_at"):
+        created = getattr(task, "created_at", None) or utcnow()
+        consumed["deadline_at"] = (created + timedelta(seconds=int(
+            consumed.get("max_wall_seconds", settings.agent_max_wall_seconds)
+        ))).isoformat()
+        task.budget = consumed
+    _check_deadline(task)
+
+
+def _check_deadline(task) -> None:
+    deadline = (getattr(task, "budget", None) or {}).get("deadline_at")
+    if deadline and utcnow() >= datetime.fromisoformat(deadline):
+        raise BudgetExceeded("wall_seconds")
+
+
 def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Settings) -> bool:
     """Prepare/reserve -> network with no session -> fenced apply.
 
@@ -1317,23 +1344,22 @@ def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Set
         lease = queue_repo.lock_analysis_claim(session, claim)
         if lease is None:
             return False
-        observe_model = (task.status == AnalysisStatus.OBSERVING
-                         and not (task.state or {}).get("observation_action")
-                         and int((task.state or {}).get("observing_passes", 0)) == 0
-                         and resolve_provider(settings).provider is not None)
-        if task.status not in {AnalysisStatus.CREATED, AnalysisStatus.UNDERSTANDING} and not observe_model:
+        if task.status in TERMINAL_ANALYSIS_STATUSES:
             result = execute_claim(session, claim=claim, settings=settings)
             session.commit()
             return result
         try:
+            _ensure_deadline(task, settings)
+            observe_model = (task.status == AnalysisStatus.OBSERVING
+                             and not (task.state or {}).get("observation_action")
+                             and int((task.state or {}).get("observing_passes", 0)) == 0
+                             and resolve_provider(settings).provider is not None)
+            if task.status not in {AnalysisStatus.CREATED, AnalysisStatus.UNDERSTANDING} and not observe_model:
+                result = execute_claim(session, claim=claim, settings=settings)
+                session.commit()
+                return result
             planning = (_observation_input(task, settings) if observe_model
                         else _planning_input(session, task=task, settings=settings))
-            deadline = (task.budget or {}).get("deadline_at") or (
-                utcnow() + timedelta(seconds=int((task.budget or {}).get("max_wall_seconds", settings.agent_max_wall_seconds)))
-            ).isoformat()
-            if utcnow() >= datetime.fromisoformat(deadline):
-                raise BudgetExceeded("wall_seconds")
-            task.budget = {**(task.budget or {}), "deadline_at": deadline}
             if planning["budget"] is None:
                 with session.begin_nested():
                     _prepare(session, task=task, settings=settings, planning=planning)
@@ -1345,15 +1371,15 @@ def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Set
             # Persist both possible format attempts, including schema/prompt overhead.
             schema = ObservationSelection if observe_model else PlanningSelection
             from app.agent.llm import schema_instruction
-            reserved_input = min(2 * (estimated + len(schema_instruction(schema)) // 4 + 300),
+            reserved_calls = min(2, budget.max_model_calls - budget.model_calls)
+            if reserved_calls <= 0:
+                raise BudgetExceeded("model_calls")
+            reserved_input = min(reserved_calls * (estimated + len(schema_instruction(schema)) // 4 + 300),
                                  budget.max_input_tokens - budget.input_tokens)
-            reserved_output = min(1000, budget.max_output_tokens - budget.output_tokens)
-            budget.reserve_model_call(estimated_input=reserved_input, max_output=reserved_output)
-            reserved = budget.record_model_usage(input_tokens=reserved_input, output_tokens=reserved_output)
-            task.budget = {
-                **task.budget, **reserved.as_dict(),
-                "model_calls": int(task.budget.get("model_calls", 0)) + 2,
-            }
+            reserved_output = min(500 * reserved_calls, budget.max_output_tokens - budget.output_tokens)
+            budget.reserve_model_call(estimated_input=reserved_input, max_output=reserved_output, model_calls=reserved_calls)
+            reserved = budget.record_model_usage(input_tokens=reserved_input, output_tokens=reserved_output, model_calls=reserved_calls)
+            task.budget = {**task.budget, **reserved.as_dict()}
             planning["checkpoint_version"] = int(task.checkpoint_version)
             # A bounded call can outlive the ordinary polling lease. It gets a
             # bounded planning lease; cancellation never needs this queue lock.
@@ -1361,6 +1387,7 @@ def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Set
             task.state = {**(task.state or {}), "planning_attempt": {
                 "fencing_token": claim.fencing_token,
                 "reserved_input": reserved_input, "reserved_output": reserved_output,
+                "reserved_model_calls": reserved_calls,
             }}
             session.commit()
         except Exception as exc:
@@ -1398,9 +1425,9 @@ def run_claim(session_factory, *, claim: queue_repo.AnalysisClaim, settings: Set
                 raise BudgetExceeded("wall_seconds")
             actual = planning["budget"].record_model_usage(
                 input_tokens=generated.usage.input_tokens, output_tokens=generated.usage.output_tokens,
+                model_calls=generated.model_calls,
             )
-            task.budget = {**task.budget, **actual.as_dict(),
-                           "model_calls": int(task.budget.get("model_calls", 2)) - 2 + generated.model_calls}
+            task.budget = {**task.budget, **actual.as_dict()}
             terminal = False
             with session.begin_nested():
                 if observe_model:
@@ -1433,6 +1460,7 @@ def execute_claim(session, *, claim: queue_repo.AnalysisClaim, settings: Setting
         )
         return True
     try:
+        _ensure_deadline(task, settings)
         if task.status in {AnalysisStatus.CREATED, AnalysisStatus.UNDERSTANDING}:
             _prepare(session, task=task, settings=settings)
             queue_repo.release_analysis_claim(session, claim, delay_seconds=0)

@@ -157,8 +157,10 @@ def test_c07_a_crash_after_prepare_is_recovered_without_duplicates(env):
         row = conversation_repo.get_turn(session, turn_id)
         budget = dict(row.budget or {})
     # The budget was not reset by the recovery: the reservation from the crashed
-    # attempt is still accounted for, and the model call is counted once.
-    assert budget["model_calls"] == 1
+    # attempt retains its two possible physical requests, plus the one success.
+    assert budget["model_calls"] == 3
+    assert analyses[0]["budget"]["max_model_calls"] == budget["max_model_calls"] - 3
+    assert analyses[0]["budget"]["deadline_at"] <= budget["deadline_at"]
     assert budget["reserved_input"] == 0
     assert budget["input_tokens"] > 0
 
@@ -243,3 +245,28 @@ def test_c10_revoking_the_grant_blanks_report_text_in_the_transcript(env):
     assert seen_event, "the stream did not announce the revocation"
     assert payload["analysis_id"] == analysis_id
     assert payload["session_id"] == session_id
+
+
+def test_expired_child_analysis_cannot_start_queries_after_queue_wait(env):
+    from app.repositories import analyses as analyses_repo
+
+    client = env
+    session_id = _session(client)
+    client.scripted.append({"intent": "analyze", "scope_patch": SCOPE})
+    submitted = _turn(client, session_id, "compare", "expired-child", scope_patch=SCOPE)
+    assert submitted.status_code == 202, submitted.text
+    drain_conversations()
+    analyses = client.get("/api/v1/analyses").json()["items"]
+    assert len(analyses) == 1
+    analysis_id = uuid.UUID(analyses[0]["id"])
+    with session_scope() as session:
+        task = analyses_repo.get_analysis(session, analysis_id)
+        assert task.status == "CREATED"
+        task.budget = {**task.budget, "deadline_at": (utcnow() - timedelta(seconds=1)).isoformat()}
+    run_pending_analyses()
+    detail = client.get(f"/api/v1/analyses/{analysis_id}").json()
+    assert detail["status"] == "FAILED"
+    assert detail["final_report"] is None
+    assert "wall_seconds" in detail["state"]["last_error"]["message"]
+    with session_scope() as session:
+        assert analyses_repo.list_queries(session, analysis_id) == []
