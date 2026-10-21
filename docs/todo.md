@@ -11,6 +11,27 @@ that were not executed are marked "not executed" and never counted as passed.
 
 Legend: `[x]` done and verified · `[~]` partially verified (see note) · `[ ]` not started.
 
+## Main audit remediation (2026-10-22)
+
+The supplied audit targets `94158c2`, the starting commit of this repair. All
+eight findings have corresponding changes and regression/configuration checks:
+
+- [x] #1 Query cancellation refreshes locked state; completed/claimed queries
+      retain correct status, with repeat cancellation covered on PostgreSQL.
+- [x] #2 Analysis cancellation locks/refetches the parent before children;
+      completed analyses are preserved and newly committed children are included.
+- [x] #3 Default DataHub actions no longer mounts host AWS credentials/SSO cache.
+- [x] #4 Result pages/requests are isolated by selected query; stale pages abort.
+- [x] #5 Browser back/forward follows the query URL and reloads the right results.
+- [x] #6 Pagination access/expiry errors clear cached rows and cursor; transient
+      errors are displayed and can retry without duplicating earlier rows.
+- [x] #7 Concurrent query idempotency replays one resource or returns a body-hash
+      conflict; transaction rollback releases the reservation.
+- [x] #8 DataHub 4319 explicitly binds to loopback, like every published port.
+
+Evidence and exact commands: `docs/acceptance.md`, 2026-10-22 record. DataHub
+runtime/remote reachability, full-engine matrix and real-model/A09 were not rerun.
+
 ## Current actionable backlog (2026-10-16, after operational completion)
 
 High-priority implementation requested in this round:

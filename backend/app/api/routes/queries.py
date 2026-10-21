@@ -145,6 +145,8 @@ def cancel_query(
     session: Session = Depends(get_db),
 ) -> QueryDetail:
     job = load_own_query(session, auth, query_id)
+    # Capture event state only after locking/reloading the current database row.
+    job = queries_repo.get_query_for_update(session, job.id)
     before = QueryStatus(job.status)
     job = queries_repo.request_cancel(session, job)
     if before == QueryStatus.QUEUED and job.status == QueryStatus.CANCELLED:
@@ -155,7 +157,7 @@ def cancel_query(
             event_type="query.finished",
             payload={"query_id": str(job.id), "status": "CANCELLED", "code": "QUERY_CANCELLED"},
         )
-    elif job.status == QueryStatus.CANCEL_REQUESTED:
+    elif before != QueryStatus.CANCEL_REQUESTED and job.status == QueryStatus.CANCEL_REQUESTED:
         events_repo.add_event(
             session,
             resource_kind="query",

@@ -1,4 +1,8 @@
 {
+  "Retry result loading": {
+    "en": "Retry result loading",
+    "zh-CN": "重试加载结果"
+  },
   "Administration": {
     "en": "Administration",
     "zh-CN": "管理"

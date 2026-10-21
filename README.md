@@ -312,6 +312,20 @@ docs/         architecture, security, compatibility, runbook, acceptance, todo
 compose.yaml  core and full profiles; compose.dev.yaml publishes the DB ports
 ```
 
+## Audit fixes (2026-10-22)
+
+Query and analysis cancellation lock and refresh the current database state before
+acting, preserving completed work. Concurrent submissions with the same user,
+route and idempotency key serialize through transaction completion: identical
+requests replay one query; changed bodies return a conflict. The SQL workspace
+selects queries from the URL, isolates result requests by query and clears cached
+rows when pagination reports revoked access or expiry; temporary failures offer a
+retry. DataHub's default actions container receives no host AWS credentials, and
+all published ports, including 4319, bind to loopback.
+
+Validation and remaining service boundaries are recorded in
+[docs/acceptance.md](docs/acceptance.md#2026-10-22--main-audit-remediation).
+
 ## Known limitations
 
 - Spark/Hive requires an existing shared Hive Metastore and Spark Thrift Server.

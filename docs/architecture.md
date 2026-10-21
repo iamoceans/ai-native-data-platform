@@ -3,6 +3,35 @@
 This document describes what is actually implemented. The authoritative long-term
 design is the project specification; sections marked "planned" are not built yet.
 
+## Cancellation, idempotency and result identity (2026-10-22)
+
+Cancellation reloads QueryJob / AnalysisTask with `SELECT FOR UPDATE` and
+`populate_existing=True`; row locks alone do not refresh entities already in the
+SQLAlchemy identity map. Analyses lock the parent before enumerating/cancelling
+children, matching workers that create queries and publish under that parent
+lock. Terminal states remain unchanged; repeated cancellation does not restart
+work or rewrite its terminal timestamp.
+
+Idempotency lookup acquires a PostgreSQL transaction advisory lock scoped to a
+structured user/route/key tuple before inspecting the row, including when no row
+exists. The lock lasts through resource creation, key storage and commit/rollback.
+A competing lookup then observes the committed key and checks its body hash;
+rolled-back submissions leave no replayable resource. Hash collisions only
+serialize unrelated keys. No process-local lock or new schema is required.
+
+The SQL URL is the selected query's source of truth. A result component keyed by
+query ID owns its pages, cursor and request controller. Navigation unmounts it and
+aborts requests; late responses/errors cannot alter the next query. First-page
+and pagination failures share error handling: explicit access/expiry failures
+clear rows and cursor, while transient failures retain available rows and permit
+retry. This governs client presentation; server-side authorization remains
+required for every read.
+
+The pinned DataHub compose removes implicit host AWS/SSO mounts from actions and
+binds every published port to `127.0.0.1`. Cloud credential integration, when
+needed, requires separate explicit configuration. See the dated acceptance record
+for configuration checks versus live service validation.
+
 ## Processes and trust boundaries
 
 The optional Spark path uses an existing Spark Thrift Server for SQL execution

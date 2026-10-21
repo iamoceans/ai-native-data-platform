@@ -63,6 +63,7 @@ def get_query(session: Session, query_id: uuid.UUID) -> QueryJob | None:
 def get_query_for_update(session: Session, query_id: uuid.UUID) -> QueryJob | None:
     return session.execute(
         select(QueryJob).where(QueryJob.id == query_id).with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
 
 
@@ -111,12 +112,12 @@ def transition(job: QueryJob, target: str) -> None:
 def request_cancel(session: Session, job: QueryJob) -> QueryJob:
     """User cancel: QUEUED -> CANCELLED, RUNNING -> CANCEL_REQUESTED.
 
-    The conditional update makes the cancel/complete race safe: if the result
-    was already committed (SUCCEEDED) the cancel becomes a no-op (spec 13).
+    Lock and reload before testing state: the caller may have loaded this job
+    before a worker claimed or completed it (spec 13).
     """
-    locked = session.execute(
-        select(QueryJob).where(QueryJob.id == job.id).with_for_update()
-    ).scalar_one()
+    locked = get_query_for_update(session, job.id)
+    if locked is None:
+        raise ApiError("NOT_FOUND", "query no longer exists")
     if locked.status in TERMINAL_QUERY_STATUSES:
         return locked
     if locked.cancel_requested_at is None:

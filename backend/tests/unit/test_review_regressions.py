@@ -64,6 +64,7 @@ def test_every_analysis_detail_surface_redacts_revoked_results(monkeypatch, endp
     task = task_for()
     auth = auth_for(task.user_id)
     monkeypatch.setattr(analyses.analyses_repo, "get_analysis", lambda *args: task)
+    monkeypatch.setattr(analyses.analyses_repo, "get_analysis_for_update", lambda *args: task)
     monkeypatch.setattr(analyses.analyses_repo, "list_for_user", lambda *args, **kwargs: ([task], 1))
     monkeypatch.setattr(analyses.analyses_repo, "list_steps", lambda *args: [
         NS(step_key="compare", status="COMPLETED", tool_name="kernel",

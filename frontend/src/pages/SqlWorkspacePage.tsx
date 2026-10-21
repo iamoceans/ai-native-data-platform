@@ -1,19 +1,17 @@
 import { ErrorMessage } from "../components/ErrorMessage";
 import { t, useLocale, formatDate } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
   cancelQuery,
   getQuery,
-  getQueryResults,
   listDatasources,
   submitQuery,
   type QueryDetail,
-  type ResultPayload,
 } from "../api/endpoints";
-import { ResultTable } from "../components/ResultTable";
+import { QueryResults } from "../components/QueryResults";
 import { StatusBadge } from "../components/StatusBadge";
 import { useQueryEvents } from "../hooks/useQueryEvents";
 import { SavedQueriesPanel } from "../components/SavedQueriesPanel";
@@ -34,18 +32,11 @@ export function SqlWorkspacePage() {
   const [sql, setSql] = useState("");
   const [maxRows, setMaxRows] = useState(1000);
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
-  const [queryId, setQueryId] = useState<string | null>(params.get("query"));
+  const queryId = params.get("query");
   const [submitError, setSubmitError] = useState<{
     code: string;
     message: string;
   } | null>(null);
-  const [resultError, setResultError] = useState<{
-    code: string;
-    message: string;
-  } | null>(null);
-  const [pages, setPages] = useState<ResultPayload[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-
   const datasources = useQuery({
     queryKey: ["datasources"],
     queryFn: listDatasources,
@@ -70,39 +61,6 @@ export function SqlWorkspacePage() {
     Boolean(queryId) && !TERMINAL.has(detail.data?.status ?? ""),
   );
 
-  // Load the first result page once a query succeeds.
-  useEffect(() => {
-    if (!queryId) return;
-    const status = detail.data?.status;
-    if (status !== "SUCCEEDED") {
-      setPages([]);
-      setCursor(null);
-      setResultError(null);
-      return;
-    }
-    let cancelled = false;
-    getQueryResults(queryId)
-      .then((response) => {
-        if (cancelled) return;
-        if (response.result) {
-          setPages([response.result]);
-          setCursor(response.result.next_cursor ?? null);
-          setResultError(null);
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setResultError(
-          error instanceof ApiError
-            ? { code: error.code, message: error.message }
-            : { code: "UNKNOWN", message: "result loading failed" },
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [queryId, detail.data?.status, detail.data?.finished_at]);
-
   const submit = useMutation({
     mutationFn: () =>
       submitQuery({
@@ -114,9 +72,6 @@ export function SqlWorkspacePage() {
       }),
     onSuccess: (response) => {
       setSubmitError(null);
-      setPages([]);
-      setCursor(null);
-      setQueryId(response.query_id);
       setParams({ query: response.query_id });
     },
     onError: (error) => {
@@ -133,19 +88,6 @@ export function SqlWorkspacePage() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["query", queryId] }),
   });
-
-  const rows = useMemo(() => pages.flatMap((page) => page.rows), [pages]);
-  const columns = pages[0]?.columns ?? [];
-  const truncated = pages.some((page) => page.truncated);
-
-  async function loadMore() {
-    if (!queryId || !cursor) return;
-    const response = await getQueryResults(queryId, cursor);
-    if (response.result) {
-      setPages((previous) => [...previous, response.result as ResultPayload]);
-      setCursor(response.result.next_cursor ?? null);
-    }
-  }
 
   const running = detail.data ? !TERMINAL.has(detail.data.status) : false;
 
@@ -242,7 +184,7 @@ export function SqlWorkspacePage() {
       </section>
 
       <SavedQueriesPanel datasourceId={datasourceId} sql={sql} sources={datasources.data ?? []} loadDisabled={submit.isPending || Boolean(queryId && (!detail.data || !TERMINAL.has(detail.data.status)))}
-        onLoad={saved => { setDatasourceId(saved.datasource_id); setSql(saved.sql); setQueryId(null); setPages([]); setCursor(null); setSubmitError(null); setResultError(null); setParams({}); }} />
+        onLoad={saved => { setDatasourceId(saved.datasource_id); setSql(saved.sql); setSubmitError(null); setParams({}); }} />
 
       {queryId && detail.data ? (
         <section className="card">
@@ -268,24 +210,7 @@ export function SqlWorkspacePage() {
             <pre>{detail.data.validated_sql ?? "—"}</pre>
           </details>
           {detail.data.status === "SUCCEEDED" ? (
-            <>
-              {resultError ? (
-                <p className="notice error" data-testid="result-error">
-                  <strong>{resultError.code}</strong> —{" "}
-                  <ErrorMessage error={resultError} />
-                </p>
-              ) : null}
-              <ResultTable
-                columns={columns}
-                rows={rows}
-                truncated={truncated}
-              />
-              {cursor ? (
-                <button className="ghost" onClick={loadMore}>
-                  {t("sql.loadMore", { count: rows.length })}
-                </button>
-              ) : null}
-            </>
+            <QueryResults key={queryId} queryId={queryId} />
           ) : null}
         </section>
       ) : null}

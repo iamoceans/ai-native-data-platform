@@ -2950,3 +2950,80 @@ connections made the journey pass unchanged.
 Not executed for this merge: the PostgreSQL/MySQL/Doris service integration
 matrix and the real-model A09 harness. The live journeys above are the merge's
 own live evidence; the branches' earlier records cover the rest.
+
+## 2026-10-22 — Main audit remediation
+
+Starting commit: `94158c26b8b5949ef04a6353f5ee5fc561c412b3`, matching the
+supplied main audit. Implemented all eight reported findings without changing
+SQL safety policy, dependency pins or database schema:
+
+| Audit finding | Change | Direct regression evidence |
+|---|---|---|
+| #1 stale query cancellation | Lock/reload current job; event decisions also use refreshed state | PostgreSQL RUNNING→SUCCEEDED and QUEUED→RUNNING interleavings, repeat cancel |
+| #2 analysis completion overwritten | Lock/reload parent before child snapshot/cancel | PostgreSQL completion preservation and child committed after original API read |
+| #3 implicit AWS credentials | Remove actions' host AWS and SSO bind mounts | YAML contract and merged Compose inspection |
+| #4 late result pages | Key result component by query ID, abort invalidated requests | Delayed old-query page released after new query results |
+| #5 history/URL divergence | URL owns selected query ID | Back/forward checks assert both URL and displayed rows |
+| #6 pagination errors | Shared first/next-page error handler; purge rows/cursor for access/expiry errors; retry transient errors | 403 PERMISSION_DENIED, 410 RESULT_EXPIRED, first/next-page temporary failure and retry |
+| #7 same-key INSERT race | PostgreSQL transaction advisory lock before lookup, retained until commit/rollback | Concurrent real HTTP submissions: same body returns same query; changed body conflicts; exactly one query and queue item; rollback permits reuse |
+| #8 4319 exposure | Explicit loopback host binding | Every published port checked in source and merged Compose |
+
+Executed on the cloud machine (dates use Asia/Singapore):
+
+- Static backend: **691 passed**, two existing dependency deprecation warnings.
+- PostgreSQL integration subset: **39 passed**, no skipped tests, two dependency
+  deprecation warnings. Uses a dedicated disposable control database
+  `oceanus_onboarding_test`; production/working control tables were not truncated.
+- Frontend units: **17 passed**; typecheck and production build exit 0.
+- Mocked API browser suite: **87 passed (1.4m)** in one full run, including six
+  new SQL-result cases. Focused new-case run also passed **6/6**.
+- Merged DataHub quickstart configuration: **6 published ports**, each with
+  `host_ip=127.0.0.1`; actions has no credential volumes.
+- `git diff --check`: passed.
+
+Commands (from repository root unless noted):
+
+```bash
+# Do not inject the application database URL into static tests.
+UV_CACHE_DIR=/workspace/.cache/uv uv run --project backend --frozen pytest \
+  backend/tests/unit backend/tests/security backend/tests/contract \
+  -m 'not integration' -q --basetemp=runtime/pytest-audit-static
+
+# Supply AIND_DATABASE_URL for a disposable control DB, AIND_TEST_SOURCE_URL
+# for its dedicated source fixture, and AIND_SECRETS_DIR. Run batches serially.
+uv run --project backend --frozen pytest \
+  backend/tests/integration/test_audit_concurrency.py \
+  backend/tests/integration/test_cancel_timeout.py \
+  backend/tests/integration/test_query_flow.py \
+  backend/tests/integration/test_analysis_flow.py \
+  backend/tests/integration/test_conversation_recovery.py \
+  backend/tests/integration/test_conversation_flow.py \
+  backend/tests/integration/test_queue_executor_medium_defects.py \
+  -q --basetemp=runtime/pytest-audit-final
+
+cd frontend
+npm run test:unit
+npm run typecheck
+npm run build
+PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium npm run test:regression
+```
+
+Compose validation used `docker compose --env-file infra/versions.env
+-f infra/datahub/compose.pinned.yaml -f infra/datahub/compose.ainative.yaml
+--profile quickstart config --format json`, inspecting parsed output rather than
+printing interpolated environment settings. Existing optional token-signing and
+UI-ingestion variables were unset; this was a configuration check, not service
+startup or authenticated DataHub acceptance.
+
+During development, one existing unit mock needed to stub the newly required
+locked-analysis read; all its evidence-redaction assertions remain intact. A new
+child-query fixture initially used an invalid purpose (`analysis`); corrected to
+the existing `query` purpose before the final passing integration run.
+
+Boundaries: browser traffic is mocked; the backend integration runs use real
+PostgreSQL sessions, real query workers for existing execution/cancel tests and
+concurrent HTTP calls for idempotency. The full multi-engine/deployed-browser
+matrix, real-model/A09, Spark and a running DataHub deployment were **not run**.
+DataHub runtime reachability, cloud authorization and live firewall behavior are
+not inferred from Compose validation. No migration or dependency refresh is
+needed for these changes; existing processes must be restarted to load code.

@@ -1,9 +1,15 @@
-﻿# DataHub pinned compose (M3)
+# DataHub pinned compose (M3)
 
 `compose.pinned.yaml` is the official DataHub quickstart compose for release
-**v1.7.0.1** (published 2026-09-03), downloaded verbatim from:
+**v1.7.0.1** (published 2026-09-03), based on the upstream file from:
 
 https://raw.githubusercontent.com/datahub-project/datahub/v1.7.0.1/docker/quickstart/docker-compose.quickstart-profile.yml
+
+Local patches bind all published ports (including 4319) to 127.0.0.1, remap
+conflicting ports, and remove the actions container's default host AWS credential
+and writable SSO cache mounts. These credentials are unnecessary for the default
+local platform workflow; any cloud credential integration must be explicitly
+configured with only the access it needs.
 
 It is stored here so the DataHub service stack version cannot drift silently.
 The images are not pulled yet; the DataHub integration (ingestion recipes, URN

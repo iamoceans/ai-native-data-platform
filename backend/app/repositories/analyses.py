@@ -234,17 +234,21 @@ def cancel_task(session: Session, task: AnalysisTask) -> bool:
     """
     from app.repositories import queries as queries_repo
 
-    if task.status in TERMINAL_ANALYSIS_STATUSES:
+    # Workers hold the parent lock while creating queries and publishing. Take
+    # the same parent -> child order and refresh any API identity-map snapshot.
+    locked = get_analysis_for_update(session, task.id)
+    if locked is None or locked.status in TERMINAL_ANALYSIS_STATUSES:
         return False
-    for query in list_queries(session, task.id):
+    for query in list_queries(session, locked.id):
         queries_repo.request_cancel(session, query)
-    set_status(task, AnalysisStatus.CANCELLED)
+    set_status(locked, AnalysisStatus.CANCELLED)
     return True
 
 
 def get_analysis_for_update(session: Session, analysis_id: uuid.UUID) -> AnalysisTask | None:
     return session.execute(
         select(AnalysisTask).where(AnalysisTask.id == analysis_id).with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
 
 
