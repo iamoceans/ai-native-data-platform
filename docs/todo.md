@@ -442,10 +442,11 @@ grants gone. No schema change is needed.
 - [x] English copy fix found while repairing that journey: the catalog-refresh
       summary key `注册` translated to `Register` ("Register 12 · updated 3") and
       now reads `Registered`; the key is used only in that summary line.
-- [ ] Moving the selector off the top bar (into personal settings, the reported
-      alternative) is not done and not needed now. When the planned self-service
-      profile page above is built, that page is its natural home if the top bar
-      ever needs the space.
+- [x] Moving the selector off the top bar (into personal settings, the reported
+      alternative) was done on 2026-10-22, once `/settings` owned the language:
+      the signed-in shell has no language control any more and the guest control
+      stays on the sign-in screen. See `docs/acceptance.md`, "2026-10-22 — Top
+      bar language control removed".
 
 ## 2026-10-15 medium defects
 
@@ -553,7 +554,11 @@ See `docs/acceptance.md`: static **425 passed**, frontend typecheck/build exit 0
       col-name have styles; unused assistant class tokens are removed. The
       language selector no longer stacks its caption above the control -
       `.language-switcher` states `flex-direction: row` and a mocked regression
-      case pins it (see "2026-10-16 top bar language selector layout").
+      case pins it (see "2026-10-16 top bar language selector layout"). That
+      styling and the pinned case were removed on 2026-10-22 along with the
+      component: the top-bar instance went first, then the guest control on the
+      sign-in screen, so `/settings` is the only language entry point and no
+      unauthenticated screen has one (acceptance record below).
 
 See `docs/acceptance.md`, "2026-10-15 Shared control styles: native file input
 and leaking label default" and "2026-10-15 Chart panel: values, precision and

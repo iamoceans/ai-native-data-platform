@@ -49,14 +49,15 @@ test('saves profile and restores account preferences across reload and a fresh d
   expect(writes[0].expected_settings_version).toBe(1);
   await page.reload();
   await expect(page.getByTestId('settings-display-name')).toHaveValue('Alice');
-  await expect(page.getByTestId('language-switcher')).toHaveValue('zh-CN');
+  await expect(page.getByTestId('settings-locale')).toHaveValue('zh-CN');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.getByTestId('settings-timezone')).toHaveValue('Asia/Singapore');
   // A new browser storage context receives the persisted server preference.
   const fresh = await browser.newContext({ locale: 'en-US' });
   const device = await fresh.newPage();
   await fresh.route('**/api/v1/**', route => route.fulfill({ json: profiles.alice }));
   await device.goto('/settings');
-  await expect(device.getByTestId('language-switcher')).toHaveValue('zh-CN');
+  await expect(device.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(device.getByTestId('settings-timezone')).toHaveValue('Asia/Singapore');
   await fresh.close();
 });
@@ -64,8 +65,9 @@ test('saves profile and restores account preferences across reload and a fresh d
 test('switching accounts does not inherit preferences and failed saves preserve edits', async ({ page, context }) => {
   const { fail } = await platform(page);
   await page.goto('/settings');
-  await page.getByTestId('language-switcher').selectOption('zh-CN');
-  await expect(page.getByTestId('language-switcher')).toHaveValue('zh-CN');
+  await page.getByTestId('settings-locale').selectOption('zh-CN');
+  await page.getByTestId('settings-save').click();
+  await expect(page.getByTestId('settings-locale')).toHaveValue('zh-CN');
   const other = await context.newPage();
   await other.goto('/settings');
   await expect(other.getByTestId('settings-username')).toHaveText('alice');
@@ -76,11 +78,11 @@ test('switching accounts does not inherit preferences and failed saves preserve 
   await page.getByTestId('login-submit').click();
   await page.getByTestId('nav-settings').click();
   await expect(page.getByTestId('settings-username')).toHaveText('bob');
-  await expect(page.getByTestId('language-switcher')).toHaveValue('en');
+  await expect(page.getByTestId('settings-locale')).toHaveValue('en');
   await expect(page.getByTestId('settings-display-name')).toHaveValue('');
   await other.goto('/settings');
   await expect(other.getByTestId('settings-username')).toHaveText('bob');
-  await expect(other.getByTestId('language-switcher')).toHaveValue('en');
+  await expect(other.getByTestId('settings-locale')).toHaveValue('en');
   await other.close();
   fail();
   await page.getByTestId('settings-display-name').fill('unsaved Bob');
@@ -108,8 +110,10 @@ test('account preference updates synchronize between tabs without losing unsaved
   await platform(page); await page.goto('/settings');
   const other = await context.newPage(); await other.goto('/settings');
   await other.getByTestId('settings-display-name').fill('local draft');
-  await page.getByTestId('language-switcher').selectOption('zh-CN');
-  await expect(other.getByTestId('language-switcher')).toHaveValue('zh-CN');
+  await page.getByTestId('settings-locale').selectOption('zh-CN');
+  await page.getByTestId('settings-save').click();
+  await expect(page.getByTestId('settings-saved')).toBeVisible();
+  await expect(other.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(other.getByTestId('settings-display-name')).toHaveValue('local draft');
   await other.getByTestId('settings-save').click();
   await expect(other.getByTestId('settings-error')).toBeVisible();

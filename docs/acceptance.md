@@ -3027,3 +3027,135 @@ matrix, real-model/A09, Spark and a running DataHub deployment were **not run**.
 DataHub runtime reachability, cloud authorization and live firewall behavior are
 not inferred from Compose validation. No migration or dependency refresh is
 needed for these changes; existing processes must be restarted to load code.
+
+## 2026-10-22 — Sign-in layout: page-level language control and centered heading
+
+Superseded the same day by the next section: the control was then removed from
+both unauthenticated screens altogether and the card's inset widened.
+
+The sign-in card carried the language selector as its first child, so a
+page-level setting read as part of the credential form, and the `登录` heading
+followed the card's default left alignment.
+
+- `frontend/src/pages/LoginPage.tsx`: `LanguageSwitcher` is now a direct child of
+  `.auth-gate`, not of `.auth-card`. `AppShell.tsx`'s session-required gate (the
+  same `.auth-gate` + `.auth-card` screen) received the same treatment so the two
+  unauthenticated screens match.
+- `frontend/src/styles.css`: `.auth-card > .language-switcher { align-self:
+  flex-end }` is replaced by `.auth-gate > .language-switcher { position:
+  absolute; top: 20px; right: 20px }`; `.auth-gate` gains `position: relative`
+  and `.auth-card h1` gains `text-align: center`.
+
+Observed:
+
+- `npm run typecheck` **exit 0**; `npm run build` **exit 0**
+  (`index-kDVH5jUc.css` 16.57 kB, `index-tALJeCnY.js` 470.95 kB); `npm run
+  test:unit` **17 passed**; `git diff --check` **exit 0**.
+- `npm run test:regression -- tests/regression/i18n.spec.ts`: **14 passed**
+  (14.7 s). The full mocked API suite `npm run test:regression`: **87 passed**
+  (1.6 m).
+- Live layout measurement against the Vite dev server (`/login` renders without
+  the API). At 1440x900 the switcher is an `absolute` child of `.auth-gate` at
+  `top: 20 / right: 20`, outside the card, `h1` computed `text-align: center`
+  with a 0 px offset from the card centre and `scrollWidth - innerWidth = 0`. At
+  390x844 the switcher is fully in-viewport, does not intersect the card and
+  again adds no horizontal overflow. At 844x390 (landscape) it does not
+  intersect either. The accessibility tree lists the language control before the
+  form, with the heading inside it.
+
+Boundary: on unusually short viewports (measured at 480x400, which also covers
+e.g. 667x375 landscape) the absolutely positioned control overlaps the card's
+blank top-right corner by a few pixels; it keeps painting above the card. Not
+executed for this frontend-only change: the full end-to-end live-stack journeys,
+the service integration matrix and A09; no backend, migration or API contract
+changed.
+
+### Deployed stack rebuild and live re-check
+
+The running `frontend` container predated the change: `compose.yaml` bakes
+`dist/` into `ainative-frontend:0.1.0` at build time, so the served bundle kept
+the old sign-in layout until the image was rebuilt. On this Windows host the
+`docker` resolved from `PATH` (`C:\Windows\system32\docker`) is a 0-byte
+placeholder, so Docker commands returned no output; the working client is
+`C:\Program Files\Docker\Docker\resources\bin\docker.exe` and must be invoked by
+full path.
+
+```powershell
+& 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f compose.yaml build frontend
+& 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f compose.yaml up -d --no-deps frontend
+# build: "frontend  Built" (exit 0); up: "Container ainative-frontend-1 Recreated / Started"
+```
+
+Only the frontend container was recreated (`--no-deps`); the API, both workers
+and the databases kept their uptime. Verified from `http://127.0.0.1:3000`
+itself, not from a dev server: `index.html` now references
+`assets/index-kDVH5jUc.css`, whose served text holds
+`.auth-card h1{text-align:center;font-size:20px}`,
+`.auth-gate>.language-switcher{position:absolute;top:20px;right:20px}` and
+`.auth-gate{...;position:relative}`, with no
+`.auth-card>.language-switcher{align-self:flex-end}`. In the browser at
+1440x900 the control's parent is `.auth-gate` and the form no longer contains it,
+it sits at `top: 20 / right: 20` outside the card, the `登录` heading computes
+`text-align: center` with a 0 px offset from the card centre, and
+`scrollWidth - innerWidth = 0`. A stale bundle is still possible in a browser
+that cached `index.html`; a hard refresh is required to see the new layout.
+
+### Sign-in screen: no language control, and the card's inset
+
+Review of that result rejected both halves of it: the language choice should not
+appear on a sign-in surface at all, and the credential fields and button still
+sat 16px from the card border while the centred heading read as much closer to
+its own text centre - the card's interior had never been re-balanced when the
+heading was centred.
+
+- `frontend/src/pages/LoginPage.tsx` and `frontend/src/components/AppShell.tsx`:
+  the `LanguageSwitcher` element and its import are gone from both
+  unauthenticated screens.
+- `frontend/src/components/LanguageSwitcher.tsx` is deleted: `/settings`
+  (`settings-locale`) is the only language entry point, so the component had no
+  remaining caller.
+- `frontend/src/styles.css`: `.auth-card` gains `padding: 24px` (was the shared
+  16px), the three `.language-switcher` rules and `.auth-gate`'s now-unneeded
+  `position: relative` are removed. `.auth-card h1 { text-align: center }` stays.
+- `README.md`, `README.zh-CN.md` and `docs/architecture.md` no longer claim a
+  selector on the login page, the unauthenticated gate or the top bar.
+
+Test changes (`frontend/tests/regression/`):
+
+- `i18n.spec.ts`: the sign-in case now asserts both locales' headings and
+  localized authentication errors, seeds the guest `ainative.locale` preference
+  through an init script, and pins `[data-testid=language-switcher]` at count 0.
+  The two cases that only exercised the deleted control (its 390px usability and
+  its one-line layout) are gone; the 390px case is replaced by one that keeps the
+  sign-in card inside a 390px viewport without horizontal overflow. The
+  vacuous `.topbar .language-switcher` count assertion was dropped.
+- `dataset-detail.spec.ts`: the guest locale is seeded through an init script
+  instead of the removed control.
+- Account-preference coverage is unchanged: it is set on `/settings` and
+  synchronized across tabs, as in the cases above.
+
+Observed:
+
+- `npm run typecheck` **exit 0**; `npm run build` **exit 0**
+  (`index-LXP4Q1D5.css` 16.30 kB, `index-TD8PBUQC.js` 469.96 kB); `npm run
+  test:unit` **17 passed**.
+- `npm run test:regression` (full mocked suite) **86 passed** (1.8 m), down from
+  87 because the two deleted cases only covered the removed control; the focused
+  `i18n.spec.ts` + `dataset-detail.spec.ts` run **18 passed** (26.7 s).
+- The frontend image was rebuilt and the container recreated as above, then
+  measured on `http://127.0.0.1:3000/login` itself (serving
+  `assets/index-LXP4Q1D5.css`): `.language-switcher` and
+  `[data-testid=language-switcher]` both **count 0**; computed card padding
+  **24px**; the heading, the description, both labels, both inputs and the button
+  all measure **left 25 / right 25** inside the card (24px plus the 0.57px
+  border), so the fields and the button now share one inset; the heading stays
+  `text-align: center`. The accessibility tree lists only the form, its heading,
+  the two fields and the button.
+
+Boundary: an unauthenticated visitor now has no in-app language choice and
+follows the stored guest preference or the browser language until sign-in; that
+is the intended product change, not an oversight. The pre-existing console
+notice "A form field element should have an id or name attribute" still applies
+to the two credential inputs (count 2, down from 3 with the selector removed).
+No backend, migration or API contract changed, so the service matrix and A09
+were not rerun.

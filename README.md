@@ -93,12 +93,13 @@ TLS browser journey is now verified.
 
 ## Interface language
 
-The login page and workspace header have a **简体中文 / English** selector.
-It switches the entire interface immediately, retaining form drafts and active
-queries. The browser language supplies the initial choice (Chinese for `zh-*`,
-English otherwise). Before sign-in an explicit choice is kept in browser storage.
-After sign-in the account's saved language takes precedence; changes in the header
-are saved to that account and synchronized across tabs. Dates use the account's
+The **简体中文 / English** selector lives on `/settings`, and that page is the
+only place the interface language is set. It switches the entire interface
+immediately, retaining form drafts and active queries. The browser language
+supplies the initial choice (Chinese for `zh-*`, English otherwise). Before
+sign-in an explicit choice is kept in browser storage. After sign-in the
+account's saved language takes precedence; a change on `/settings` is saved to
+that account and synchronized across tabs. Dates use the account's
 IANA timezone (browser timezone when unset); chart numbers follow the locale.
 
 Interface labels, statuses, validation and API error guidance are translated.

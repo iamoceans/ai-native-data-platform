@@ -25,7 +25,7 @@ test('account settings persist on the real API and stay separate from the admini
   await expect(page.getByTestId('settings-saved')).toHaveText('设置已保存');
   await page.reload();
   await expect(page.getByTestId('settings-display-name')).toHaveValue('Live settings reader');
-  await expect(page.getByTestId('language-switcher')).toHaveValue('zh-CN');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await page.screenshot({ path: '/tmp/aind-settings-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -38,7 +38,7 @@ test('account settings persist on the real API and stay separate from the admini
     await device.getByTestId('login-password').fill(password);
     await device.getByTestId('login-submit').click();
     await device.getByTestId('nav-settings').click();
-    await expect(device.getByTestId('language-switcher')).toHaveValue('zh-CN');
+    await expect(device.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(device.getByTestId('settings-timezone')).toHaveValue('Asia/Singapore');
     await expect(device.getByTestId('settings-display-name')).toHaveValue('Live settings reader');
     const replacement = `Changed-test-${randomUUID()}`;
@@ -61,6 +61,6 @@ test('account settings persist on the real API and stay separate from the admini
   await page.getByTestId('login-submit').click();
   await page.getByTestId('nav-settings').click();
   await expect(page.getByTestId('settings-username')).not.toHaveText(username);
-  await expect(page.getByTestId('language-switcher')).toHaveValue('en');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByTestId('settings-display-name')).not.toHaveValue('Live settings reader');
 });

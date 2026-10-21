@@ -503,11 +503,13 @@ button.ghost:hover:not(:disabled) {
 
 .auth-card {
   width: 360px;
+  padding: 24px;
   gap: 12px;
 }
 
 .auth-card h1 {
   font-size: 20px;
+  text-align: center;
 }
 
 @media (max-width: 720px) {
@@ -729,11 +731,6 @@ button.ghost.small { padding: 2px 8px; font-size: 13px; }
   .conversation-rail { position: static; }
 }
 
-/* The global `label` rule stacks its control onto a second line; this one is a
-   single-line toolbar item, so it must state the row direction itself. */
-.language-switcher { display: inline-flex; flex-direction: row; align-items: center; gap: .4rem; font-size: .8rem; white-space: nowrap; }
-.language-switcher select { width: auto; min-width: 6.5rem; padding: .35rem .5rem; }
-.auth-card > .language-switcher { align-self: flex-end; }
 .topbar-right { flex-wrap: wrap; }
 html[lang="zh-CN"] body { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
 .original-error { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }

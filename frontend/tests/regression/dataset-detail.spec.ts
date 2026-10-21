@@ -97,6 +97,16 @@ test("access requests use the current dataset and old notices do not follow navi
     { dataset_id: "first", reason: "first reason" },
     { dataset_id: "second", reason: "second reason" },
   ]);
-  await page.getByTestId("language-switcher").selectOption("zh-CN");
+  // This mock has no account id, so the guest preference is what the shell
+  // uses. Nothing in the UI sets it any more: the sign-in screen has no
+  // language control, so the test seeds the stored preference directly.
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("ainative.locale", "zh-CN");
+    } catch {
+      /* The initial about:blank document has no storage. */
+    }
+  });
+  await page.goto("/datasets/first");
   await expect(page.getByRole("link", { name: "返回数据目录", exact: true })).toBeVisible();
 });

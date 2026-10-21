@@ -477,8 +477,10 @@ resolve labels with `t()`; stateful notices store message keys and parameters so
 an already-visible notice changes language too. Interpolation is a single pass
 and React renders its output as text. No HTML is injected by translations.
 
-The language selector is available at login, at the unauthenticated gate and in
-the workspace header. Signed-out preference order is a supported `ainative.locale`
+Interface language is chosen on `/settings` and nowhere else: the sign-in screen,
+the unauthenticated gate and the top bar carry no language control, so an
+unauthenticated visitor follows the stored guest preference or the browser.
+Signed-out preference order is a supported `ainative.locale`
 value in localStorage, then the browser language. Authenticated preference comes
 from the user row; null means the browser language, without inheriting the guest
 storage choice. Authenticated changes persist to the account, and storage events

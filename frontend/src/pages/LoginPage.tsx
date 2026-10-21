@@ -1,4 +1,3 @@
-import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { t, useLocale, errorMessage } from "../i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -37,7 +36,6 @@ export function LoginPage() {
   return (
     <div className="auth-gate">
       <form className="card auth-card" onSubmit={submit}>
-        <LanguageSwitcher />
         <h1>{t("Sign in")}</h1>
         <p className="muted">
           {t("Local account. Sessions expire after 8 hours.")}

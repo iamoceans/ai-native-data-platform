@@ -6,6 +6,16 @@ async function mockPlatform(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const requests: { path: string; language?: string; body: unknown }[] = [];
+  let profile = {
+    id: "admin",
+    username: "测试管理员",
+    display_name: "",
+    locale: null as "zh-CN" | "en" | null,
+    timezone: null as string | null,
+    settings_version: 1,
+    roles: ["admin"],
+    capabilities: ["admin.manage", "analysis.create"],
+  };
   await page.context().route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -15,12 +25,17 @@ async function mockPlatform(page: Page) {
       body: request.postData(),
     });
     let body: unknown = { items: [] };
-    if (path.endsWith("/auth/me"))
-      body = {
-        username: "测试管理员",
-        roles: ["admin"],
-        capabilities: ["admin.manage", "analysis.create"],
-      };
+    if (path.endsWith("/auth/me")) {
+      if (request.method() === "PATCH") {
+        const { expected_settings_version, ...fields } = request.postDataJSON();
+        profile = {
+          ...profile,
+          ...fields,
+          settings_version: expected_settings_version + 1,
+        };
+      }
+      body = profile;
+    }
     if (path.endsWith("/datasources"))
       body = {
         items: [
@@ -117,6 +132,13 @@ const routes = [
   ["/admin/permissions", "Permissions", "权限管理"],
   ["/analyses/report", "用户原始问题", "用户原始问题"],
 ] as const;
+/** Signed-in users change the language in Settings; the top bar has no control. */
+async function setLocale(page: Page, locale: "zh-CN" | "en") {
+  await page.goto("/settings");
+  await page.getByTestId("settings-locale").selectOption(locale);
+  await page.getByTestId("settings-save").click();
+  await expect(page.getByTestId("settings-saved")).toBeVisible();
+}
 for (const [path, en, zh] of routes) {
   test(`switches both languages on ${path}`, async ({ page }) => {
     const { errors } = await mockPlatform(page);
@@ -127,11 +149,13 @@ for (const [path, en, zh] of routes) {
     await expect(
       page.getByRole("link", { name: "Ask data", exact: true }),
     ).toBeVisible();
-    await page.getByTestId("language-switcher").selectOption("zh-CN");
+    // The signed-in shell has no language control: Settings owns it.
+    await setLocale(page, "zh-CN");
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     // The product name is not translated: the same string in both locales.
     await expect(page).toHaveTitle("Oceanus");
     await expect(page.locator(".topbar .brand")).toHaveText("Oceanus");
+    await page.goto(path);
     await expect(
       page.getByRole("heading", { name: zh, exact: true, level: 1 }),
     ).toBeVisible();
@@ -140,10 +164,11 @@ for (const [path, en, zh] of routes) {
     ).toBeVisible();
     if (path === "/analyses/report")
       await expect(page.locator(".claim p")).toHaveText("原始证据结论 123.45");
-    await page.getByTestId("language-switcher").selectOption("en");
+    await setLocale(page, "en");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page).toHaveTitle("Oceanus");
     await expect(page.locator(".topbar .brand")).toHaveText("Oceanus");
+    await page.goto(path);
     await expect(
       page.getByRole("heading", { name: en, exact: true, level: 1 }),
     ).toBeVisible();
@@ -153,55 +178,79 @@ for (const [path, en, zh] of routes) {
 
 test("persists language across navigation and reload while retaining SQL and errors", async ({
   page,
+  context,
 }) => {
   const { requests } = await mockPlatform(page);
   await page.goto("/sql");
   const sql = "SELECT '中文原始内容' AS value";
   await page.getByTestId("sql-editor").fill(sql);
   await page.getByTestId("datasource-select").selectOption("source");
-  await page.getByTestId("language-switcher").selectOption("zh-CN");
+  // The preference is account-scoped and set in Settings, so it arrives from
+  // another tab: this workspace must re-render without losing its draft.
+  const other = await context.newPage();
+  await other.goto("/settings");
+  await other.getByTestId("settings-locale").selectOption("zh-CN");
+  await other.getByTestId("settings-save").click();
+  await expect(other.getByTestId("settings-saved")).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page.getByTestId("sql-editor")).toHaveValue(sql);
   await expect(page.getByTestId("datasource-select")).toHaveValue("source");
   await page.getByTestId("run-query").click();
   await expect(page.getByTestId("submit-error")).toContainText(
     "此 SQL 不符合只读安全策略。",
   );
-  await page.getByTestId("language-switcher").selectOption("en");
+  expect(
+    requests.find((r) => r.path.endsWith("/queries") && r.body)?.language,
+  ).toBe("zh-CN");
+  await other.getByTestId("settings-locale").selectOption("en");
+  await other.getByTestId("settings-save").click();
+  await expect(other.getByTestId("settings-saved")).toBeVisible();
   await expect(page.getByTestId("submit-error")).toContainText(
     "This SQL statement violates the read-only policy.",
   );
   await expect(page.getByTestId("submit-error")).toContainText("SQL_FORBIDDEN");
-  expect(
-    requests.find((r) => r.path.endsWith("/queries") && r.body)?.language,
-  ).toBe("zh-CN");
-  await page.getByTestId("language-switcher").selectOption("zh-CN");
+  await other.getByTestId("settings-locale").selectOption("zh-CN");
+  await other.getByTestId("settings-save").click();
+  await expect(other.getByTestId("settings-saved")).toBeVisible();
+  await other.close();
   await page.getByRole("link", { name: "历史记录", exact: true }).click();
   await expect(page.getByRole("heading", { name: "查询历史" })).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId("language-switcher")).toHaveValue("zh-CN");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(
     page.locator("select").last().locator("option[value=RUNNING]"),
   ).toHaveText("运行中");
 });
 
-test("login translates live, preserves credentials, and handles authentication errors", async ({
+test("the sign-in screen follows the guest language and localizes authentication errors", async ({
   page,
 }) => {
   await mockPlatform(page);
   await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.getByTestId("login-username").fill("my-user");
   await page.getByTestId("login-password").fill("test-password");
-  await page.getByTestId("language-switcher").selectOption("zh-CN");
+  await page.getByTestId("login-submit").click();
+  await expect(page.getByTestId("login-error")).toContainText(
+    "Please sign in to continue.",
+  );
+  // The sign-in screen carries no language control: a stored guest preference
+  // outranks the browser language until an account preference takes over.
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("ainative.locale", "zh-CN");
+    } catch {
+      /* The initial about:blank document has no storage. */
+    }
+  });
+  await page.reload();
   await expect(page.getByRole("heading", { name: "登录" })).toBeVisible();
-  await expect(page.getByTestId("login-username")).toHaveValue("my-user");
-  await expect(page.getByTestId("login-password")).toHaveValue("test-password");
+  await expect(page.getByTestId("language-switcher")).toHaveCount(0);
+  await page.getByTestId("login-username").fill("my-user");
+  await page.getByTestId("login-password").fill("test-password");
   await page.getByTestId("login-submit").click();
   await expect(page.getByTestId("login-error")).toContainText(
     "请重新登录后继续。",
-  );
-  await page.getByTestId("language-switcher").selectOption("en");
-  await expect(page.getByTestId("login-error")).toContainText(
-    "Please sign in to continue.",
   );
 });
 
@@ -212,10 +261,12 @@ test("synchronizes language changes between tabs", async ({
   await mockPlatform(page);
   await page.goto("/sql");
   const other = await context.newPage();
-  await other.goto("/history");
-  await page.getByTestId("language-switcher").selectOption("zh-CN");
-  await expect(other.getByRole("heading", { name: "查询历史" })).toBeVisible();
-  await expect(other.getByTestId("language-switcher")).toHaveValue("zh-CN");
+  await other.goto("/settings");
+  await other.getByTestId("settings-locale").selectOption("zh-CN");
+  await other.getByTestId("settings-save").click();
+  await expect(other.getByTestId("settings-saved")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "SQL 工作台" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
 });
 
 test("uses browser Chinese and survives unavailable storage", async ({
@@ -238,42 +289,22 @@ test("uses browser Chinese and survives unavailable storage", async ({
   const { errors } = await mockPlatform(page);
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "登录" })).toBeVisible();
-  await page.getByTestId("language-switcher").selectOption("en");
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   expect(errors).toEqual([]);
   await context.close();
 });
 
-test("keeps the language control and navigation usable at 390px", async ({ page }) => {
+test("keeps the sign-in card inside the viewport at 390px", async ({ page }) => {
   await mockPlatform(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/sql");
-  for (const locale of ["zh-CN", "en"]) {
-    await page.getByTestId("language-switcher").selectOption(locale);
-    await expect(page.getByTestId("language-switcher")).toBeInViewport();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  }
-  await page.screenshot({ path: "/tmp/platform-i18n-mobile.png", fullPage: true });
-});
-
-test("keeps the language label and its select on one line in the top bar", async ({
-  page,
-}) => {
-  await mockPlatform(page);
-  await page.goto("/sql");
-  const switcher = page.locator(".topbar .language-switcher");
-  await expect(switcher).toBeVisible();
-  // The global `label` rule stacks the control under its label; this toolbar
-  // item overrides that direction and must stay a single line.
+  await page.goto("/login");
+  const card = page.locator(".auth-card");
+  await expect(card).toBeVisible();
+  const box = await card.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   expect(
-    await switcher.evaluate((el) => getComputedStyle(el).flexDirection),
-  ).toBe("row");
-  const label = await switcher.locator("span").boundingBox();
-  const select = await page.getByTestId("language-switcher").boundingBox();
-  expect(
-    Math.abs(label!.y + label!.height / 2 - (select!.y + select!.height / 2)),
-  ).toBeLessThan(3);
-  const box = await switcher.boundingBox();
-  expect(box!.height).toBeLessThan(40);
-  expect(Math.abs(select!.x - label!.x - label!.width)).toBeLessThan(20);
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

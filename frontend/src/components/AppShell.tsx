@@ -1,10 +1,8 @@
-import { LanguageSwitcher } from "./LanguageSwitcher";
 import { applyAccountPreferences, PLATFORM_NAME, t, useLocale } from "../i18n";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { logout, me, updateProfile } from "../api/endpoints";
-import { ErrorMessage } from "./ErrorMessage";
+import { logout, me } from "../api/endpoints";
 
 export function AppShell() {
   useLocale();
@@ -29,17 +27,11 @@ export function AppShell() {
     window.addEventListener("storage", changed);
     return () => window.removeEventListener("storage", changed);
   }, [queryClient]);
-  const language = useMutation({
-    mutationFn: (locale: "zh-CN" | "en") => updateProfile({ locale, expected_settings_version: profile.data!.settings_version ?? 1 }),
-    onSuccess: updated => queryClient.setQueryData(["me"], updated),
-    onError: () => { queryClient.invalidateQueries({ queryKey: ["me"] }); },
-  });
 
   if (profile.isError) {
     return (
       <div className="auth-gate">
         <div className="card auth-card">
-          <LanguageSwitcher />
           <h1>{t("Session required")}</h1>
           <p className="muted">{t("Sign in to use the workspace.")}</p>
           <button className="primary" onClick={() => navigate("/login")}>
@@ -123,7 +115,6 @@ export function AppShell() {
           ) : null}
         </nav>
         <div className="topbar-right">
-          <LanguageSwitcher onChange={profile.data?.id ? locale => language.mutate(locale) : undefined} disabled={language.isPending} />
           {profile.data ? (
             <>
               <NavLink to="/settings" data-testid="nav-settings">
@@ -148,7 +139,6 @@ export function AppShell() {
           )}
         </div>
       </header>
-      {language.isError ? <p className="notice error" role="alert"><ErrorMessage error={language.error} /></p> : null}
       <main className="page">
         <Outlet />
       </main>
